@@ -9,6 +9,8 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+      BackHandler,
+
 } from "react-native";
 import { RadioButton } from "react-native-paper";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
@@ -158,7 +160,23 @@ export default function PaymentScreen() {
 
   const platformFee = 25;
   const totalAmount = parseFloat(form.consultantFees || 0) + platformFee;
-
+  useEffect(() => {
+        const backAction = () => {
+          // Instead of going back step by step, reset navigation to Sidebar/Home
+          navigation.reset({
+            index: 0,
+            routes: [{ name: "bottomtab" }], // <-- replace with your sidebar/home screen name
+          });
+          return true; // prevents default back behavior
+        };
+      
+        const backHandler = BackHandler.addEventListener(
+          "hardwareBackPress",
+          backAction
+        );
+      
+        return () => backHandler.remove(); // clean up on unmount
+      }, []);
   if (loading) {
     return (
       <View style={styles.center}>

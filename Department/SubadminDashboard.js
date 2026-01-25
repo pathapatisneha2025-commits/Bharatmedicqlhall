@@ -7,11 +7,25 @@ import axios from 'axios';
 
 const BASE_URL = 'https://hospitaldatabasemanagement.onrender.com';
 
+// Reusable function to group employees by department
+const groupByDepartment = (employees) => {
+  const departments = {};
+  employees.forEach(emp => {
+    const dept = emp.department || "Unassigned";
+    if (!departments[dept]) {
+      departments[dept] = [];
+    }
+    departments[dept].push(emp);
+  });
+  return departments;
+};
+
 const SubAdminDashboardScreen = ({ navigation }) => {
   const [employees, setEmployees] = useState([]);
   const [leaves, setLeaves] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('dashboard');
 
   // Fetch data
   useEffect(() => {
@@ -36,14 +50,7 @@ const SubAdminDashboardScreen = ({ navigation }) => {
     fetchData();
   }, []);
 
-  // Department-wise grouping
-  const departments = {};
-  employees.forEach(emp => {
-    if (!departments[emp.department]) {
-      departments[emp.department] = [];
-    }
-    departments[emp.department].push(emp);
-  });
+  const departments = groupByDepartment(employees);
 
   // Leave counts
   const onDutyCount = employees.filter(emp => emp.status === 'on_duty').length;
@@ -76,128 +83,212 @@ const SubAdminDashboardScreen = ({ navigation }) => {
 
       {/* Tabs */}
       <View style={styles.tabs}>
-        <TouchableOpacity style={styles.activeTab}>
-          <Ionicons name="grid-outline" size={16} color="#2563eb" />
-          <Text style={styles.activeTabText}>Dashboard</Text>
+        <TouchableOpacity
+          style={activeTab === 'dashboard' ? styles.activeTab : styles.tab}
+          onPress={() => setActiveTab('dashboard')}
+        >
+          <Ionicons name="grid-outline" size={16} color={activeTab === 'dashboard' ? "#2563eb" : "#6b7280"} />
+          <Text style={activeTab === 'dashboard' ? styles.activeTabText : styles.tabText}>Dashboard</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.tab}>
-          <Ionicons name="people-outline" size={16} color="#6b7280" />
-          <Text style={styles.tabText}>Staff</Text>
+        <TouchableOpacity
+          style={activeTab === 'staff' ? styles.activeTab : styles.tab}
+          onPress={() => setActiveTab('staff')}
+        >
+          <Ionicons name="people-outline" size={16} color={activeTab === 'staff' ? "#2563eb" : "#6b7280"} />
+          <Text style={activeTab === 'staff' ? styles.activeTabText : styles.tabText}>Staff</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.tab}>
-          <Ionicons name="document-text-outline" size={16} color="#6b7280" />
-          <Text style={styles.tabText}>Reports</Text>
+        <TouchableOpacity
+          style={activeTab === 'reports' ? styles.activeTab : styles.tab}
+          onPress={() => setActiveTab('reports')}
+        >
+          <Ionicons name="document-text-outline" size={16} color={activeTab === 'reports' ? "#2563eb" : "#6b7280"} />
+          <Text style={activeTab === 'reports' ? styles.activeTabText : styles.tabText}>Reports</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Staff Stats */}
-      <View style={styles.statsContainer}>
-        <TouchableOpacity
-          style={[styles.card, { backgroundColor: '#e0f2fe' }]}
-          onPress={() => navigation.navigate('TotalStaff')}
-        >
-          <Text style={styles.cardTitle}>Total Staff</Text>
-          <View style={styles.cardRow}>
-            <Text style={styles.cardValue}>{employees.length}</Text>
-            <Ionicons name="people" size={24} color="#1e3a8a" />
-          </View>
-        </TouchableOpacity>
+      {/* Dashboard Content */}
+      {activeTab === 'dashboard' && (
+        <>
+          {/* Staff Stats */}
+          <View style={styles.statsContainer}>
+            <TouchableOpacity
+              style={[styles.card, { backgroundColor: '#e0f2fe' }]}
+              onPress={() => navigation.navigate('TotalStaff')}
+            >
+              <Text style={styles.cardTitle}>Total Staff</Text>
+              <View style={styles.cardRow}>
+                <Text style={styles.cardValue}>{employees.length}</Text>
+                <Ionicons name="people" size={24} color="#1e3a8a" />
+              </View>
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.card, { backgroundColor: '#dcfce7' }]}
-          onPress={() => navigation.navigate('OnDuty')}
-        >
-          <Text style={styles.cardTitle}>On Duty</Text>
-          <View style={styles.cardRow}>
-            <Text style={styles.cardValue}>{onDutyCount}</Text>
-            <Ionicons name="person" size={24} color="#15803d" />
-          </View>
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.card, { backgroundColor: '#dcfce7' }]}
+              onPress={() => navigation.navigate('OnDuty')}
+            >
+              <Text style={styles.cardTitle}>On Duty</Text>
+              <View style={styles.cardRow}>
+                <Text style={styles.cardValue}>{onDutyCount}</Text>
+                <Ionicons name="person" size={24} color="#15803d" />
+              </View>
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.card, { backgroundColor: '#fef3c7' }]}
-          onPress={() => navigation.navigate('OnLeave')}
-        >
-          <Text style={styles.cardTitle}>On Leave</Text>
-          <View style={styles.cardRow}>
-            <Text style={styles.cardValue}>{onLeaveCount}</Text>
-            <Ionicons name="calendar" size={24} color="#d97706" />
-          </View>
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.card, { backgroundColor: '#fef3c7' }]}
+              onPress={() => navigation.navigate('OnLeave')}
+            >
+              <Text style={styles.cardTitle}>On Leave</Text>
+              <View style={styles.cardRow}>
+                <Text style={styles.cardValue}>{onLeaveCount}</Text>
+                <Ionicons name="calendar" size={24} color="#d97706" />
+              </View>
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.card, { backgroundColor: '#fee2e2' }]}
-          onPress={() => navigation.navigate('Pending')}
-        >
-          <Text style={styles.cardTitle}>Pending</Text>
-          <View style={styles.cardRow}>
-            <Text style={styles.cardValue}>{pendingCount}</Text>
-            <Ionicons name="time" size={24} color="#b91c1c" />
+            <TouchableOpacity
+              style={[styles.card, { backgroundColor: '#fee2e2' }]}
+              onPress={() => navigation.navigate('Pending')}
+            >
+              <Text style={styles.cardTitle}>Pending</Text>
+              <View style={styles.cardRow}>
+                <Text style={styles.cardValue}>{pendingCount}</Text>
+                <Ionicons name="time" size={24} color="#b91c1c" />
+              </View>
+            </TouchableOpacity>
           </View>
-        </TouchableOpacity>
-      </View>
 
-      {/* Departments */}
-      <Text style={styles.sectionTitle}>Departments</Text>
-      {Object.keys(departments).map((dept, index) => (
-        <TouchableOpacity
-          key={index}
-          style={styles.departmentCard}
-          onPress={() => navigation.navigate('Departmentchart', { department: dept, members: departments[dept] })}
-        >
-          <View style={[styles.iconCircle, { backgroundColor: '#e0f2fe' }]}>
-            <FontAwesome5 name="building" size={18} color="#000" />
-          </View>
-          <View>
-            <Text style={styles.departmentName}>{dept}</Text>
-            <Text style={styles.departmentMembers}>{departments[dept].length} staff members</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#9ca3af" style={{ marginLeft: 'auto' }} />
-        </TouchableOpacity>
-      ))}
+          {/* Departments */}
+          <Text style={styles.sectionTitle}>Departments</Text>
+          {Object.keys(departments).map((dept, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.departmentCard}
+              onPress={() => navigation.navigate('Departmentchart', { department: dept, members: departments[dept] })}
+            >
+              <View style={[styles.iconCircle, { backgroundColor: '#e0f2fe' }]}>
+                <FontAwesome5 name="building" size={18} color="#000" />
+              </View>
+              <View>
+                <Text style={styles.departmentName}>{dept}</Text>
+                <Text style={styles.departmentMembers}>{departments[dept].length} staff members</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#9ca3af" style={{ marginLeft: 'auto' }} />
+            </TouchableOpacity>
+          ))}
 
-      {/* Leave Requests */}
-      <Text style={styles.sectionTitle}>
-        Leave Requests <Text style={styles.pendingBadge}>{leaves.filter(l => l.status.toLowerCase() === 'pending').length} Pending</Text>
-      </Text>
-      {leaves.filter(l => l.status.toLowerCase() === 'pending').map((leave, index) => (
-        <TouchableOpacity
-          key={index}
-          style={styles.leaveRequest}
-          onPress={() => navigation.navigate('subAdminleavestatus', { leave })}
-        >
-          <Image source={{ uri: employees.find(e => e.id === leave.employee_id)?.image || '' }} style={styles.leaveAvatar} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.leaveName}>{leave.employee_name}</Text>
-            <Text style={styles.leaveReason}>{leave.reason}</Text>
-          </View>
-          <TouchableOpacity>
-            <Ionicons name="checkmark-circle" size={24} color="#16a34a" />
-          </TouchableOpacity>
-          <TouchableOpacity>
-            <Ionicons name="close-circle" size={24} color="#dc2626" style={{ marginLeft: 10 }} />
-          </TouchableOpacity>
-        </TouchableOpacity>
-      ))}
+          {/* Leave Requests */}
+          <Text style={styles.sectionTitle}>
+            Leave Requests <Text style={styles.pendingBadge}>{leaves.filter(l => l.status.toLowerCase() === 'pending').length} Pending</Text>
+          </Text>
+          {leaves.filter(l => l.status.toLowerCase() === 'pending').map((leave, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.leaveRequest}
+              onPress={() => navigation.navigate('subAdminleavestatus', { leave })}
+            >
+              <Image source={{ uri: employees.find(e => e.id === leave.employee_id)?.image || '' }} style={styles.leaveAvatar} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.leaveName}>{leave.employee_name}</Text>
+                <Text style={styles.leaveReason}>{leave.reason}</Text>
+              </View>
+              <TouchableOpacity>
+                <Ionicons name="checkmark-circle" size={24} color="#16a34a" />
+              </TouchableOpacity>
+              <TouchableOpacity>
+                <Ionicons name="close-circle" size={24} color="#dc2626" style={{ marginLeft: 10 }} />
+              </TouchableOpacity>
+            </TouchableOpacity>
+          ))}
 
-      {/* Recent Tasks */}
-      <Text style={styles.sectionTitle}>Recent Task Assignments</Text>
-      {tasks.slice(-5).map((task, index) => (
-        <TouchableOpacity
-          key={index}
-          style={styles.taskCard}
-          onPress={() => navigation.navigate('taskScreen', { task })}
-        >
-          <Text style={styles.taskTitle}>{task.title}</Text>
-          <View style={[styles.badge, { backgroundColor: task.status === 'pending' ? '#e0f2fe' : '#dcfce7' }]}>
-            <Text style={[styles.badgeText, { color: task.status === 'pending' ? '#2563eb' : '#15803d' }]}>{task.status === 'pending' ? 'Active' : 'Complete'}</Text>
-          </View>
-          <Text style={styles.taskAssigned}>Assigned to: {task.assignto.join(', ')}</Text>
-          <View style={styles.progressBarBackground}>
-            <View style={[styles.progressBar, { backgroundColor: task.status === 'pending' ? '#3b82f6' : '#22c55e', width: task.status === 'pending' ? '60%' : '100%' }]} />
-          </View>
-        </TouchableOpacity>
-      ))}
+          {/* Recent Tasks */}
+          <Text style={styles.sectionTitle}>Recent Task Assignments</Text>
+          {tasks.slice(-5).map((task, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.taskCard}
+              onPress={() => navigation.navigate('taskScreen', { task })}
+            >
+              <Text style={styles.taskTitle}>{task.title}</Text>
+              <View style={[styles.badge, { backgroundColor: task.status === 'pending' ? '#e0f2fe' : '#dcfce7' }]}>
+                <Text style={[styles.badgeText, { color: task.status === 'pending' ? '#2563eb' : '#15803d' }]}>{task.status === 'pending' ? 'Active' : 'Complete'}</Text>
+              </View>
+              <Text style={styles.taskAssigned}>Assigned to: {task.assignto.join(', ')}</Text>
+              <View style={styles.progressBarBackground}>
+                <View style={[styles.progressBar, { backgroundColor: task.status === 'pending' ? '#3b82f6' : '#22c55e', width: task.status === 'pending' ? '60%' : '100%' }]} />
+              </View>
+            </TouchableOpacity>
+          ))}
+        </>
+      )}
+
+      {/* Staff Tab Content */}
+      {activeTab === 'staff' && (
+        <>
+          <Text style={styles.sectionTitle}>All Staff by Department</Text>
+          {Object.keys(departments).map((dept, idx) => (
+            <TouchableOpacity
+              key={idx}
+              style={styles.departmentCard}
+              onPress={() => navigation.navigate('Departmentchart', { department: dept, members: departments[dept] })}
+            >
+              <View style={[styles.iconCircle, { backgroundColor: '#dcfce7' }]}>
+                <FontAwesome5 name="building" size={18} color="#000" />
+              </View>
+              <View>
+                <Text style={styles.departmentName}>{dept}</Text>
+                <Text style={styles.departmentMembers}>{departments[dept].length} staff members</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#9ca3af" style={{ marginLeft: 'auto' }} />
+            </TouchableOpacity>
+          ))}
+        </>
+      )}
+{/* ...keep all your imports and styles as before... */}
+
+{/* Inside your component, after Staff tab: */}
+
+{/* Reports Tab Content */}
+{activeTab === 'reports' && (
+  <>
+    <Text style={styles.sectionTitle}>Reports</Text>
+
+    {/* Group tasks by status */}
+    {['pending', 'completed'].map((status) => {
+      const tasksByStatus = tasks.filter(t => t.status.toLowerCase() === status);
+      if (tasksByStatus.length === 0) return null;
+
+      return (
+        <View key={status}>
+          <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#374151', marginVertical: 6 }}>
+            {status === 'pending' ? 'Active Tasks' : 'Completed Tasks'}
+          </Text>
+
+          {tasksByStatus.map((task, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.taskCard}
+              onPress={() => navigation.navigate('taskScreen', { task })}
+            >
+              <Text style={styles.taskTitle}>{task.title}</Text>
+              <View style={[styles.badge, { backgroundColor: status === 'pending' ? '#e0f2fe' : '#dcfce7' }]}>
+                <Text style={[styles.badgeText, { color: status === 'pending' ? '#2563eb' : '#15803d' }]}>
+                  {status === 'pending' ? 'Active' : 'Complete'}
+                </Text>
+              </View>
+              <Text style={styles.taskAssigned}>Assigned to: {task.assignto.join(', ')}</Text>
+              <View style={styles.progressBarBackground}>
+                <View style={[
+                  styles.progressBar,
+                  { backgroundColor: status === 'pending' ? '#3b82f6' : '#22c55e', width: status === 'pending' ? '60%' : '100%' }
+                ]}/>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )
+    })}
+  </>
+)}
+
     </ScrollView>
   );
 };

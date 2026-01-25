@@ -1,21 +1,23 @@
 import React, { useState, useEffect } from "react";
 import { 
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView 
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, Dimensions, ActivityIndicator 
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { getEmployeeId } from "../utils/storage";
 
 export default function AddAllowanceUsageScreen({ navigation }) {
 
-  const [empData, setEmpData] = useState({ emp_name: "", emp_email: "", department: "" });
+  const [empData, setEmpData] = useState({ emp_id: null, emp_name: "", emp_email: "", department: "" });
   const [allowanceAmount, setAllowanceAmount] = useState(0);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const API_BASE = "https://hospitaldatabasemanagement.onrender.com";
+  const screenWidth = Dimensions.get("window").width;
 
   const fetchEmployeeDetails = async () => {
     try {
+      setLoading(true);
       const empId = await getEmployeeId();
       if (!empId) return Alert.alert("Error", "Employee ID not found");
 
@@ -24,6 +26,7 @@ export default function AddAllowanceUsageScreen({ navigation }) {
       if (!empResponse.ok) throw new Error(empJson.message);
 
       setEmpData({
+        emp_id: empId,
         emp_name: empJson.employee.full_name,
         emp_email: empJson.employee.email,
         department: empJson.employee.department,
@@ -35,10 +38,11 @@ export default function AddAllowanceUsageScreen({ navigation }) {
 
       const amount = allowanceJson.length > 0 ? parseFloat(allowanceJson[0].allowance_amount) : 0;
       setAllowanceAmount(amount);
-
       setRows([{ amount: amount, amountUsed: "", description: "" }]);
     } catch (err) {
       Alert.alert("Error", err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -54,19 +58,14 @@ export default function AddAllowanceUsageScreen({ navigation }) {
   const updateAmountUsed = (value, index) => {
     const updated = [...rows];
     const numericValue = parseFloat(value) || 0;
-
-    // Calculate remaining allowance before this row
     const usedBefore = updated.slice(0, index).reduce((sum, r) => sum + (parseFloat(r.amountUsed) || 0), 0);
     const remaining = allowanceAmount - usedBefore;
 
-    if (numericValue > remaining) {
-      return Alert.alert("Error", "Amount used cannot exceed remaining allowance");
-    }
+    if (numericValue > remaining) return Alert.alert("Error", "Amount used cannot exceed remaining allowance");
 
     updated[index].amountUsed = numericValue;
     updated[index].amount = remaining;
 
-    // Update remaining for all subsequent rows
     let cumulativeUsed = usedBefore + numericValue;
     for (let i = index + 1; i < updated.length; i++) {
       updated[i].amount = allowanceAmount - cumulativeUsed;
@@ -107,7 +106,10 @@ export default function AddAllowanceUsageScreen({ navigation }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...empData,
+          emp_id: empData.emp_id,
+          emp_name: empData.emp_name,
+          emp_email: empData.emp_email,
+          department: empData.department,
           description: allDescriptions,
           amount: totalUsed,
           amount_used: allAmountUsed,
@@ -122,13 +124,15 @@ export default function AddAllowanceUsageScreen({ navigation }) {
       Alert.alert("Error", err.message);
     }
   };
-if (loading)
-      return (
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color="#007bff" />
-          <Text>Loading...</Text>
-        </View>
-      );
+
+  if (loading)
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="large" color="#007bff" />
+        <Text>Loading...</Text>
+      </View>
+    );
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 30 }}>
       {/* Header */}
@@ -152,7 +156,7 @@ if (loading)
       {/* Table */}
       <View style={styles.tableContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator>
-          <View style={{ minWidth: 650 }}>
+          <View style={{ minWidth: Math.max(650, screenWidth - 40) }}>
             {/* Header */}
             <View style={styles.tableHeaderRow}>
               <Text style={styles.headerCell}>Remaining (₹)</Text>
@@ -169,7 +173,7 @@ if (loading)
                 </View>
 
                 <TextInput
-                  style={styles.amountInput}
+                  style={[styles.amountInput, { width: screenWidth > 768 ? 150 : 120 }]}
                   placeholder="Enter amount"
                   keyboardType="numeric"
                   value={item.amountUsed?.toString() || ""}
@@ -177,7 +181,7 @@ if (loading)
                 />
 
                 <TextInput
-                  style={styles.descriptionInput}
+                  style={[styles.descriptionInput, { minWidth: screenWidth > 768 ? 300 : 200 }]}
                   placeholder="Enter usage description..."
                   multiline
                   value={item.description}
@@ -221,7 +225,7 @@ const styles = StyleSheet.create({
   cellBox: { width: 100, justifyContent: "center", alignItems: "center" },
   cell: { fontSize: 16, color: "#1e3c72" },
 
-  amountInput: { width: 120, minHeight: 45, borderWidth: 1, borderColor: "#a0c4ff", borderRadius: 8, paddingHorizontal: 8, textAlignVertical: "center", marginHorizontal: 5 },
+  amountInput: { minHeight: 45, borderWidth: 1, borderColor: "#a0c4ff", borderRadius: 8, paddingHorizontal: 8, textAlignVertical: "center", marginHorizontal: 5 },
   descriptionInput: { flex: 1, minHeight: 70, borderWidth: 1, borderColor: "#a0c4ff", borderRadius: 8, padding: 8, textAlignVertical: "top", marginHorizontal: 5 },
 
   deleteBtn: { width: 80, justifyContent: "center", alignItems: "center", marginHorizontal: 5 },
@@ -230,4 +234,6 @@ const styles = StyleSheet.create({
   addRowText: { color: "#fff", fontSize: 16, fontWeight: "700" },
   button: { backgroundColor: "#1e90ff", padding: 15, borderRadius: 12, alignItems: "center" },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+
+  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
 });

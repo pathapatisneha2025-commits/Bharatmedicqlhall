@@ -78,48 +78,60 @@ export default function CashHandoverScreen() {
   };
 
   const handleHandover = async () => {
-    if (!photo) {
-      Alert.alert("Required", "Please take cashier photo");
-      return;
-    }
-    if (!signature) {
-      Alert.alert("Required", "Please save cashier signature");
-      return;
-    }
+  if (!photo) {
+    Alert.alert("Required", "Please take cashier photo");
+    return;
+  }
+  if (!signature) {
+    Alert.alert("Required", "Please save cashier signature");
+    return;
+  }
 
-    try {
-      const formData = new FormData();
-      formData.append("cashier_photo", {
-        uri: photo,
-        type: "image/jpeg",
-        name: "cashier.jpg",
-      });
-      formData.append("signature", {
-        uri: signature,
-        type: "image/png",
-        name: "signature.png",
-      });
-      formData.append("date", new Date().toISOString().split("T")[0]);
-      formData.append("total_cash", collections.total_cash);
-      formData.append("total_digital", collections.total_digital);
-      formData.append("cash_returned", collections.total_cash);
+  try {
+    const formData = new FormData();
+    formData.append("cashier_photo", {
+      uri: photo,
+      type: "image/jpeg",
+      name: "cashier.jpg",
+    });
+    formData.append("signature", {
+      uri: signature,
+      type: "image/png",
+      name: "signature.png",
+    });
+    formData.append("date", new Date().toISOString().split("T")[0]);
+    formData.append("total_cash", collections.total_cash);
+    formData.append("total_digital", collections.total_digital);
+    formData.append("cash_returned", collections.total_cash);
 
-      const res = await fetch(
-        `https://hospitaldatabasemanagement.onrender.com/deliveryboy/${deliveryBoyId}/handover`,
-        { method: "POST", body: formData }
-      );
+    const res = await fetch(
+      `https://hospitaldatabasemanagement.onrender.com/deliveryboy/${deliveryBoyId}/handover`,
+      { method: "POST", body: formData }
+    );
 
-      const data = await res.json();
-      if (data.success) {
-        Alert.alert("Success", "Cash handover completed");
-        navigation.goBack();
-      } else {
-        Alert.alert("Error", data.message || "Failed");
-      }
-    } catch {
-      Alert.alert("Error", "Submission failed");
+    const data = await res.json();
+    if (data.success) {
+      Alert.alert("Success", "Cash handover completed", [
+        {
+          text: "OK",
+          onPress: () => {
+            // ✅ Reset collections to 0
+            setCollections({ total_cash: 0, total_digital: 0 });
+
+            // ✅ Redirect back to DeliveryBoyDashboard
+            navigation.navigate("DeliverBoyDashboard");
+          },
+        },
+      ]);
+    } else {
+      Alert.alert("Error", data.message || "Failed");
     }
-  };
+  } catch (error) {
+    console.error(error);
+    Alert.alert("Error", "Submission failed");
+  }
+};
+
 
   if (loading)
         return (

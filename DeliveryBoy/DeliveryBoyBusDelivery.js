@@ -115,13 +115,7 @@ export default function BusDeliveryScreen() {
       Alert.alert("Error", "Something went wrong. Try again.");
     }
   };
-if (loading)
-      return (
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color="#007bff" />
-          <Text>Loading...</Text>
-        </View>
-      );
+
   // ============================================================
   // UI
   // ============================================================

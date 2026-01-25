@@ -1,15 +1,16 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  Image,
   Alert,
+   Platform ,
   ActivityIndicator,
   StatusBar,
+        useWindowDimensions,
+
 } from "react-native";
-import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -17,38 +18,43 @@ import { getEmployeeId } from "../utils/storage";
 
 const BreakScreen = () => {
   const navigation = useNavigation();
-  const [permission, requestPermission] = useCameraPermissions();
+ const { width: SCREEN_WIDTH } = useWindowDimensions();
+    const MAX_WIDTH = 420; // maximum width for desktop/tablet
+    const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
   const [locationVerified, setLocationVerified] = useState(false);
-  const [faceVerified, setFaceVerified] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [faceLoading, setFaceLoading] = useState(false);
-  const [imageUri, setImageUri] = useState(null);
-  const [capturedUrl, setCapturedUrl] = useState(null);
   const [employeeId, setEmployeeId] = useState(null);
-  const [showCamera, setShowCamera] = useState(false);
   const [message, setMessage] = useState("");
-  const cameraRef = useRef(null);
+const [breakStartedToday, setBreakStartedToday] = useState(false);
 
   const FIXED_LATITUDE = 21.930424;
   const FIXED_LONGITUDE = 86.726709;
   const ALLOWED_RADIUS_METERS = 2000;
-
-  // ✅ 1. Load employee ID first
+const showAlert = (title, message) => {
+  if (Platform.OS === "web") {
+    // Web fallback
+    window.alert(`${title}\n\n${message}`);
+  } else {
+    // Android / iOS native alert
+    Alert.alert(title, message);
+  }
+};
+  // 🔹 Load employee ID
   useEffect(() => {
-    const fetchEmployeeData = async () => {
+    const fetchEmployeeId = async () => {
       const id = await getEmployeeId();
-      if (!id)
-        return Alert.alert("Error", "No employee ID found. Please log in again.");
+      if (!id) {
+        showAlert("Error", "Employee ID not found. Please login again.");
+        return;
+      }
       setEmployeeId(id);
     };
-    fetchEmployeeData();
+    fetchEmployeeId();
   }, []);
 
-  // ✅ 2. Verify location only after employeeId is available
+  // 🔹 Verify location
   useEffect(() => {
-    if (employeeId) {
-      verifyCurrentLocation(employeeId);
-    }
+    if (employeeId) verifyCurrentLocation(employeeId);
   }, [employeeId]);
 
   const verifyCurrentLocation = async (id) => {
@@ -56,13 +62,13 @@ const BreakScreen = () => {
       setLoading(true);
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert("Location Permission Denied", "Please enable location access.");
-        setLoading(false);
+       showAlert("Permission Denied", "Enable location permission");
         return;
       }
 
       const current = await Location.getCurrentPositionAsync({});
       const { latitude, longitude } = current.coords;
+
       const distance = getDistanceFromLatLonInMeters(
         FIXED_LATITUDE,
         FIXED_LONGITUDE,
@@ -74,26 +80,16 @@ const BreakScreen = () => {
         await verifyLocationAPI(latitude, longitude, id);
       } else {
         setLocationVerified(false);
-        Alert.alert("Outside Zone", `You are ${Math.round(distance)}m away from office.`);
+        showAlert(
+          "Outside Office",
+          `You are ${Math.round(distance)} meters away`
+        );
       }
-    } catch (e) {
-      console.error("Location error:", e);
+    } catch (err) {
+      console.error("Location error:", err);
     } finally {
       setLoading(false);
     }
-  };
-
-  const getDistanceFromLatLonInMeters = (lat1, lon1, lat2, lon2) => {
-    const R = 6371000;
-    const dLat = ((lat2 - lat1) * Math.PI) / 180;
-    const dLon = ((lon2 - lon1) * Math.PI) / 180;
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos((lat1 * Math.PI) / 180) *
-        Math.cos((lat2 * Math.PI) / 180) *
-        Math.sin(dLon / 2) ** 2;
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
   };
 
   const verifyLocationAPI = async (latitude, longitude, id) => {
@@ -107,61 +103,29 @@ const BreakScreen = () => {
         }
       );
       const data = await res.json();
-      setLocationVerified(data.locationVerified || false);
-    } catch (e) {
-      console.error("Location verify API error:", e);
+      setLocationVerified(!!data.locationVerified);
+    } catch (err) {
+      console.error("Verify location API error:", err);
       setLocationVerified(false);
     }
   };
 
-  const captureImage = async () => {
-    if (!cameraRef.current) return;
-    const photo = await cameraRef.current.takePictureAsync({ quality: 1 });
-    setImageUri(photo.uri);
-    setShowCamera(false);
-    await verifyFaceAPI(photo.uri);
-  };
-
-  const verifyFaceAPI = async (uri) => {
-    try {
-      setFaceLoading(true);
-      const formData = new FormData();
-      formData.append("employeeId", employeeId);
-      formData.append("image", { uri, type: "image/jpeg", name: "face.jpg" });
-
-      const res = await fetch(
-        "https://hospitaldatabasemanagement.onrender.com/attendance/verify-face",
-        {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "multipart/form-data",
-          },
-          body: formData,
-        }
-      );
-
-      const data = await res.json();
-      if (data.success && data.faceVerified) {
-        setFaceVerified(true);
-        setCapturedUrl(data.capturedUrl);
-        Alert.alert("✅ Face Verified", `Confidence: ${data.message}%`);
-      } else {
-        setFaceVerified(false);
-        Alert.alert("❌ Face Not Recognized");
-      }
-    } catch (e) {
-      console.error("Face verify error:", e);
-    } finally {
-      setFaceLoading(false);
-    }
+  const getDistanceFromLatLonInMeters = (lat1, lon1, lat2, lon2) => {
+    const R = 6371000;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) ** 2;
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
   };
 
   const startBreak = async () => {
-    if (!locationVerified)
-      return Alert.alert("Location Error", "Please verify your location.");
-    if (!faceVerified)
-      return Alert.alert("Face Error", "Please verify your face.");
+    if (!locationVerified) {
+      return showAlert("Location Error", "Location not verified");
+    }
 
     try {
       const res = await fetch(
@@ -171,25 +135,56 @@ const BreakScreen = () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             employeeId,
-            capturedUrl,
             locationVerified: true,
-            faceVerified: true,
             breakType: "Break In",
           }),
         }
       );
+
       const data = await res.json();
+
       if (data.success) {
-        setMessage("🕒 Break Started");
-        Alert.alert("✅ Success", "Break started successfully!");
+        setMessage("🕒 Break Started Successfully");
+        showAlert("Success", "Break started");
       } else {
-        Alert.alert("Error", data.message || "Failed to start break.");
+        showAlert("Error", data.message || "Failed to start break");
       }
-    } catch (e) {
-      console.error("Start break error:", e);
-      Alert.alert("Network Error", "Please try again.");
+    } catch (err) {
+      console.error("Start break error:", err);
+      showAlert("Network Error", "Try again later");
     }
   };
+useEffect(() => {
+  if (!employeeId) return;
+
+  const checkBreakToday = async () => {
+    try {
+      const res = await fetch(
+        `https://hospitaldatabasemanagement.onrender.com/BreakIn-attendance/employee/${employeeId}`
+      );
+      const data = await res.json();
+
+      if (data.success && Array.isArray(data.data)) {
+        const today = new Date().toISOString().split('T')[0];
+
+        const breakInToday = data.data.some(record => {
+          const recordDate = new Date(record.timestamp).toISOString().split('T')[0];
+          return record.break_type === "Break In" && recordDate === today;
+        });
+
+        if (breakInToday) {
+          setBreakStartedToday(true);
+          setMessage("🕒 Break already started today");
+        }
+      }
+    } catch (err) {
+      console.error("Error checking break status:", err);
+    }
+  };
+
+  checkBreakToday();
+}, [employeeId]); // ✅ run after employeeId is ready
+
 
   if (loading) {
     return (
@@ -200,34 +195,36 @@ const BreakScreen = () => {
     );
   }
 
-  if (!permission?.granted) {
-    return (
-      <View style={styles.centered}>
-        <Ionicons name="warning-outline" size={50} color="#ff5252" />
-        <Text style={styles.permissionText}>Camera permission denied.</Text>
-        <TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
-          <Text style={styles.buttonText}>Grant Camera Permission</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
 
-  if (showCamera) {
-    return (
-      <CameraView ref={cameraRef} style={{ flex: 1 }} facing="front">
-        <View style={styles.cameraButtonContainer}>
-          <TouchableOpacity style={styles.captureButton} onPress={captureImage}>
-            <Ionicons name="camera" color="#fff" size={24} />
-            <Text style={{ color: "#fff", marginLeft: 8, fontSize: 16 }}>Capture</Text>
-          </TouchableOpacity>
-        </View>
-      </CameraView>
-    );
-  }
+  // if (!permission?.granted) {
+  //   return (
+  //     <View style={styles.centered}>
+  //       <Ionicons name="warning-outline" size={50} color="#ff5252" />
+  //       <Text style={styles.permissionText}>Camera permission denied.</Text>
+  //       <TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
+  //         <Text style={styles.buttonText}>Grant Camera Permission</Text>
+  //       </TouchableOpacity>
+  //     </View>
+  //   );
+  // }
+
+  // if (showCamera) {
+  //   return (
+  //     <CameraView ref={cameraRef} style={{ flex: 1 }} facing="front">
+  //       <View style={styles.cameraButtonContainer}>
+  //         <TouchableOpacity style={styles.captureButton} onPress={captureImage}>
+  //           <Ionicons name="camera" color="#fff" size={24} />
+  //           <Text style={{ color: "#fff", marginLeft: 8, fontSize: 16 }}>Capture</Text>
+  //         </TouchableOpacity>
+  //       </View>
+  //     </CameraView>
+  //   );
+  // }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container]}>
       <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
+        <View style={[styles.mainWrapper, { width: containerWidth, alignSelf: 'center' }]}>
 
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -256,7 +253,7 @@ const BreakScreen = () => {
           </Text>
         </View>
       </View>
-
+{/* 
       <View style={styles.card}>
         <View style={styles.cardRow}>
           <Ionicons
@@ -274,10 +271,10 @@ const BreakScreen = () => {
             {faceLoading ? "Verifying..." : faceVerified ? "Verified" : "Not Verified"}
           </Text>
         </View>
-      </View>
+      </View> */}
 
       {/* Actions */}
-      <TouchableOpacity
+      {/* <TouchableOpacity
         style={styles.primaryButton}
         onPress={() => setShowCamera(true)}
       >
@@ -287,17 +284,26 @@ const BreakScreen = () => {
 
       {imageUri && (
         <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="cover" />
-      )}
+      )} */}
 
-      <TouchableOpacity
-        style={[styles.primaryButton, { backgroundColor: "#10b981" }]}
-        onPress={startBreak}
-      >
-        <Ionicons name="cafe" color="#fff" size={20} />
-        <Text style={styles.buttonText}>Start Break</Text>
-      </TouchableOpacity>
+
+     <TouchableOpacity
+  style={[
+    styles.primaryButton,
+    { backgroundColor: breakStartedToday ? "#94d3a2" : "#10b981" },
+  ]}
+  onPress={startBreak}
+  disabled={breakStartedToday} // disables until next day
+>
+  <Ionicons name="cafe" color="#fff" size={20} />
+  <Text style={styles.buttonText}>
+    {breakStartedToday ? "Break Already Started" : "Start Break"}
+  </Text>
+</TouchableOpacity>
+
 
       {message !== "" && <Text style={styles.message}>{message}</Text>}
+    </View>
     </View>
   );
 };

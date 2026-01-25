@@ -1,10 +1,11 @@
-import React from "react";
+import React, {  useEffect } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+   BackHandler,
   Alert,
 } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -14,6 +15,24 @@ import * as Sharing from "expo-sharing";
 export default function PatientBookingConfirmationScreen() {
   const navigation = useNavigation();
   const route = useRoute();
+
+useEffect(() => {
+  const backAction = () => {
+    // Instead of going back step by step, reset navigation to Sidebar/Home
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "EmpSideBar" }], // <-- replace with your sidebar/home screen name
+    });
+    return true; // prevents default back behavior
+  };
+
+  const backHandler = BackHandler.addEventListener(
+    "hardwareBackPress",
+    backAction
+  );
+
+  return () => backHandler.remove(); // clean up on unmount
+}, []);
 
   // ✅ The appointment object from the API
   const appointmentData = route.params?.appointmentData;

@@ -6,7 +6,10 @@ import {
   StyleSheet,
   ScrollView,
   Image,
+  useWindowDimensions,
   Alert,
+  Platform,
+  SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -14,177 +17,189 @@ import { useNavigation } from '@react-navigation/native';
 export default function HomeScreen() {
   const [selectedRole, setSelectedRole] = useState(null);
   const navigation = useNavigation();
+  const { width } = useWindowDimensions();
+
+  // Screen type logic
+  const isLargeScreen = width > 768; // Tablets and Desktop
 
   const roles = [
     { key: 'patient', label: 'Patient Login', icon: 'person-outline' },
-    { key: 'doctor', label: 'Employee Login', icon: 'medkit-outline' },
+    { key: 'employee', label: 'Employee Login', icon: 'briefcase-outline' },
     { key: 'deptAdmin', label: 'Dept. Admin Login', icon: 'business-outline' },
     { key: 'superAdmin', label: 'Super Admin Login', icon: 'shield-checkmark-outline' },
-    { key: 'DoctorLogin', label: 'Doctor Login', icon: 'person-add-outline' },
-    { key: 'DeliveryBoy', label: 'Delivery Boy Login', icon: 'bicycle-outline' },
+    { key: 'doctor', label: 'Doctor Login', icon: 'person-add-outline' },
+    { key: 'delivery', label: 'Delivery Boy Login', icon: 'bicycle-outline' },
   ];
 
   const handleContinue = () => {
     if (!selectedRole) {
-      Alert.alert('Please select a role to continue');
+      Alert.alert('Selection Required', 'Please select a role to continue');
       return;
     }
-
-    switch (selectedRole) {
-      case 'patient':
-        navigation.navigate('PatientSignUp');
-        break;
-      case 'doctor':
-        navigation.navigate('signuplogin');
-        break;
-      case 'deptAdmin':
-        navigation.navigate('Dept');
-        break;
-      case 'superAdmin':
-        navigation.navigate('AdminRegisterScreen');
-        break;
-      case 'DoctorLogin':
-        navigation.navigate('DoctorRegister');
-        break;
-      case 'DeliveryBoy':
-        navigation.navigate('DeliverBoyLogin');
-        break;
-      default:
-        Alert.alert('Navigation not set for this role');
-    }
+    const routes = {
+      patient: 'PatientSignUp',
+      employee: 'signuplogin',
+      deptAdmin: 'Dept',
+      superAdmin: 'AdminRegisterScreen',
+      doctor: 'DoctorRegister',
+      delivery: 'DeliverBoyLogin',
+    };
+    navigation.navigate(routes[selectedRole]);
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Image
-        source={require('../assets/Logo.jpg')}
-        style={styles.logoImage}
-        resizeMode="contain"
-      />
+    <SafeAreaView style={styles.screen}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Main Wrapper: 
+            On Mobile: width is 100%
+            On Tablet/Desktop: width is fixed to 450px and centered
+        */}
+        <View style={[styles.mainWrapper, { width: isLargeScreen ? 450 : '100%' }]}>
+          
+          <Image
+            source={require('../assets/Logo.jpg')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
 
-      <Text style={styles.title}>Bharat Medical Hall</Text>
-      <Text style={styles.subtitle}>Login to Bharat Medical Hall</Text>
-      <Text style={styles.subtext}>Select your role to continue</Text>
+          <Text style={styles.title}>Bharat Medical Hall</Text>
+          <Text style={styles.subtitle}>Login to Bharat Medical Hall</Text>
+          <Text style={styles.subtext}>Select your role to continue</Text>
 
-      <View style={styles.grid}>
-        {roles.map((role) => (
+          <View style={styles.grid}>
+            {roles.map((role) => (
+              <TouchableOpacity
+                key={role.key}
+                style={[
+                  styles.card,
+                  selectedRole === role.key && styles.cardSelected,
+                ]}
+                onPress={() => setSelectedRole(role.key)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.iconCircle}>
+                  <Ionicons name={role.icon} size={32} color="#333" />
+                </View>
+                <Text style={styles.cardText}>{role.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
           <TouchableOpacity
-            key={role.key}
-            style={[
-              styles.card,
-              selectedRole === role.key && styles.cardSelected,
-            ]}
-            onPress={() => setSelectedRole(role.key)}
+            style={styles.button}
+            onPress={handleContinue}
           >
-            <View style={styles.iconContainer}>
-              <Ionicons
-                name={role.icon}
-                size={40}
-                color={selectedRole === role.key ? '#0D47A1' : '#333'}
-              />
-            </View>
-            <Text
-              style={[
-                styles.cardText,
-                selectedRole === role.key && styles.cardTextSelected,
-              ]}
-            >
-              {role.label}
-            </Text>
+            <Ionicons name="log-in-outline" size={22} color="#FFF" />
+            <Text style={styles.buttonText}>Continue</Text>
           </TouchableOpacity>
-        ))}
-      </View>
-
-      <TouchableOpacity style={styles.button} onPress={handleContinue}>
-        <Ionicons name="log-in-outline" size={18} color="#FFF" />
-        <Text style={styles.buttonText}>  Continue</Text>
-      </TouchableOpacity>
-    </ScrollView>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    backgroundColor: '#F9FAFB',
-    alignItems: 'center',
-    paddingTop: 30,
-    paddingHorizontal: 20,
+  screen: {
+    flex: 1,
+    backgroundColor: '#F8FAFC', // Soft light background
   },
-  logoImage: {
-    width: 100,
+  scrollContainer: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center', // Centers the box vertically on Desktop
+    paddingVertical: 40,
+  },
+  mainWrapper: {
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  logo: {
+    width: 120,
     height: 100,
-    marginBottom: 10,
-    marginTop: 120,
+    marginBottom: 20,
   },
   title: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: '#0D47A1',
-    marginBottom: 10,
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#1565C0',
+    textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#0D47A1',
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1565C0',
+    marginTop: 8,
+    textAlign: 'center',
   },
   subtext: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 20,
+    fontSize: 15,
+    color: '#64748B',
+    marginBottom: 32,
+    textAlign: 'center',
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     width: '100%',
-    marginBottom: 30,
   },
   card: {
-    width: '47%',
+    width: '48%', // Grid spacing for 2 columns
     backgroundColor: '#E3F2FD',
-    borderRadius: 12,
-    paddingVertical: 20,
-    marginVertical: 10,
+    borderRadius: 16,
+    paddingVertical: 24,
     alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 2,
+    marginBottom: 16,
+    // Native and Web Shadow
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: { elevation: 3 },
+      web: { boxShadow: '0px 4px 12px rgba(0,0,0,0.08)' }
+    }),
   },
   cardSelected: {
-    backgroundColor: '#BBDEFB',
     borderWidth: 2,
-    borderColor: '#0D47A1',
+    borderColor: '#1565C0',
+    backgroundColor: '#D1E9FF',
   },
-  iconContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 50,
-    padding: 10,
-    marginBottom: 8,
-    elevation: 3,
+  iconCircle: {
+    backgroundColor: '#FFFFFF',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+    elevation: 2,
   },
   cardText: {
-    marginTop: 5,
+    color: '#1565C0',
+    fontWeight: '600',
     fontSize: 14,
-    color: '#0D47A1',
     textAlign: 'center',
-    fontWeight: '500',
-  },
-  cardTextSelected: {
-    color: '#0D47A1',
-    fontWeight: '700',
   },
   button: {
     flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#1976D2',
-    paddingVertical: 14,
-    paddingHorizontal: 50,
-    borderRadius: 10,
-    marginBottom: 30,
+    width: '100%',
+    height: 56,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 20,
   },
   buttonText: {
     color: '#FFF',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
+    marginLeft: 10,
   },
 });

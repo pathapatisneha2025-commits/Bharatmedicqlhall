@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   TouchableOpacity,
+  BackHandler
 } from 'react-native';
 import { getEmployeeId } from '../utils/storage';
 import { useNavigation } from '@react-navigation/native';
@@ -37,9 +38,30 @@ const LeaveStatusScreen = () => {
   const [loading, setLoading] = useState(true);
   const navigation = useNavigation();
 
+  // Fetch leaves on mount
   useEffect(() => {
     fetchLeaves();
   }, []);
+
+  // Back handler on mount
+
+   useEffect(() => {
+      const backAction = () => {
+        // Instead of going back step by step, reset navigation to Sidebar/Home
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "EmpSideBar" }], // <-- replace with your sidebar/home screen name
+        });
+        return true; // prevents default back behavior
+      };
+    
+      const backHandler = BackHandler.addEventListener(
+        "hardwareBackPress",
+        backAction
+      );
+    
+      return () => backHandler.remove(); // clean up on unmount
+    }, []);
 
   const fetchLeaves = async () => {
     try {
@@ -60,16 +82,15 @@ const LeaveStatusScreen = () => {
 
       if (response.ok && data.leaves) {
         setLeaveData(data.leaves);
-       setSummary({
-  allowedLeaves: data.allowedLeaves,
-  usedLeavesMonth: data.usedLeavesMonth
-    ? parseFloat(data.usedLeavesMonth).toFixed(2)
-    : '0.00',
-  unpaidLeaves: data.unpaidLeaves
-    ? parseFloat(data.unpaidLeaves).toFixed(2)
-    : '0.00',
-});
-
+        setSummary({
+          allowedLeaves: data.allowedLeaves,
+          usedLeavesMonth: data.usedLeavesMonth
+            ? parseFloat(data.usedLeavesMonth).toFixed(2)
+            : '0.00',
+          unpaidLeaves: data.unpaidLeaves
+            ? parseFloat(data.unpaidLeaves).toFixed(2)
+            : '0.00',
+        });
       } else {
         Alert.alert('Error', data.message || 'Failed to fetch leaves');
       }
@@ -81,25 +102,24 @@ const LeaveStatusScreen = () => {
     }
   };
 
+  // Render each leave item
   const renderItem = ({ item }) => {
-    const startDate = new Date(item.start_date).toISOString().split('T')[0];
-    const endDate = new Date(item.end_date).toISOString().split('T')[0];
+    const startDate = item.start_date
+      ? new Date(item.start_date).toISOString().split('T')[0]
+      : 'N/A';
+    const endDate = item.end_date
+      ? new Date(item.end_date).toISOString().split('T')[0]
+      : 'N/A';
+
     const { backgroundColor, textColor } = getStatusStyle(item.status);
- if (loading)
-        return (
-          <View style={styles.loader}>
-            <ActivityIndicator size="large" color="#007bff" />
-            <Text>Loading...</Text>
-          </View>
-        );
 
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <Text style={styles.leaveType}>{item.leave_type}</Text>
+          <Text style={styles.leaveType}>{item.leave_type || 'N/A'}</Text>
           <View style={[styles.statusContainer, { backgroundColor }]}>
             <Text style={[styles.statusText, { color: textColor }]}>
-              {item.status}
+              {item.status || 'N/A'}
             </Text>
           </View>
         </View>
@@ -107,8 +127,8 @@ const LeaveStatusScreen = () => {
         <Text style={styles.date}>
           From: {startDate} | To: {endDate}
         </Text>
-        <Text style={styles.reason}>Reason: {item.reason}</Text>
-        <Text style={styles.detail}>Department: {item.department}</Text>
+        <Text style={styles.reason}>Reason: {item.reason || 'N/A'}</Text>
+        <Text style={styles.detail}>Department: {item.department || 'N/A'}</Text>
         <Text style={styles.detail}>
           Leave Taken: {item.leavestaken ? `${item.leavestaken} days` : 'N/A'}
         </Text>
@@ -156,6 +176,7 @@ const LeaveStatusScreen = () => {
         </View>
       )}
 
+      {/* Leave list */}
       {leaveData.length === 0 ? (
         <Text style={styles.noDataText}>No leave records found.</Text>
       ) : (

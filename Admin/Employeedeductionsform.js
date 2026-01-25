@@ -185,13 +185,7 @@ export default function EmployeedeductionsScreen() {
       Alert.alert("Error", "Failed to update");
     }
   };
-if (loading)
-    return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text>Loading...</Text>
-      </View>
-    );
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
 <View style={styles.headerRow}>

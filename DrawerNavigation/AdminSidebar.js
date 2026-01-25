@@ -36,6 +36,8 @@ const handleLogout = async () => {
 
         // Employee Management
         { name: "All Employees", icon: "people-outline", screen: "Adminallemployees" },
+        { name: "AllEmployeesProfileupdate", icon: "people-outline", screen: "AdminProfileApprovalScreen" },
+
          { name: "All EmployeePerformance", icon: "people-outline", screen: "EmployeePerformance" },
         { name: "SubAdmin All Employees", icon: "people-circle-outline", screen: "SubAdminAllEmpListScreen" },
         { name: "Admin All Employees", icon: "settings-outline", screen: "AdminListScreen" },
@@ -51,15 +53,17 @@ const handleLogout = async () => {
         { name: "Attendance View", icon: "time-outline", screen: "Adminattendancelogs" },
         { name: "BreakTime View", icon: "time-outline", screen: "AdminBreakLogsScreen" },
   { name: "AllemployeeAttendancetracker", icon: "time-outline", screen: "AdminEmployeeAttendanceRecords" },
-        { name: "Leave Policy", icon: "calendar-outline", screen: "LeavePolicy" },
+        // { name: "Leave Policy", icon: "calendar-outline", screen: "LeavePolicy" },
         { name: "Leave Management", icon: "clipboard-outline", screen: "AdminLeaveApproval" },
-                { name: "EmployeeDeduction Management", icon: "remove-circle-outline", screen: "EmployeedeductionsFormScreen" },
+        { name: "EmployeeDeduction Management", icon: "remove-circle-outline", screen: "EmployeedeductionsFormScreen" },
 
 
         // Task & Role
         
         { name: "Recurring Task Assignment", icon: "checkmark-done-outline", screen: "RecurringAllTasks" },
         { name: "Task Assignment", icon: "checkmark-done-outline", screen: "Admintaskmanagement" },
+        { name: "EmployeewisetaskAssignment", icon: "checkmark-done-outline", screen: "AdminEmployeeTasksScreen" },
+
         { name: "Department Name", icon: "business-outline", screen: "department" },
         { name: "Role Name", icon: "person-circle-outline", screen: "rolename" },
 
@@ -68,11 +72,12 @@ const handleLogout = async () => {
         { name: "KPI Metrics", icon: "bar-chart-outline", screen: "Departmentchart" },
         { name: "Empworkingdays", icon: "bar-chart-outline", screen: "empworkingdays" },
         { name: "Employee Request form", icon: "bar-chart-outline", screen: "DoctorRequestFormall" },
-          { name: "LatePenalityform", icon: "alert-circle-outline", screen: "EmployeeLatepenality" },
-          { name: "AllEmployeeBreakPenality", icon: "alert-circle-outline", screen: "BreakPenaltyScreen" },
+        { name: "LatePenalityform", icon: "alert-circle-outline", screen: "EmployeeLatepenality" },
+        { name: "AllEmployeeBreakPenality", icon: "alert-circle-outline", screen: "BreakPenaltyScreen" },
+        { name: "Deptwiseleavelimit", icon: "alert-circle-outline", screen: "AdminDepartmentLimitScreen" },
 
-           { name: "CRMScreen", icon: "grid-outline", screen: "CRMScreen" },
-          { name: "ordersKpiScreen", icon: "grid-outline", screen: "OrdersKpiScreen" },
+        { name: "CRMScreen", icon: "grid-outline", screen: "CRMScreen" },
+        { name: "ordersKpiScreen", icon: "grid-outline", screen: "OrdersKpiScreen" },
 
       ],
     },
@@ -85,16 +90,22 @@ const handleLogout = async () => {
       items: [
         // Inventory & Doctors
         { name: "Inventory Management", icon: "archive-outline", screen: "AdminAddMedicineScreen" },
+        { name: "StationaryInventory", icon: "archive-outline", screen: "AdminAddStatinorayInventory" },
+        { name: "AdminApproverequestall", icon: "archive-outline", screen: "AdminRequestFormall" },
+
           { name: "DoctorsManagement", icon: "medkit-outline", screen: "DoctorApprovalScreen" },
 { name: "Doctors Fee", icon: "medkit-outline", screen: "AddDoctors" },
         { name: "CreateSalesorederForm", icon: "archive-outline", screen: "SalesOrderForm" },
 
         { name: "Doctors Fee", icon: "medkit-outline", screen: "AddDoctors" },
         { name: "Doctors tokens", icon: "medkit-outline", screen: "AdminDoctorTokenScreen" },
+        { name: "DoctorsDailyTokensreport", icon: "medkit-outline", screen: "DailyTokensReport" },
+
         { name: "Doctors ConsultanceFee", icon: "medkit-outline", screen: "AddDoctorConsultantFeesScreen" },
         { name: "assignPunetoDoctors", icon: "medkit-outline", screen: "AdminAssignDoctorScreen" },
 
         { name: "EmloyeeSalaryDeductions", icon: "cash-outline", screen: "AdminSalaryDeductionsScreen" },
+        { name: "EmployeeBookAppointmentall", icon: "calendar-outline", screen: "AdminEmployeePatientReports" },
 
         { name: "Department Chart", icon: "pie-chart-outline", screen: "Departmentchart" },
       ],
@@ -108,6 +119,8 @@ const handleLogout = async () => {
       items: [
         { name: "Purchase Orders", icon: "cart-outline", screen: "AdminCustomerOrders" },
         { name: "Book Appointment", icon: "calendar-outline", screen: "BookAppointment" },
+        { name: "DeliveryboyCashhandover", icon: "cash-outline", screen: "AdminHandoverScreen" },
+
         { name: "OrdersDeliverdByBus", icon: "cart-outline", screen: "AdminBusDeliveredOrdersScreen" },
         { name: "OrdersDeliverdByDeliveryBoy", icon: "cart-outline", screen: " OrdersDeliverdByDeliveryBoy" },
 

@@ -5,17 +5,24 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+   Platform ,
   ActivityIndicator,
   Image,
   StatusBar,
+    useWindowDimensions,
+
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import {useRoute, useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getEmployeeId } from '../utils/storage';
 
-const AttendanceScreen = () => {
+const EmpAttendanceScreen = () => {
+   const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const MAX_WIDTH = 420; // maximum width for desktop/tablet
+  const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
   const navigation = useNavigation();
   const [permission, requestPermission] = useCameraPermissions();
   const [locationVerified, setLocationVerified] = useState(false);
@@ -27,22 +34,70 @@ const AttendanceScreen = () => {
   const [employeeId, setEmployeeId] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
   const [faceLoading, setFaceLoading] = useState(false);
+  const [attendanceMarked, setAttendanceMarked] = useState(false);
+  const [phone, setPhone] = useState(null);
+
+const route = useRoute();
+const phoneFromRoute = route.params?.phone || null;
 
   const cameraRef = useRef(null);
 
   const FIXED_LATITUDE = 21.930424;
   const FIXED_LONGITUDE = 86.726709;
   const ALLOWED_RADIUS_METERS = 2000;
+const showAlert = (title, message) => {
+  if (Platform.OS === "web") {
+    // Web fallback
+    window.alert(`${title}\n\n${message}`);
+  } else {
+    // Android / iOS native alert
+    Alert.alert(title, message);
+  }
+};
+useEffect(() => {
+  const fetchAttendance = async () => {
+    const id = await getEmployeeId();
 
-  useEffect(() => {
-    const fetchId = async () => {
-      const id = await getEmployeeId();
-      if (id) setEmployeeId(id);
-      else Alert.alert('Error', 'No employee ID found. Please log in again.');
-    };
-    fetchId();
-  }, []);
+if (id) {
+  setEmployeeId(id);
+} else if (phoneFromRoute) {
+  setPhone(phoneFromRoute);
+} else {
+ showAlert('Error', 'No employee ID or phone found');
+  return;
+}
 
+    setEmployeeId(id);
+
+    try {
+      const res = await fetch(`https://hospitaldatabasemanagement.onrender.com/attendance/employee/${id}`);
+      const data = await res.json();
+
+      if (data.success && Array.isArray(data.data)) {
+        const today = new Date().toISOString().split('T')[0];
+
+        // Check if any attendance record is for today
+        const hasAttendanceToday = data.data.some(record => {
+          const recordDate = new Date(record.timestamp).toISOString().split('T')[0];
+          return recordDate === today;
+        });
+
+        if (hasAttendanceToday) {
+          setAttendanceMarked(true);
+          setMessage('✅ Attendance already marked today.');
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching last attendance:', err);
+    }
+  };
+
+  fetchAttendance();
+}, []);
+
+
+
+  // ✅ Check location and camera permissions
   useEffect(() => {
     if (!employeeId) return;
     (async () => {
@@ -50,7 +105,7 @@ const AttendanceScreen = () => {
         setLoading(true);
         const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
         if (locStatus !== 'granted') {
-          Alert.alert('Permission denied', 'Location access is required.');
+          showAlert('Permission denied', 'Location access is required.');
           setLoading(false);
           return;
         }
@@ -71,21 +126,20 @@ const AttendanceScreen = () => {
           await verifyLocationAPI(latitude, longitude);
         } else {
           setLocationVerified(false);
-          Alert.alert(
+         showAlert(
             'Location Error',
             `You are outside the allowed radius. Distance: ${Math.round(distance)}m`
           );
         }
       } catch (error) {
         console.error('Permission Error:', error);
-        Alert.alert('Error', 'Permission request failed');
+        showAlert('Error', 'Permission request failed');
       } finally {
         setLoading(false);
       }
     })();
   }, [employeeId]);
 
-  // ✅ Calculate distance
   const getDistanceFromLatLonInMeters = (lat1, lon1, lat2, lon2) => {
     const R = 6371000;
     const dLat = deg2rad(lat2 - lat1);
@@ -100,7 +154,6 @@ const AttendanceScreen = () => {
 
   const deg2rad = (deg) => deg * (Math.PI / 180);
 
-  // ✅ Verify Location
   const verifyLocationAPI = async (latitude, longitude) => {
     try {
       const res = await fetch(
@@ -108,8 +161,13 @@ const AttendanceScreen = () => {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ employeeId, latitude, longitude }),
-        }
+body: JSON.stringify({
+  employeeId: employeeId || null,
+  phone: phone || null,
+  latitude,
+  longitude,
+}),
+          }
       );
       const data = await res.json();
       setLocationVerified(data.locationVerified);
@@ -120,7 +178,6 @@ const AttendanceScreen = () => {
     }
   };
 
-  // ✅ Capture Image
   const captureImage = async () => {
     if (cameraRef.current) {
       const photo = await cameraRef.current.takePictureAsync({ quality: 1 });
@@ -130,12 +187,15 @@ const AttendanceScreen = () => {
     }
   };
 
-  // ✅ Verify Face
   const verifyFaceAPI = async (uri) => {
     try {
       setFaceLoading(true);
       const formData = new FormData();
-      formData.append('employeeId', employeeId);
+if (employeeId) {
+  formData.append('employeeId', employeeId);
+} else {
+  formData.append('phone', phone);
+}
       formData.append('image', { uri, type: 'image/jpeg', name: 'face.jpg' });
 
       const res = await fetch(
@@ -151,10 +211,10 @@ const AttendanceScreen = () => {
       if (data.success && data.faceVerified) {
         setFaceVerified(true);
         setCapturedUrl(data.capturedUrl);
-        Alert.alert('✅ Face Verified', `Confidence: ${data.message}%`);
+        showAlert('✅ Face Verified', `Confidence: ${data.message}%`);
       } else {
         setFaceVerified(false);
-        Alert.alert('❌ Face not recognized');
+       showAlert('❌ Face not recognized');
       }
     } catch (err) {
       console.error('Face Verify Error:', err);
@@ -164,56 +224,33 @@ const AttendanceScreen = () => {
     }
   };
 
-  
- // ✅ Fetch Late Count (from backend API)
-const checkLateCount = async () => {
-  try {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
+  const checkLateCount = async () => {
+    try {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
 
-    const res = await fetch(
-      `https://hospitaldatabasemanagement.onrender.com/attendance/employee/${employeeId}/${year}/${month}`
-    );
+      const res = await fetch(
+        `https://hospitaldatabasemanagement.onrender.com/attendance/employee/${employeeId}/${year}/${month}`
+      );
 
-    const data = await res.json();
-
-    if (data.success) {
-      const lateCount = data.lateCount || 0;
-      console.log(`Late Days This Month: ${lateCount}`);
-
-      // ⚠️ Show alert only when more than 3 lates
-      if (lateCount > 3) {
-        Alert.alert(
-          '⚠️ Lateness Warning',
-          `You currently have ${lateCount} late marks this month.\n\nNote: The first 3 late marks are free. After that, penalties or deductions may apply.`
-        );
-
-        await new Promise((resolve) => setTimeout(resolve, 4000));
-      } else {
-        console.log('✅ Within free late limit (first 3 lates are free).');
-      }
-
-      return lateCount;
-    } else {
-      console.error('Late count fetch failed:', data.message);
+      const data = await res.json();
+      if (data.success) return data.lateCount || 0;
+      return 0;
+    } catch (err) {
+      console.error('Late Count Error:', err);
       return 0;
     }
-  } catch (err) {
-    console.error('Late Count Error:', err);
-    return 0;
-  }
-};
+  };
 
-
-  // ✅ Submit Attendance
   const handleSubmit = async () => {
+    if (attendanceMarked) return; // safety check
     if (!locationVerified) {
-      Alert.alert('Location Error', 'You are not in the allowed location.');
+      showAlert('Location Error', 'You are not in the allowed location.');
       return;
     }
     if (!faceVerified || !capturedUrl) {
-      Alert.alert('Face Error', 'Please capture and verify your face first.');
+      showAlert('Face Error', 'Please capture and verify your face first.');
       return;
     }
 
@@ -225,29 +262,35 @@ const checkLateCount = async () => {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            employeeId: employeeId?.toString(),
-            capturedUrl,
-            locationVerified: true,
-            faceVerified: true,
-          }),
+         body: JSON.stringify({
+  employeeId: employeeId || null,
+  phone: phone || null,
+  capturedUrl,
+  locationVerified: true,
+  faceVerified: true,
+}),
+
         }
       );
       const data = await res.json();
 
       if (data.success) {
+        const today = new Date().toISOString().split('T')[0];
+        await AsyncStorage.setItem(`attendance_${employeeId}`, today); // save today
+        setAttendanceMarked(true);
+
         setMessage('✅ Attendance marked successfully!');
-        Alert.alert('Success', data.message || 'Attendance marked successfully');
+        showAlert('Success', data.message || 'Attendance marked successfully');
 
         if (data.status === 'Late' && lateDays + 1 >= 3) {
-          Alert.alert(
+          showAlert(
             '⚠️ Final Warning',
             'This late mark has reached your 3 free late limits. Further lateness may result in penalties.'
           );
         }
       } else {
         setMessage('❌ Failed to mark attendance.');
-        Alert.alert('Error', data.message || 'Failed to mark attendance.');
+        showAlert('Error', data.message || 'Failed to mark attendance.');
       }
     } catch (err) {
       console.error('Mark Attendance Error:', err);
@@ -292,8 +335,9 @@ const checkLateCount = async () => {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container]}>
       <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
+        <View style={[styles.mainWrapper, { width: containerWidth, alignSelf: 'center' }]}>
 
       {/* Header */}
       <View style={styles.header}>
@@ -358,28 +402,36 @@ const checkLateCount = async () => {
       )}
 
       <TouchableOpacity
-        style={[styles.primaryButton, { backgroundColor: "#10b981" }]}
+        style={[
+          styles.primaryButton,
+          { backgroundColor: attendanceMarked ? "#94d3a2" : "#10b981" },
+        ]}
         onPress={handleSubmit}
         activeOpacity={0.8}
+        disabled={attendanceMarked}
       >
         <Ionicons name="checkmark-circle" color="#fff" size={20} />
-        <Text style={styles.buttonText}>Submit Attendance</Text>
+        <Text style={styles.buttonText}>
+          {attendanceMarked ? "Attendance Marked" : "Submit Attendance"}
+        </Text>
       </TouchableOpacity>
 
       {message !== "" && <Text style={styles.message}>{message}</Text>}
     </View>
+    </View>
   );
 };
 
-export default AttendanceScreen;
+export default EmpAttendanceScreen;
 
+// ==================== STYLES ====================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#f9fafb",
     paddingHorizontal: 20,
     paddingTop: 35,
-     marginTop:20,
+    marginTop: 20,
   },
   header: {
     flexDirection: "row",

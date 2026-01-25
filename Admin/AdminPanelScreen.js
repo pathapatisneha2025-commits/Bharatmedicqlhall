@@ -16,6 +16,7 @@ const BASE_URL = 'https://hospitaldatabasemanagement.onrender.com';
 
 const AdminPanelScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
+
   const [doctorCount, setDoctorCount] = useState(0);
   const [employeeCount, setEmployeeCount] = useState(0);
   const [patientCount, setPatientCount] = useState(0);
@@ -24,77 +25,91 @@ const AdminPanelScreen = ({ navigation }) => {
   const [tasks, setTasks] = useState([]);
 
   useEffect(() => {
-    fetchData();
+    loadDashboard();
   }, []);
 
-  const fetchData = async () => {
+  /* ======================
+     FAST DASHBOARD FETCH
+  ======================= */
+  const loadDashboard = async () => {
     try {
       setLoading(true);
 
-      // Doctors
-      const doctorsRes = await axios.get(`${BASE_URL}/consultancefee/all`);
-      setDoctorCount(Array.isArray(doctorsRes.data) ? doctorsRes.data.length : 0);
+      const [
+        doctorsRes,
+        employeesRes,
+        patientsRes,
+        appointmentsRes,
+        ordersRes,
+        leavesRes,
+        tasksRes,
+      ] = await Promise.all([
+        fetch(`${BASE_URL}/consultancefee/all`),
+        fetch(`${BASE_URL}/employee/all`),
+        fetch(`${BASE_URL}/patient/all`),
+        fetch(`${BASE_URL}/book-appointment/all`),
+        fetch(`${BASE_URL}/order-medicine/all`),
+        fetch(`${BASE_URL}/leaves/all`),
+        fetch(`${BASE_URL}/task/all`),
+      ]);
 
-      // Employees
-      const employeesRes = await axios.get(`${BASE_URL}/employee/all`);
-      setEmployeeCount(Array.isArray(employeesRes.data.employees) ? employeesRes.data.employees.length : 0);
+      const doctors = await doctorsRes.json();
+      const employees = await employeesRes.json();
+      const patients = await patientsRes.json();
+      const appointments = await appointmentsRes.json();
+      const orders = await ordersRes.json();
+      const leavesData = await leavesRes.json();
+      const tasksData = await tasksRes.json();
 
-      // Patients
-      const patientsRes = await axios.get(`${BASE_URL}/patient/all`);
-      setPatientCount(Array.isArray(patientsRes.data.patients) ? patientsRes.data.patients.length : 0);
+      setDoctorCount(Array.isArray(doctors) ? doctors.length : 0);
+      setEmployeeCount(employees?.employees?.length || 0);
+      setPatientCount(patients?.patients?.length || 0);
 
-      // Appointments Revenue
-      const appointmentsRes = await axios.get(`${BASE_URL}/book-appointment/all`);
-      let totalFees = Array.isArray(appointmentsRes.data)
-        ? appointmentsRes.data.reduce((acc, item) => acc + parseFloat(item.consultantfees), 0)
+      const appointmentTotal = Array.isArray(appointments)
+        ? appointments.reduce(
+            (sum, i) => sum + Number(i.consultantfees || 0),
+            0
+          )
         : 0;
 
-      // Orders Revenue
-      const ordersRes = await axios.get(`${BASE_URL}/order-medicine/all`);
-      const ordersTotal = Array.isArray(ordersRes.data)
-        ? ordersRes.data.reduce((acc, item) => acc + parseFloat(item.total), 0)
+      const orderTotal = Array.isArray(orders)
+        ? orders.reduce((sum, i) => sum + Number(i.total || 0), 0)
         : 0;
 
-      setTotalRevenue(totalFees + ordersTotal);
-
-      // Leaves
-      const leavesRes = await axios.get(`${BASE_URL}/leaves/all`);
-      setLeaves(leavesRes.data?.leaves || []);
-
-      // Tasks
-      const tasksRes = await axios.get(`${BASE_URL}/task/all`);
-      setTasks(tasksRes.data?.tasks || []);
+      setTotalRevenue(appointmentTotal + orderTotal);
+      setLeaves(leavesData?.leaves || []);
+      setTasks(tasksData?.tasks || []);
 
       setLoading(false);
-    } catch (error) {
+    } catch (err) {
+      console.log(err);
       setLoading(false);
-      console.error(error);
-      Alert.alert('Error', 'Failed to fetch data from server.');
+      Alert.alert("Error", "Failed to load dashboard");
     }
   };
 
-  const handleLeaveAction = async (leaveId, status) => {
-  try {
-    await axios.post(`${BASE_URL}/leaves/update-status`, { id: leaveId, status });
-    const updatedLeaves = leaves.map((leave) =>
-      leave.id === leaveId ? { ...leave, status } : leave
-    );
-    setLeaves(updatedLeaves);
-    Alert.alert('Success', `Leave ${status} successfully`);
-  } catch (error) {
-    console.error(error);
-    Alert.alert('Error', 'Failed to update leave status.');
-  }
-};
+  /* ======================
+     LEAVE ACTION
+  ======================= */
+  const handleLeaveAction = async (id, status) => {
+    try {
+      await fetch(`${BASE_URL}/leaves/update-status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status }),
+      });
 
- if (loading) {
-    return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text style={{ marginTop: 10 }}>Loading dashboard...</Text>
-      </View>
-    );
-  }
+      setLeaves((prev) =>
+        prev.map((l) => (l.id === id ? { ...l, status } : l))
+      );
+
+      Alert.alert("Success", `Leave ${status}`);
+    } catch {
+      Alert.alert("Error", "Update failed");
+    }
+  };
+ 
+  
   return (
     <ScrollView style={styles.container}>
       {/* Header */}

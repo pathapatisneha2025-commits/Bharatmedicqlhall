@@ -39,89 +39,120 @@ const DepartmentChartScreen = () => {
   };
 
 const fetchTodayAdminDepartmentData = async () => {
-  try {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    const [attRes, empRes] = await Promise.all([
-      fetch("https://hospitaldatabasemanagement.onrender.com/attendance/all"),
-      fetch("https://hospitaldatabasemanagement.onrender.com/employee/all"),
-    ]);
+      const [attRes, empRes] = await Promise.all([
+        fetch("https://hospitaldatabasemanagement.onrender.com/attendance/all"),
+        fetch("https://hospitaldatabasemanagement.onrender.com/employee/all"),
+      ]);
 
-    const attJson = await attRes.json();
-    const empJson = await empRes.json();
+      const attJson = await attRes.json();
+      const empJson = await empRes.json();
 
-    if (!attJson.success || !empJson.success) {
-      Alert.alert("Error", "Failed to load data");
-      return;
-    }
-
-    const attendance = attJson.data || [];
-    const employees = empJson.employees || [];
-
-    const today = new Date().toISOString().split("T")[0];
-
-    /* 1️⃣ latest TODAY attendance per employee */
-    const todayAttendance = {};
-
-    attendance.forEach((a) => {
-      if (!a.timestamp.startsWith(today)) return;
-
-      const prev = todayAttendance[a.employee_id];
-      if (!prev || new Date(a.timestamp) > new Date(prev.timestamp)) {
-        todayAttendance[a.employee_id] = a;
-      }
-    });
-
-    /* 2️⃣ normalize status for UI */
-    const getStatusLabel = (status) => {
-      if (status === "On Duty") return "Present";
-      if (status === "Off Duty") return "On Leave";
-      if (status === "On Break") return "On Break";
-      return "Absent";
-    };
-
-    /* 3️⃣ group employees by department */
-    const deptMap = {};
-
-    employees.forEach((emp) => {
-      const deptName = emp.department?.trim() || "Others";
-
-      if (!deptMap[deptName]) {
-        deptMap[deptName] = {
-          name: deptName,
-          employees: [],
-        };
+      if (!attJson.success || !empJson.success) {
+        Alert.alert("Error", "Failed to load data");
+        return;
       }
 
-      const att = todayAttendance[emp.id];
+      const attendance = attJson.data || [];
+      const employees = empJson.employees || [];
+      const today = new Date().toISOString().split("T")[0];
 
-      deptMap[deptName].employees.push({
-        id: emp.id,
-        name: emp.full_name,
-        email: emp.email,
-        role: emp.role,
-        status: att ? getStatusLabel(att.status) : "Absent",
+      const todayAttendance = {};
+      attendance.forEach((a) => {
+        if (!a.timestamp?.startsWith(today)) return;
+        const prev = todayAttendance[a.employee_id];
+        if (!prev || new Date(a.timestamp) > new Date(prev.timestamp)) {
+          todayAttendance[a.employee_id] = a;
+        }
       });
-    });
 
-    setDepartments(Object.values(deptMap));
-  } catch (err) {
-    Alert.alert("Error", "Unable to load admin department data");
-  } finally {
-    setLoading(false);
-  }
-};
+      const getStatusLabel = (status) => {
+        if (status === "On Duty") return "Present";
+        if (status === "Off Duty") return "On Leave";
+        if (status === "On Break") return "On Break";
+        return "Absent";
+      };
 
+      const deptMap = {};
+      employees.forEach((emp) => {
+        const deptName = emp.department?.trim() || "Others";
+        if (!deptMap[deptName]) {
+          deptMap[deptName] = { name: deptName, employees: [] };
+        }
 
-useEffect(() => {
-  if (activeTab === "Department View") {
-    fetchTodayDepartmentSummary();
-  } else {
-    fetchTodayAdminDepartmentData();
-  }
-}, [activeTab]);
+        const att = todayAttendance[emp.id];
+        const finalStatus = att ? getStatusLabel(att.status) : "Absent";
 
+        deptMap[deptName].employees.push({
+          id: emp.id,
+          name: emp.full_name,
+          email: emp.email,
+          role: emp.role,
+          status: finalStatus,
+        });
+      });
 
+      setDepartments(Object.values(deptMap));
+    } catch (e) {
+      Alert.alert("Error", "Unable to load admin data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ---------------- DEPARTMENT SUMMARY (SAFE) ---------------- */
+  const fetchTodayDepartmentSummary = async () => {
+    try {
+      setLoading(true);
+
+      const res = await fetch(
+        "https://hospitaldatabasemanagement.onrender.com/attendance/all"
+      );
+      const json = await res.json();
+
+      if (!json.success) return;
+
+      const today = new Date().toISOString().split("T")[0];
+      const todayData = json.data.filter((a) =>
+        a.timestamp?.startsWith(today)
+      );
+
+      let present = 0,
+        onLeave = 0,
+        onBreak = 0,
+        absent = 0;
+
+      todayData.forEach((a) => {
+        if (a.status === "On Duty") present++;
+        else if (a.status === "Off Duty") onLeave++;
+        else if (a.status === "On Break") onBreak++;
+        else absent++;
+      });
+
+      setSummary({
+        total: todayData.length,
+        present,
+        onLeave,
+        onBreak,
+        absent,
+      });
+    } catch (e) {
+      Alert.alert("Error", "Unable to load summary");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ---------------- EFFECT ---------------- */
+  useEffect(() => {
+    if (activeTab === "Department View") {
+      fetchTodayDepartmentSummary();
+    } else {
+      fetchTodayAdminDepartmentData();
+    }
+  }, [activeTab]);
 
   const toggleExpand = (deptName) => {
     setExpandedDept((prev) => ({

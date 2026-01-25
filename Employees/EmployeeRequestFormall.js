@@ -27,32 +27,49 @@ export default function EmployeeRequestListScreen({ navigation }) {
   const [editReason, setEditReason] = useState("");
 
   useEffect(() => {
-    (async () => {
-      const id = await getEmployeeId();
-      if (id) {
-        setEmployeeId(id);
-        fetchRequests(id);
-      } else {
-        Alert.alert("Error", "Employee ID not found");
-      }
-    })();
-  }, []);
+  setLoading(true); // 👈 show loader instantly
 
-  const fetchRequests = async (id) => {
+  const init = async () => {
     try {
-      const response = await fetch(
-        `https://hospitaldatabasemanagement.onrender.com/doctorrequest/employee/${id}`
-      );
-      const data = await response.json();
+      const id = await getEmployeeId();
 
-      if (response.ok) setRequests(data);
-      else Alert.alert("Error", data.message || "Failed to load");
-    } catch (error) {
-      Alert.alert("Error", "Failed to load");
-    } finally {
+      if (!id) {
+        Alert.alert("Error", "Employee ID not found");
+        setLoading(false);
+        return;
+      }
+
+      setEmployeeId(id);
+      fetchRequests(id); // don't await → UI stays responsive
+    } catch (e) {
+      Alert.alert("Error", "Something went wrong");
       setLoading(false);
     }
   };
+
+  init();
+}, []);
+
+
+ const fetchRequests = async (id) => {
+  try {
+    const response = await fetch(
+      `https://hospitaldatabasemanagement.onrender.com/doctorrequest/employee/${id}`
+    );
+
+    const data = await response.json();
+    if (response.ok) {
+      setRequests(data);
+    } else {
+      Alert.alert("Error", data.message || "Failed to load");
+    }
+  } catch (error) {
+    Alert.alert("Error", "Failed to load");
+  } finally {
+    setLoading(false); // loader stops here
+  }
+};
+
 
   const deleteRequest = (id) => {
     Alert.alert("Confirm Delete", "Delete this request?", [
@@ -121,13 +138,7 @@ export default function EmployeeRequestListScreen({ navigation }) {
       Alert.alert("Error", "Failed to update");
     }
   };
-  if (loading)
-        return (
-          <View style={styles.loader}>
-            <ActivityIndicator size="large" color="#007bff" />
-            <Text>Loading...</Text>
-          </View>
-        );
+ 
 
   const renderItem = ({ item }) => (
     <View style={styles.card}>
@@ -219,15 +230,20 @@ export default function EmployeeRequestListScreen({ navigation }) {
       ) : requests.length === 0 ? (
         <Text style={styles.noData}>No requests found.</Text>
       ) : (
-      <FlatList
+     <FlatList
   data={requests}
   keyExtractor={(item) => item.id.toString()}
   renderItem={renderItem}
-  contentContainerStyle={{ 
+  initialNumToRender={6}
+  maxToRenderPerBatch={6}
+  windowSize={5}
+  removeClippedSubviews={true}
+  contentContainerStyle={{
     padding: 15,
-    paddingBottom: 80,   // ⬅️ Increase scroll length here
+    paddingBottom: 80,
   }}
 />
+
 
       )}
 

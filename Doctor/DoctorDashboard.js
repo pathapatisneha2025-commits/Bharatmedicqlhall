@@ -39,30 +39,32 @@ const DoctorDashboard = () => {
   const contentHeight = useRef(0);
 
   // ✅ Auto-scroll animation logic (very slow)
-  useEffect(() => {
-    if (tokens.length === 0) return;
+// 🔹 Slow Auto-scroll animation
+useEffect(() => {
+  if (tokens.length === 0) return;
 
-    const startAutoScroll = () => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(scrollY, {
-            toValue: contentHeight.current - scrollHeight.current,
-            duration: (contentHeight.current - scrollHeight.current) * 90, // ⚡ Very slow speed
-            useNativeDriver: true,
-          }),
-          Animated.delay(1000), // pause at end
-          Animated.timing(scrollY, {
-            toValue: 0,
-            duration: 0,
-            useNativeDriver: true,
-          }),
-          Animated.delay(20), // pause at top
-        ])
-      ).start();
-    };
+  const startAutoScroll = () => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scrollY, {
+          toValue: contentHeight.current - scrollHeight.current,
+          duration: (contentHeight.current - scrollHeight.current) * 400, // ⬅️ much slower
+          useNativeDriver: true,
+        }),
+        Animated.delay(1500), // pause at end
+        Animated.timing(scrollY, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+        Animated.delay(500), // pause at top
+      ])
+    ).start();
+  };
 
-    startAutoScroll();
-  }, [tokens]);
+  startAutoScroll();
+}, [tokens]);
+
 
   // ✅ Fetch doctor details
  const fetchDoctorDetails = async () => {

@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Platform,
   Alert,
+  BackHandler,
 } from 'react-native';
 
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -115,7 +116,23 @@ const DoctorDetailsScreen = () => {
       },
     });
   };
-
+  useEffect(() => {
+        const backAction = () => {
+          // Instead of going back step by step, reset navigation to Sidebar/Home
+          navigation.reset({
+            index: 0,
+            routes: [{ name: "bottomtab" }], // <-- replace with your sidebar/home screen name
+          });
+          return true; // prevents default back behavior
+        };
+      
+        const backHandler = BackHandler.addEventListener(
+          "hardwareBackPress",
+          backAction
+        );
+      
+        return () => backHandler.remove(); // clean up on unmount
+      }, []);
   if (loading) {
     return (
       <View style={styles.loader}>
@@ -124,13 +141,6 @@ const DoctorDetailsScreen = () => {
     );
   }
 
-  if (!doctor) {
-    return (
-      <View style={styles.loader}>
-        <Text style={{ color: "#444", fontSize: 16 }}>No doctor details found</Text>
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>

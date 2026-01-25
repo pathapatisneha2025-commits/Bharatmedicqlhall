@@ -6,7 +6,8 @@ import {
   TouchableOpacity,
   SafeAreaView,
   ScrollView,
-  ActivityIndicator,
+      BackHandler,
+ActivityIndicator,
   Image,
 } from "react-native";
 import { Ionicons, MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
@@ -161,6 +162,23 @@ const CheckoutScreen = () => {
       });
     }
   };
+  useEffect(() => {
+        const backAction = () => {
+          // Instead of going back step by step, reset navigation to Sidebar/Home
+          navigation.reset({
+            index: 0,
+            routes: [{ name: "bottomtab" }], // <-- replace with your sidebar/home screen name
+          });
+          return true; // prevents default back behavior
+        };
+      
+        const backHandler = BackHandler.addEventListener(
+          "hardwareBackPress",
+          backAction
+        );
+      
+        return () => backHandler.remove(); // clean up on unmount
+      }, []);
    if (loading)
           return (
             <View style={styles.loader}>

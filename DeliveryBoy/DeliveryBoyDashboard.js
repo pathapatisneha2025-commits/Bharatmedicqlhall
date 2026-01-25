@@ -26,27 +26,57 @@ export default function DeliveryBoyDashboard() {
   const [searchText, setSearchText] = useState("");
   const [isAvailable, setIsAvailable] = useState(false);
 
+  // ✅ COLLECTION STATE
+  const [collections, setCollections] = useState({
+    total_cash: 0,
+    total_digital: 0,
+  });
+
   const navigation = useNavigation();
 
+  /* ================= GET DELIVERY BOY ID ================= */
   useEffect(() => {
     (async () => {
       const id = await getEmployeeId();
-      if (id) {
-        setEmployeeId(id);
-      } else {
-        Alert.alert("Error", "No delivery boy ID found in storage");
-      }
+      if (id) setEmployeeId(id);
+      else Alert.alert("Error", "No delivery boy ID found");
     })();
   }, []);
 
+  /* ================= INITIAL LOAD ================= */
   useEffect(() => {
-  if (employeeId) {
-    fetchAvailability(employeeId);
-    fetchAssignedOrders(employeeId);
-  }
-}, [employeeId]);
+    if (employeeId) {
+      fetchAvailability(employeeId);
+      fetchAssignedOrders(employeeId);
+      fetchCollections(employeeId); // ✅ CASH COLLECTION
+    }
+  }, [employeeId]);
 
+  /* ================= FETCH COLLECTIONS (YOUR LOGIC) ================= */
+  const fetchCollections = async (deliveryBoyId) => {
+    try {
+      const date = new Date().toISOString().split("T")[0];
 
+      const res = await fetch(
+        `${BASE_URL}/deliveryboy/${deliveryBoyId}/collections?date=${date}`
+      );
+      const data = await res.json();
+
+      if (data.success) {
+        setCollections({
+          total_cash: data.total_cash || 0,
+          total_digital: data.total_digital || 0,
+        });
+      } else {
+        Alert.alert("Error", "Failed to fetch collections");
+      }
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Error", "Something went wrong");
+    }
+  };
+
+  /* ================= FETCH ORDERS ================= */
   const fetchAssignedOrders = async (id) => {
     setLoading(true);
     try {
@@ -59,230 +89,218 @@ export default function DeliveryBoyDashboard() {
       } else {
         Alert.alert("Error", data.error || "Failed to load orders");
       }
-    } catch (error) {
-      console.error(error);
-      Alert.alert("Error", "Unable to fetch assigned deliveries.");
+    } catch {
+      Alert.alert("Error", "Unable to fetch assigned deliveries");
     } finally {
       setLoading(false);
     }
   };
 
-  const markAsDelivered = async (orderId) => {
-    updateOrderStatus(orderId, "Delivered");
-  };
-
-  const markAsCancelled = async (orderId) => {
-    Alert.alert("Cancel Order", "Are you sure you want to cancel this order?", [
-      { text: "No" },
-      { text: "Yes", onPress: () => updateOrderStatus(orderId, "Cancelled") },
-    ]);
-  };
-
+  /* ================= UPDATE ORDER STATUS ================= */
   const updateOrderStatus = async (orderId, status) => {
     try {
       setUpdating(true);
 
-      const res = await fetch(`${BASE_URL}/deliveryboy/update-delivery-status`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: orderId, status }),
-      });
+      const res = await fetch(
+        `${BASE_URL}/deliveryboy/update-delivery-status`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: orderId, status }),
+        }
+      );
 
       const data = await res.json();
 
       if (res.ok) {
-        Alert.alert("Success", `Order marked as ${status}!`);
+        Alert.alert("Success", `Order marked as ${status}`);
         fetchAssignedOrders(employeeId);
+        fetchCollections(employeeId); // ✅ refresh cash
       } else {
-        Alert.alert("Error", data.error || "Failed to update status.");
+        Alert.alert("Error", data.error || "Failed to update status");
       }
-    } catch (error) {
-      console.error("Error updating status:", error);
-      Alert.alert("Error", "Something went wrong.");
+    } catch {
+      Alert.alert("Error", "Something went wrong");
     } finally {
       setUpdating(false);
     }
   };
 
-const fetchAvailability = async (id) => {
-  try {
-    const res = await fetch(`${BASE_URL}/deliveryboy/availability/${id}`);
-    const data = await res.json();
-
-    if (res.ok) {
-      setIsAvailable(data.available);   // ← Update UI from DB
-    } else {
-      console.log("Error fetching availability:", data.error);
+  /* ================= AVAILABILITY ================= */
+  const fetchAvailability = async (id) => {
+    try {
+      const res = await fetch(`${BASE_URL}/deliveryboy/availability/${id}`);
+      const data = await res.json();
+      if (res.ok) setIsAvailable(data.available);
+    } catch (error) {
+      console.error(error);
     }
-  } catch (error) {
-    console.error("Availability fetch error:", error);
-  }
-};
+  };
 
+  const toggleAvailability = async () => {
+    try {
+      const newStatus = !isAvailable;
+      setIsAvailable(newStatus);
+
+      const res = await fetch(
+        `${BASE_URL}/deliveryboy/update-availability`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: employeeId, available: newStatus }),
+        }
+      );
+
+      if (!res.ok) setIsAvailable(!newStatus);
+    } catch {
+      setIsAvailable(!isAvailable);
+    }
+  };
+
+  /* ================= SEARCH ================= */
   const handleSearch = (text) => {
     setSearchText(text);
+    const query = text.toLowerCase();
+
     const filtered = orders.filter((order) => {
       const name = order.address?.name?.toLowerCase() || "";
       const city = order.address?.city?.toLowerCase() || "";
-      const phone = order.address?.mobile?.toLowerCase() || "";
-      const query = text.toLowerCase();
+      const phone = order.address?.mobile || "";
       return (
-        name.includes(query) || city.includes(query) || phone.includes(query)
+        name.includes(query) ||
+        city.includes(query) ||
+        phone.includes(query)
       );
     });
+
     setFilteredOrders(filtered);
   };
-  const toggleAvailability = async () => {
-  try {
-    const newStatus = !isAvailable;
-    setIsAvailable(newStatus);
 
-    const res = await fetch(`${BASE_URL}/deliveryboy/update-availability`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: employeeId, available: newStatus }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      Alert.alert("Error", data.error || "Failed to update availability");
-      setIsAvailable(!newStatus); // revert on failure
-    }
-  } catch (error) {
-    console.error(error);
-    Alert.alert("Error", "Unable to update availability");
-    setIsAvailable(!isAvailable); // revert on error
-  }
-};
-
-
+  /* ================= COUNTS ================= */
   const totalOrders = orders.length;
-  const deliveredOrders = orders.filter((o) => o.status === "Delivered").length;
-  const cancelledOrders = orders.filter((o) => o.status === "Cancelled").length;
-  const pendingOrders = totalOrders - deliveredOrders - cancelledOrders;
+  const deliveredOrders = orders.filter(
+    (o) => o.status === "Delivered"
+  ).length;
+  const cancelledOrders = orders.filter(
+    (o) => o.status === "Cancelled"
+  ).length;
+  const pendingOrders =
+    totalOrders - deliveredOrders - cancelledOrders;
+const totalCollection =
+  Number(collections.total_cash) + Number(collections.total_digital);
 
- 
-
- if (loading)
-       return (
-         <View style={styles.loader}>
-           <ActivityIndicator size="large" color="#007bff" />
-           <Text>Loading...</Text>
-         </View>
-       );
+  if (loading)
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="large" color="#007bff" />
+        <Text>Loading...</Text>
+      </View>
+    );
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-      <View style={styles.headerRow}>
-  <Text style={styles.header}>🚚 My Deliveries</Text>
+        {/* HEADER */}
+        <View style={styles.headerRow}>
+          <Text style={styles.header}>🚚 My Deliveries</Text>
 
-  {/* NEW TOGGLE */}
- <View style={styles.toggleRow}>
-  <Text style={styles.toggleLabel}>
-    {isAvailable ? "Available" : "Not Available"}
-  </Text>
-
-  <Switch
-    value={isAvailable}
-    onValueChange={toggleAvailability}
-    trackColor={{ false: "#ff6b6b", true: "#81c784" }}
-    thumbColor={isAvailable ? "#4CAF50" : "#F44336"}
-  />
-</View>
-
-</View>
-
-
-
-        {/* ✅ Summary Cards */}
-        <View style={styles.summaryContainer}>
-          <View style={[styles.summaryCard, { backgroundColor: "#2196F3" }]}>
-            <Text style={styles.summaryTitle}>Total Orders</Text>
-            <Text style={styles.summaryValue}>{totalOrders}</Text>
-          </View>
-
-          <View style={[styles.summaryCard, { backgroundColor: "#4CAF50" }]}>
-            <Text style={styles.summaryTitle}>Delivered</Text>
-            <Text style={styles.summaryValue}>{deliveredOrders}</Text>
-          </View>
-
-          <View style={[styles.summaryCard, { backgroundColor: "#FFC107" }]}>
-            <Text style={styles.summaryTitle}>Pending</Text>
-            <Text style={styles.summaryValue}>{pendingOrders}</Text>
-          </View>
-
-          <View style={[styles.summaryCard, { backgroundColor: "#F44336" }]}>
-            <Text style={styles.summaryTitle}>Cancelled</Text>
-            <Text style={styles.summaryValue}>{cancelledOrders}</Text>
+          <View style={styles.toggleRow}>
+            <Text style={styles.toggleLabel}>
+              {isAvailable ? "Available" : "Not Available"}
+            </Text>
+            <Switch
+              value={isAvailable}
+              onValueChange={toggleAvailability}
+              trackColor={{ false: "#ff6b6b", true: "#81c784" }}
+              thumbColor={isAvailable ? "#4CAF50" : "#F44336"}
+            />
           </View>
         </View>
 
-        {/* ✅ Search Bar */}
+        {/* SUMMARY CARDS */}
+        <View style={styles.summaryContainer}>
+          <SummaryCard title="Total Orders" value={totalOrders} color="#2196F3" />
+          <SummaryCard title="Delivered" value={deliveredOrders} color="#4CAF50" />
+          <SummaryCard title="Pending" value={pendingOrders} color="#FFC107" />
+          <SummaryCard title="Cancelled" value={cancelledOrders} color="#F44336" />
+
+          {/* ✅ CASH COLLECTED CARD */}
+         <SummaryCard
+  title="Total Collection"
+  value={`₹ ${totalCollection}`}
+  color="#9C27B0"
+/>
+
+        </View>
+
+        {/* SEARCH */}
         <View style={styles.searchContainer}>
-          <Ionicons
-            name="search"
-            size={20}
-            color="#555"
-            style={{ marginRight: 8 }}
-          />
+          <Ionicons name="search" size={20} color="#555" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by name, city, or phone..."
+            placeholder="Search by name, city, phone"
             value={searchText}
             onChangeText={handleSearch}
           />
         </View>
 
+        {/* ACTION BUTTONS */}
+        <TouchableOpacity
+          style={styles.primaryBtn}
+          onPress={() => navigation.navigate("DeliverBoyOrders")}
+        >
+          <Text style={styles.btnText}>Start Delivery</Text>
+        </TouchableOpacity>
 
-{/* Action Buttons */}
-<TouchableOpacity
-  style={styles.primaryBtn}
-  onPress={() => navigation.navigate("DeliverBoyOrders")} // ← Add this
->
-  <Text style={styles.btnText}>Start Delivery</Text>
-</TouchableOpacity>
+        <TouchableOpacity
+          style={styles.secondaryBtn}
+          onPress={() =>
+            navigation.navigate("BusDeliveryScreen", { orderId: null })
+          }
+        >
+          <Text style={styles.btnText}>Bus Delivery</Text>
+        </TouchableOpacity>
 
-<TouchableOpacity style={styles.secondaryBtn}
-onPress={() =>
-    navigation.navigate("BusDeliveryScreen", {
-      orderId: null,   // or "" or 0
-    })
-  }>
-  <Text style={styles.btnText}>Bus Delivery</Text>
-</TouchableOpacity>
-
-  <TouchableOpacity 
-  style={styles.cardBtn}
-  onPress={() => 
-    navigation.navigate("CashHandOverScreen", { deliveryBoyId: employeeId })
-  }
->
-  <Ionicons name="card-outline" size={22} color="#0A84FF" />
-  <Text style={styles.cardText}>Payment Settlement</Text>
-</TouchableOpacity>
-
-
-
-
+        {/* PAYMENT SETTLEMENT */}
+        <TouchableOpacity
+          style={[
+            styles.cardBtn,
+            collections.total_cash === 0 && { opacity: 0.5 },
+          ]}
+          disabled={collections.total_cash === 0}
+          onPress={() =>
+            navigation.navigate("CashHandOverScreen", {
+              deliveryBoyId: employeeId,
+            })
+          }
+        >
+          <Ionicons name="card-outline" size={22} color="#0A84FF" />
+          <Text style={styles.cardText}>Payment Settlement</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+/* ================= REUSABLE CARD ================= */
+const SummaryCard = ({ title, value, color }) => (
+  <View style={[styles.summaryCard, { backgroundColor: color }]}>
+    <Text style={styles.summaryTitle}>{title}</Text>
+    <Text style={styles.summaryValue}>{value}</Text>
+  </View>
+);
+
+/* ================= STYLES ================= */
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#f8f9fa",
-  },
-  scrollContent: {
-    padding: 12,
-  },
+  safeArea: { flex: 1, backgroundColor: "#f8f9fa" },
+  scrollContent: { padding: 12 },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#2196F3",
+  header: { fontSize: 22, fontWeight: "bold", color: "#2196F3" },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
   },
   summaryContainer: {
     flexDirection: "row",
@@ -298,7 +316,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     elevation: 3,
   },
-  summaryTitle: { color: "#fff", fontSize: 14, fontWeight: "500" },
+  summaryTitle: { color: "#fff", fontSize: 14 },
   summaryValue: {
     color: "#fff",
     fontSize: 22,
@@ -310,70 +328,40 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#fff",
     borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    elevation: 2,
+    padding: 10,
     marginBottom: 15,
   },
-  searchInput: { flex: 1, fontSize: 16, color: "#333" },
-  
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  searchInput: { flex: 1, fontSize: 16, marginLeft: 8 },
+  primaryBtn: {
+    backgroundColor: "#0A84FF",
+    padding: 15,
+    borderRadius: 12,
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 10,
   },
-
-
-
-primaryBtn: {
-backgroundColor: "#0A84FF",
-padding: 15,
-borderRadius: 12,
-alignItems: "center",
-marginBottom: 10,
-},
-secondaryBtn: {
-backgroundColor: "#007BFF",
-padding: 15,
-borderRadius: 12,
-alignItems: "center",
-},
-btnText: {
-color: "#fff",
-fontSize: 16,
-fontWeight: "600",
-},
-cardBtn: {
-  flexDirection: "row",
-  alignItems: "center",
-  padding: 15,
-  borderRadius: 12,
-  backgroundColor: "#E8F0FE",
-  marginTop: 10,
-  borderWidth: 1,
-  borderColor: "#0A84FF",
-},
-cardText: {
-  marginLeft: 10,
-  fontSize: 16,
-  color: "#0A84FF",
-  fontWeight: "700",
-},
-
-toggleRow: {
-  flexDirection: "row",
-  alignItems: "center",
-  justifyContent: "flex-end",
-  paddingVertical: 5,
-  marginBottom: 10
-},
-
-toggleLabel: {
-  fontSize: 16,
-  marginRight: 10,
-  fontWeight: "600",
-  color: "#333",
-},
-
+  secondaryBtn: {
+    backgroundColor: "#007BFF",
+    padding: 15,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  btnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  cardBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 15,
+    borderRadius: 12,
+    backgroundColor: "#E8F0FE",
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: "#0A84FF",
+  },
+  cardText: {
+    marginLeft: 10,
+    fontSize: 16,
+    color: "#0A84FF",
+    fontWeight: "700",
+  },
+  toggleRow: { flexDirection: "row", alignItems: "center" },
+  toggleLabel: { fontSize: 16, marginRight: 10, fontWeight: "600" },
 });

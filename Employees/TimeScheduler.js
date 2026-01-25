@@ -1,5 +1,6 @@
 // screens/SetReminderScreen.js
-import React, { useState, useEffect, useRef } from 'react';
+
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -7,14 +8,15 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
-} from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getEmployeeId } from '../utils/storage';
-import * as Notifications from 'expo-notifications';
-import { Ionicons } from '@expo/vector-icons';
+  Platform,
+} from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getEmployeeId } from "../utils/storage";
+import * as Notifications from "expo-notifications";
+import { Ionicons } from "@expo/vector-icons";
 
-// Foreground notification behavior
+/* ---------------- NOTIFICATION HANDLER ---------------- */
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -35,233 +37,329 @@ const SetReminderScreen = ({ navigation }) => {
 
   const scheduledIdsRef = useRef([]);
 
+  /* ---------------- INIT ---------------- */
   useEffect(() => {
-  const init = async () => {
-    try {
-      const id = await getEmployeeId();
-      const employee_id = id ;
-      setEmployeeId(employee_id);
+    const init = async () => {
+      try {
+        // ✅ ANDROID ONLY notification channel
+        if (Platform.OS === "android") {
+          await Notifications.setNotificationChannelAsync("default", {
+            name: "Default",
+            importance: Notifications.AndroidImportance.MAX,
+            sound: "default",
+            vibrationPattern: [0, 250, 250, 250],
+          });
+        }
 
-      await ensurePermissions();
+        await ensurePermissions();
 
-      // ✅ Fetch employee data by ID instead of /all
-      const res = await fetch(
-        `https://hospitaldatabasemanagement.onrender.com/employee/${employee_id}`
-      );
-      const data = await res.json();
+        const id = await getEmployeeId();
+        setEmployeeId(id);
 
-      if (data.success && data.employee) {
-        const emp = data.employee;
+        const res = await fetch(
+          `https://hospitaldatabasemanagement.onrender.com/employee/${id}`
+        );
+        const data = await res.json();
 
-        // Extract schedule_in and schedule_out
-        const [inH, inM] = emp.schedule_in.split(":").map(Number);
-        const [outH, outM] = emp.schedule_out.split(":").map(Number);
+        if (
+          data?.success &&
+          data.employee?.schedule_in &&
+          data.employee?.schedule_out
+        ) {
+          const [inH, inM] = data.employee.schedule_in
+            .split(":")
+            .map(Number);
+          const [outH, outM] = data.employee.schedule_out
+            .split(":")
+            .map(Number);
 
-        const now = new Date();
-        const start = new Date(now);
-        start.setHours(inH, inM, 0, 0);
+          const start = new Date();
+          start.setHours(inH, inM, 0, 0);
 
-        const end = new Date(now);
-        end.setHours(outH, outM, 0, 0);
+          const end = new Date();
+          end.setHours(outH, outM, 0, 0);
 
-        setStartTime(start);
-        setEndTime(end);
-      } else {
-        Alert.alert("Error", "Unable to fetch employee schedule.");
+          setStartTime(start);
+          setEndTime(end);
+        }
+
+        const saved = await AsyncStorage.getItem("attendanceScheduledIds");
+        scheduledIdsRef.current = saved ? JSON.parse(saved) : [];
+      } catch (err) {
+        console.error(err);
+        Alert.alert("Error", "Initialization failed");
       }
+    };
 
-      const saved = await AsyncStorage.getItem("attendanceScheduledIds");
-      scheduledIdsRef.current = saved ? JSON.parse(saved) : [];
-    } catch (err) {
-      console.error("Error fetching employee schedule:", err);
-      Alert.alert("Error", "Failed to fetch employee schedule.");
-    }
-  };
+    init();
 
-  init();
+    const sub = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        const screen = response.notification.request.content.data?.screen;
+        if (screen === "Attendance") {
+          navigation.navigate("Attendance");
+        }
+      }
+    );
 
-  const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-    const screen = response.notification.request.content.data?.screen;
-    if (screen === "Attendance") {
-      navigation.navigate("Attendance");
-    }
-  });
+    return () => sub.remove();
+  }, []);
 
-  return () => sub.remove();
-}, []);
-
-
+  /* ---------------- HELPERS ---------------- */
   const ensurePermissions = async () => {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-    if (finalStatus !== 'granted') {
-      Alert.alert('Permission required', 'Notification permission is not granted.');
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== "granted") {
+      const req = await Notifications.requestPermissionsAsync();
+      if (req.status !== "granted") {
+        Alert.alert("Permission required", "Notifications are disabled");
+      }
     }
   };
+
+  const fmtHHMM = (d) =>
+    d.toLocaleTimeString("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
 
   const cancelExistingScheduled = async () => {
     try {
       for (const id of scheduledIdsRef.current) {
         await Notifications.cancelScheduledNotificationAsync(id);
       }
-    } catch (e) {
+    } catch {
       await Notifications.cancelAllScheduledNotificationsAsync();
     }
     scheduledIdsRef.current = [];
-    await AsyncStorage.removeItem('attendanceScheduledIds');
+    await AsyncStorage.removeItem("attendanceScheduledIds");
   };
 
-  const fmtHHMM = (d) =>
-    d.toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit' });
-
-  const getNextTriggerDate = (hour, minute) => {
-    const now = new Date();
-    const target = new Date();
-    target.setHours(hour, minute, 0, 0);
-
-    if (target <= now) {
-      target.setDate(target.getDate() + 1); // tomorrow if already passed
-    }
-    return target;
+  const getTriggerDate = (baseDate, hour, minute) => {
+    const d = new Date(baseDate);
+    d.setHours(hour, minute, 0, 0);
+    return d;
   };
 
   const fiveMinutesBefore = (d) => {
-    let hour = d.getHours();
-    let minute = d.getMinutes() - 5;
-    if (minute < 0) {
-      minute += 60;
-      hour = (hour - 1 + 24) % 24;
-    }
-    return { hour, minute };
+    const t = new Date(d);
+    t.setMinutes(t.getMinutes() - 5);
+    return { hour: t.getHours(), minute: t.getMinutes() };
   };
 
-  const scheduleOneTimeNotifications = async (startTime, endTime) => {
-    const startStr = fmtHHMM(startTime);
-    const endStr = fmtHHMM(endTime);
+  /* ---------------- SCHEDULER ---------------- */
+const scheduleOneTimeNotifications = async () => {
+  const startStr = fmtHHMM(startTime);
+  const endStr = fmtHHMM(endTime);
+  const now = new Date();
 
-    const early = fiveMinutesBefore(startTime);
-    const main = { hour: startTime.getHours(), minute: startTime.getMinutes() };
+  const startDateTime = new Date(date);
+  startDateTime.setHours(
+    startTime.getHours(),
+    startTime.getMinutes(),
+    0,
+    0
+  );
 
-    const earlyTrigger = getNextTriggerDate(early.hour, early.minute);
-    const mainTrigger = getNextTriggerDate(main.hour, main.minute);
+  const endDateTime = new Date(date);
+  endDateTime.setHours(
+    endTime.getHours(),
+    endTime.getMinutes(),
+    0,
+    0
+  );
 
-    // Schedule "5 min before"
-    const earlyId = await Notifications.scheduleNotificationAsync({
+  // ⛔ SDK 54 requires future date
+  if (startDateTime <= now) {
+    throw new Error("Start time must be in the future");
+  }
+
+  const earlyStart = new Date(startDateTime);
+  earlyStart.setMinutes(earlyStart.getMinutes() - 5);
+
+  const earlyEnd = new Date(endDateTime);
+  earlyEnd.setMinutes(earlyEnd.getMinutes() - 5);
+
+  const ids = [];
+
+  // 🔔 5 min before shift start
+  ids.push(
+    await Notifications.scheduleNotificationAsync({
       content: {
-        title: 'Upcoming Shift Reminder',
-        body: `Your shift (${startStr} - ${endStr}) starts soon. Time to get ready!`,
-        sound: 'default',
-        data: { screen: 'Attendance', kind: 'early' },
+        title: "Upcoming Shift ⏰",
+        body: `Your shift (${startStr} - ${endStr}) starts in 5 minutes`,
+        data: { screen: "Attendance" },
+        sound: "default",
+        ...(Platform.OS === "android" && { channelId: "default" }),
       },
-      trigger: earlyTrigger,
-    });
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: earlyStart,
+      },
+    })
+  );
 
-    // Schedule "at start time"
-    const mainId = await Notifications.scheduleNotificationAsync({
+  // 🔔 Shift start
+  ids.push(
+    await Notifications.scheduleNotificationAsync({
       content: {
-        title: 'Shift Started',
-        body: `Your shift has started (${startStr} - ${endStr}). Please login now.`,
-        sound: 'default',
-        data: { screen: 'Attendance', kind: 'main' },
+        title: "Shift Started ✅",
+        body: `Your shift (${startStr} - ${endStr}) has started`,
+        data: { screen: "Attendance" },
+        sound: "default",
+        ...(Platform.OS === "android" && { channelId: "default" }),
       },
-      trigger: mainTrigger,
-    });
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: startDateTime,
+      },
+    })
+  );
 
-    scheduledIdsRef.current = [earlyId, mainId];
-    await AsyncStorage.setItem(
-      'attendanceScheduledIds',
-      JSON.stringify(scheduledIdsRef.current)
+  // 🔔 End reminders (only if valid)
+  if (endDateTime > startDateTime) {
+    ids.push(
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "Shift Ending Soon ⌛",
+          body: `Your shift ends at ${endStr}`,
+          data: { screen: "Attendance" },
+          sound: "default",
+          ...(Platform.OS === "android" && { channelId: "default" }),
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: earlyEnd,
+        },
+      })
     );
-  };
 
+    ids.push(
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "Shift Ended 🏁",
+          body: "Your shift has ended",
+          data: { screen: "Attendance" },
+          sound: "default",
+          ...(Platform.OS === "android" && { channelId: "default" }),
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: endDateTime,
+        },
+      })
+    );
+  }
+
+  scheduledIdsRef.current = ids;
+  await AsyncStorage.setItem(
+    "attendanceScheduledIds",
+    JSON.stringify(ids)
+  );
+};
+
+
+  /* ---------------- SAVE ---------------- */
   const handleSaveReminder = async () => {
     if (!employeeId) {
-      Alert.alert('Error', 'Employee ID not found.');
+      Alert.alert("Error", "Employee ID not found");
       return;
     }
 
-    const reminderData = {
-      employeeId,
-      date: date.toLocaleDateString('en-CA'),
-      startTime: fmtHHMM(startTime),
-      endTime: fmtHHMM(endTime),
-    };
+    const selectedStart = new Date(date);
+    selectedStart.setHours(
+      startTime.getHours(),
+      startTime.getMinutes(),
+      0,
+      0
+    );
+
+    if (selectedStart <= new Date()) {
+      Alert.alert("Invalid Time", "Please select a future time");
+      return;
+    }
 
     try {
       setLoading(true);
       await cancelExistingScheduled();
-      await AsyncStorage.setItem('reminders', JSON.stringify([reminderData]));
-      await scheduleOneTimeNotifications(startTime, endTime);
+      await scheduleOneTimeNotifications();
+      setLoading(false);
 
-      setLoading(false);
       Alert.alert(
-        'Success',
-        `Reminder set for ${reminderData.startTime} - ${reminderData.endTime}.\nYou will get a notification 5 minutes before and at the start time.`
+        "Success",
+        "You will get a reminder 5 minutes before and at shift start time"
       );
-      navigation.navigate('ReminderListScreen');
-    } catch (error) {
-      console.error(error);
+    } catch (e) {
+      console.error(e);
       setLoading(false);
-      Alert.alert('Error', 'Failed to save reminder.');
+      Alert.alert("Error", "Failed to set reminder");
     }
   };
 
+  /* ---------------- UI ---------------- */
   return (
     <View style={styles.container}>
-      {/* Back Button */}
-      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-        <Ionicons name="arrow-back" size={24} color="#000" />
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => navigation.goBack()}
+      >
+        <Ionicons name="arrow-back" size={24} />
       </TouchableOpacity>
 
       <Text style={styles.title}>Set One-Time Reminder</Text>
 
-      <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.input}>
+      <TouchableOpacity
+        style={styles.input}
+        onPress={() => setShowDatePicker(true)}
+      >
         <Text>{date.toDateString()}</Text>
       </TouchableOpacity>
+
       {showDatePicker && (
         <DateTimePicker
           value={date}
           mode="date"
-          display="default"
-          onChange={(event, selectedDate) => {
+          onChange={(e, d) => {
             setShowDatePicker(false);
-            if (selectedDate) setDate(selectedDate);
+            if (d) setDate(d);
           }}
         />
       )}
 
-      <TouchableOpacity onPress={() => setShowStartPicker(true)} style={styles.input}>
+      <TouchableOpacity
+        style={styles.input}
+        onPress={() => setShowStartPicker(true)}
+      >
         <Text>Start Time: {fmtHHMM(startTime)}</Text>
       </TouchableOpacity>
+
       {showStartPicker && (
         <DateTimePicker
           value={startTime}
           mode="time"
-          is24Hour={true}
-          display="default"
-          onChange={(event, selectedTime) => {
+          is24Hour
+          onChange={(e, t) => {
             setShowStartPicker(false);
-            if (selectedTime) setStartTime(selectedTime);
+            if (t) setStartTime(t);
           }}
         />
       )}
 
-      <TouchableOpacity onPress={() => setShowEndPicker(true)} style={styles.input}>
+      <TouchableOpacity
+        style={styles.input}
+        onPress={() => setShowEndPicker(true)}
+      >
         <Text>End Time: {fmtHHMM(endTime)}</Text>
       </TouchableOpacity>
+
       {showEndPicker && (
         <DateTimePicker
           value={endTime}
           mode="time"
-          is24Hour={true}
-          display="default"
-          onChange={(event, selectedTime) => {
+          is24Hour
+          onChange={(e, t) => {
             setShowEndPicker(false);
-            if (selectedTime) setEndTime(selectedTime);
+            if (t) setEndTime(t);
           }}
         />
       )}
@@ -274,7 +372,7 @@ const SetReminderScreen = ({ navigation }) => {
         {loading ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.buttonText}>Save One-Time Reminder</Text>
+          <Text style={styles.buttonText}>Save Reminder</Text>
         )}
       </TouchableOpacity>
     </View>
@@ -283,46 +381,37 @@ const SetReminderScreen = ({ navigation }) => {
 
 export default SetReminderScreen;
 
+/* ---------------- STYLES ---------------- */
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    backgroundColor: '#fff',
-    marginBottom: 35,
-  },
+  container: { flex: 1, padding: 20, backgroundColor: "#fff" },
   backButton: {
-    position: 'absolute',
+    position: "absolute",
     top: 15,
     left: 15,
     zIndex: 10,
-    backgroundColor: '#f5f5f5',
     padding: 8,
+    backgroundColor: "#f5f5f5",
     borderRadius: 20,
   },
   title: {
+    marginTop: 60,
     fontSize: 22,
-    fontWeight: 'bold',
+    fontWeight: "bold",
+    textAlign: "center",
     marginBottom: 20,
-    marginTop: 50, // extra spacing for back button
-    textAlign: 'center',
   },
   input: {
     padding: 15,
     borderWidth: 1,
-    borderColor: '#ccc',
     borderRadius: 8,
     marginBottom: 15,
+    borderColor: "#ccc",
   },
   button: {
-    backgroundColor: '#007bff',
+    backgroundColor: "#007bff",
     padding: 15,
     borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 10,
+    alignItems: "center",
   },
-  buttonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
+  buttonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
 });

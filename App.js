@@ -32,7 +32,7 @@ import LeaveConfirmationScreen from './Employees/LeaveConfirmationScreen';
 import EmployeeProfileScreen from './Employees/EmployeeProfileScreen';
 import TimeSchedular from './Employees/TimeScheduler';
 import Editempprofile from './Employees/EditEmployee';
-import createtaskemployee from './Employees/createtaskemployee';
+import CreateTaskScreen from "./Employees/createtaskemployee";
 import DeptSignUp from './Department/DeptSignUp';
 import SubAdminLoginScreen from './Department/SubAdminLogin';
 import SubAdminDashboardScreen from './Department/SubadminDashboard';
@@ -167,6 +167,18 @@ import NurseDashboard from "./Doctor/NurseDashboard";
 import AdminAssignDoctorScreen from "./Admin/AdminAssignNurse";
 import DoctorApprovalScreen from "./Admin/AdminDoctorsAppprove";
 import AdnminAddDoctor from "./Admin/AdminAddDoctor";
+import AdminHandoverScreen from "./Admin/AdminCashHandOverScreen";
+import AdminDepartmentLimitScreen from "./Admin/Departmentwiselimitleave";
+import EmployeeDailyBookings from "./Employees/PatientRecords";
+import MedicineScreen from "./patient/Medicinescreen";
+import AdminEmployeeTasksScreen from "./Admin/Adminemployeewisetasks";
+import AdminProfileApprovalScreen from "./Admin/AdminProfileRequest";
+import AdminAddStatinorayInventory from "./Admin/AdminAddStationary";
+import AdminRequestFormall from "./Admin/AdminEmployeRequestall";
+import EmployeeAllowanceall from "./Employees/EmployeeAllowanceusageall";
+import AdminEmployeePatientReports from "./Admin/AdminEmployeeBokingPatient";
+import DailyTokensReport from "./Admin/Admindaily token Report";
+import EmpAttendanceScreen from "./Employees/Attendance";
 // 📦 Storage imports
 import {
   getPatientId,
@@ -301,11 +313,11 @@ useEffect(() => {
         <Stack.Screen name="Leave" component={LeaveApplyScreen} />
         <Stack.Screen name="LeaveConfirm" component={LeaveConfirmationScreen} />
         <Stack.Screen name="LeaveStatus" component={LeaveStatusScreen} />
-        <Stack.Screen name="createtaskemp" component={createtaskemployee} />
+        <Stack.Screen name="CreateTaskScreen" component={CreateTaskScreen} />
         <Stack.Screen name="ProfileScreen" component={EmployeeProfileScreen} />
         <Stack.Screen name="Dept" component={DeptSignUp} />
         <Stack.Screen name="DeptDashboard" component={SubAdminDashboardScreen} />
-                <Stack.Screen name="UpdateEmployeeScreen" component={UpdateEmployeeScreen} />
+        <Stack.Screen name="UpdateEmployeeScreen" component={UpdateEmployeeScreen} />
 
         <Stack.Screen name="AdminDashboard" component={AdminPanelScreen} />
         <Stack.Screen name="SubAdmin" component={SubAdminsidebar} />
@@ -439,6 +451,20 @@ useEffect(() => {
 
 <Stack.Screen name="DoctorApprovalScreen" component={DoctorApprovalScreen}/>
 <Stack.Screen name="AdnminAddDoctor" component={AdnminAddDoctor}/>
+<Stack.Screen name="AdminHandoverScreen" component={AdminHandoverScreen}/>
+
+<Stack.Screen name="AdminDepartmentLimitScreen" component={AdminDepartmentLimitScreen}/>
+<Stack.Screen name="EmployeeDailyBookings" component={EmployeeDailyBookings}/>
+<Stack.Screen name="MedicineScreen" component={MedicineScreen}/>
+<Stack.Screen name="AdminEmployeeTasksScreen" component={AdminEmployeeTasksScreen}/>
+<Stack.Screen name="AdminProfileApprovalScreen" component={AdminProfileApprovalScreen}/>
+<Stack.Screen name="AdminAddStatinorayInventory" component={AdminAddStatinorayInventory}/>
+<Stack.Screen name="AdminRequestFormall" component={AdminRequestFormall}/>
+<Stack.Screen name="EmployeeAllowanceall" component={EmployeeAllowanceall}/>
+<Stack.Screen name="AdminEmployeePatientReports" component={AdminEmployeePatientReports}/>
+
+<Stack.Screen name="DailyTokensReport" component={DailyTokensReport}/>
+<Stack.Screen name="EmpAttendanceScreen" component={EmpAttendanceScreen}/>
 
 
 

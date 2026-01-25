@@ -6,6 +6,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  BackHandler,
   Alert,
   ActivityIndicator,
 } from "react-native";
@@ -29,7 +30,9 @@ const LeaveApplyScreen = () => {
   const [leaveHours, setLeaveHours] = useState("");
   const [loading, setLoading] = useState(false);
   const [deductionLoading, setDeductionLoading] = useState(false);
-const [appliedLeaves, setAppliedLeaves] = useState([]);
+  const [appliedLeaves, setAppliedLeaves] = useState([]);
+  const [allLeaves, setAllLeaves] = useState([]);
+  const [departmentLimits, setDepartmentLimits] = useState([]);
 
   const [employeeName, setEmployeeName] = useState("");
   const [empId, setEmpId] = useState(null);
@@ -62,10 +65,6 @@ const [appliedLeaves, setAppliedLeaves] = useState([]);
     };
     fetchEmployee();
   }, []);
-const isDuplicateLeave = () => {
-  const dateStr = startDate.toDateString(); // normalize date
-  return appliedLeaves.includes(dateStr);
-};
 
   // Auto-set current date for non-multiple-day leaves
   useEffect(() => {
@@ -102,47 +101,181 @@ const isDuplicateLeave = () => {
     return 0;
   }, [leaveDurationType, leaveHours, startDate, endDate]);
 
-  // Fetch salary deduction from backend
+  // Fetch salary deduction
+ // Fetch salary deduction whenever leave duration or hours change
+useEffect(() => {
+  if (!empId || !employeeName) return;
+
+  // For hourly leave, ensure hours > 0
+  if (leaveDurationType === "hourly" && (!leaveHours || parseFloat(leaveHours) <= 0)) return;
+
+  const fetchSalaryDeduction = async () => {
+    setDeductionLoading(true);
+    try {
+      const endDateForHourly = new Date(startDate);
+      if (leaveDurationType === "hourly") {
+        endDateForHourly.setHours(endDateForHourly.getHours() + parseFloat(leaveHours));
+      }
+
+      const payload = {
+        employeeId: empId,
+        employeeName,
+        leaveDuration: leaveDurationType,
+        startDate: startDate.toISOString(),
+        endDate: leaveDurationType === "hourly" ? endDateForHourly.toISOString() : endDate.toISOString(),
+      };
+
+      const res = await fetch(`${BASE_URL}/leaves/salary-deduction`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (res.ok && data) {
+        setSalaryData(data); // ✅ update state immediately
+      }
+    } catch (error) {
+      console.error("Salary deduction fetch error:", error);
+      setSalaryData(null);
+    } finally {
+      setDeductionLoading(false);
+    }
+  };
+
+  fetchSalaryDeduction();
+}, [empId, employeeName, leaveDurationType, leaveHours, startDate, endDate]);
+
+
+  // Fetch applied leaves
   useEffect(() => {
-    if (!empId || !employeeName) return;
-    if (leaveDurationType === "hourly" && (!leaveHours || parseFloat(leaveHours) <= 0)) return;
-
-    const fetchSalaryDeduction = async () => {
-      setDeductionLoading(true);
+    if (!empId) return;
+    const fetchExistingLeaves = async () => {
       try {
-        // Calculate endDate for hourly leave
-        const endDateForHourly = new Date(startDate);
-        if (leaveDurationType === "hourly") {
-          endDateForHourly.setHours(endDateForHourly.getHours() + parseFloat(leaveHours));
-        }
-
-        const payload = {
-          employeeId: empId,
-          employeeName,
-          leaveDuration: leaveDurationType,
-          startDate: startDate.toISOString(),
-          endDate: endDateForHourly.toISOString(),
-        };
-
-        const res = await fetch(`${BASE_URL}/leaves/salary-deduction`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-
+        const res = await fetch(`${BASE_URL}/leaves/by-employee/${empId}`);
         const data = await res.json();
-        if (res.ok && data) setSalaryData(data);
-      } catch (error) {
-        console.error("Salary deduction fetch error:", error);
-      } finally {
-        setDeductionLoading(false);
+        if (res.ok && data.leaves) {
+          const dates = data.leaves.map(l => new Date(l.start_date).toDateString());
+          setAppliedLeaves(dates);
+        }
+      } catch (err) {
+        console.error("Fetch leaves error:", err);
       }
     };
+    fetchExistingLeaves();
+  }, [empId]);
 
-    fetchSalaryDeduction();
-  }, [empId, employeeName, startDate, endDate, leaveDurationType, leaveHours]);
+  // Fetch all leaves for department calculation
+  useEffect(() => {
+    const fetchAllLeaves = async () => {
+      try {
+        const res = await fetch(`${BASE_URL}/leaves/all`);
+        const data = await res.json();
+        if (res.ok && data.leaves) setAllLeaves(data.leaves);
+      } catch (err) {
+        console.error("Fetch all leaves error:", err);
+      }
+    };
+    fetchAllLeaves();
+  }, []);
 
-  // Submit leave helper
+  // Fetch department limits
+  useEffect(() => {
+    const fetchDepartmentLimits = async () => {
+      try {
+        const res = await fetch(`${BASE_URL}/leavelimit/all`);
+        const data = await res.json();
+        setDepartmentLimits(data);
+      } catch (err) {
+        console.error("Failed to fetch department limits:", err);
+      }
+    };
+    fetchDepartmentLimits();
+  }, []);
+
+// Returns true if leave can be applied without exceeding department limit
+
+
+
+  const isDuplicateLeave = () => {
+    const dateStr = startDate.toDateString();
+    return appliedLeaves.includes(dateStr);
+  };
+
+// Returns department limit for the current department
+const getDepartmentLimit = () => {
+  if (!departmentLimits || departmentLimits.length === 0) return 0;
+
+  // Find the limit for the employee's department
+  const dept = departmentLimits.find(d => d.department === department);
+  return dept ? Number(dept.max_leaves_per_day) : 0; // Adjust 'limit' if your API returns a different field
+};
+
+const getLeavesTakenForDate = (date) => {
+  const day = new Date(date);
+  day.setHours(0, 0, 0, 0);
+
+  let total = 0;
+
+  allLeaves.forEach(l => {
+    const start = new Date(l.start_date);
+    const end = new Date(l.end_date);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+
+    // ✅ NO STATUS CHECK
+    if (l.department === department && day >= start && day <= end) {
+      if (l.leaves_duration === "hourly") {
+        total += (parseFloat(l.leavestaken) || 0) / 10;
+      } else if (
+        l.leaves_duration === "firsthalf" ||
+        l.leaves_duration === "secondhalf"
+      ) {
+        total += 0.5;
+      } else {
+        total += parseFloat(l.leavestaken) || 1;
+      }
+    }
+  });
+
+  return total;
+};
+
+
+// Checks if leave can be applied without exceeding department limit
+const checkDepartmentLimit = () => {
+  const limit = getDepartmentLimit();
+  if (!limit || limit <= 0) return { allowed: true };
+
+  // Multiple day leaves
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  start.setHours(0,0,0,0);
+  end.setHours(0,0,0,0);
+
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const leavesTaken = getLeavesTakenForDate(d);
+    // Add leaveCount for the day (1 day for fullDay, 0.5 for half, etc)
+    const currentLeaveCount = leaveDurationType === "multipleDays" ? 1 : leaveCount;
+
+    console.log("Dept:", department, "Date:", d.toDateString(), "Taken:", leavesTaken, "Limit:", limit, "Adding:", currentLeaveCount);
+
+    if (leavesTaken + currentLeaveCount > limit) {
+      return {
+        allowed: false,
+        date: new Date(d),
+        leavesTaken,
+        limit,
+      };
+    }
+  }
+
+  return { allowed: true };
+};
+
+
+
+
   const submitLeave = async () => {
     try {
       const payload = {
@@ -184,29 +317,8 @@ const isDuplicateLeave = () => {
       setLoading(false);
     }
   };
-  useEffect(() => {
-  if (!empId) return;
 
-  const fetchExistingLeaves = async () => {
-    try {
-      const res = await fetch(`${BASE_URL}/leaves/by-employee/${empId}`);
-      const data = await res.json();
-
-      if (res.ok && data.leaves) {
-        const dates = data.leaves.map(l => new Date(l.start_date).toDateString());
-        setAppliedLeaves(dates);
-      }
-    } catch (err) {
-      console.error("Fetch leaves error:", err);
-    }
-  };
-
-  fetchExistingLeaves();
-}, [empId]);
-
-
-  // Main submit with paid leave alert
- const handleSubmit = async () => {
+const handleSubmit = async () => {
   try {
     setLoading(true);
 
@@ -223,7 +335,19 @@ const isDuplicateLeave = () => {
       return;
     }
 
-    // Check for duplicate leave
+    // Check department limits
+  const deptCheck = checkDepartmentLimit();
+  if (!deptCheck.allowed) {
+    Alert.alert(
+      "Department Limit Reached",
+      `The department limit for ${department} is ${deptCheck.limit} per day.\nAlready ${deptCheck.leavesTaken} leave(s) taken on ${deptCheck.date.toDateString()}.`
+    );
+    setLoading(false);
+    return;
+  }
+
+
+    // Check if employee already applied leave for the start date
     if (isDuplicateLeave()) {
       Alert.alert("Duplicate Leave", "You have already applied for leave on this day.");
       setLoading(false);
@@ -242,7 +366,6 @@ const isDuplicateLeave = () => {
       );
     } else {
       await submitLeave();
-      // Add this day to appliedLeaves after successful submission
       setAppliedLeaves(prev => [...prev, startDate.toDateString()]);
     }
   } catch (error) {
@@ -251,13 +374,34 @@ const isDuplicateLeave = () => {
     setLoading(false);
   }
 };
- if (loading)
-        return (
-          <View style={styles.loader}>
-            <ActivityIndicator size="large" color="#007bff" />
-            <Text>Loading...</Text>
-          </View>
-        );
+
+
+useEffect(() => {
+  const backAction = () => {
+    // Instead of going back step by step, reset navigation to Sidebar/Home
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "EmpSideBar" }], // <-- replace with your sidebar/home screen name
+    });
+    return true; // prevents default back behavior
+  };
+
+  const backHandler = BackHandler.addEventListener(
+    "hardwareBackPress",
+    backAction
+  );
+
+  return () => backHandler.remove(); // clean up on unmount
+}, []);
+
+  if (loading)
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="large" color="#007bff" />
+        <Text>Loading...</Text>
+      </View>
+    );
+
 
 
   return (
@@ -285,13 +429,19 @@ const isDuplicateLeave = () => {
 
       <Text style={styles.label}>Leave Duration</Text>
       <View style={styles.pickerContainer}>
-        <Picker selectedValue={leaveDurationType} onValueChange={setLeaveDurationType}>
-          <Picker.Item label="Hourly" value="hourly" />
-          <Picker.Item label="First half" value="firsthalf" />
-          <Picker.Item label="Second half" value="secondhalf" />
-          <Picker.Item label="Full Day" value="fullDay" />
-          <Picker.Item label="Multiple Days" value="multipleDays" />
-        </Picker>
+      <Picker
+  selectedValue={leaveDurationType}
+  onValueChange={(value) => {
+    setLeaveDurationType(value); // triggers useEffect for deduction
+  }}
+>
+  <Picker.Item label="Hourly" value="hourly" />
+  <Picker.Item label="First half" value="firsthalf" />
+  <Picker.Item label="Second half" value="secondhalf" />
+  <Picker.Item label="Full Day" value="fullDay" />
+  <Picker.Item label="Multiple Days" value="multipleDays" />
+</Picker>
+
       </View>
 
       {/* Date Section */}

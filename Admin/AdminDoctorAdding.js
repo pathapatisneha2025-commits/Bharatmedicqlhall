@@ -157,14 +157,7 @@ export default function AdminDoctorFeeScreen() {
       Alert.alert("Error", "Failed to delete doctor");
     }
   };
-   if (loading) {
-    return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text style={{ marginTop: 10 }}>Loading doctors...</Text>
-      </View>
-    );
-  }
+   
 
   const renderDoctorItem = ({ item }) => (
     <View style={styles.doctorItem}>

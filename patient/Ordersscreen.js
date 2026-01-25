@@ -10,6 +10,7 @@ import {
   Alert,
   Modal,
   TextInput,
+  BackHandler,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { Ionicons } from "@expo/vector-icons";
@@ -81,7 +82,23 @@ const OrderCard = ({ order, onCancel }) => {
       setLoading(false);
     }
   };
-
+  useEffect(() => {
+        const backAction = () => {
+          // Instead of going back step by step, reset navigation to Sidebar/Home
+          navigation.reset({
+            index: 0,
+            routes: [{ name: "bottomtab" }], // <-- replace with your sidebar/home screen name
+          });
+          return true; // prevents default back behavior
+        };
+      
+        const backHandler = BackHandler.addEventListener(
+          "hardwareBackPress",
+          backAction
+        );
+      
+        return () => backHandler.remove(); // clean up on unmount
+      }, []);
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>

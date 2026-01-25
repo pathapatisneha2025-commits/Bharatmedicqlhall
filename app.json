@@ -20,15 +20,25 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.snehadatla.snackc4ae6d36daef4ae7a5d09752987da1b1"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "proxy": "https://hospitaldatabasemanagement.onrender.com"
     },
     "extra": {
       "eas": {
         "projectId": "64ad9b56-42f4-4577-91fe-276a59f148ce"
       }
+    },
+    "owner": "snehadatla",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/64ad9b56-42f4-4577-91fe-276a59f148ce"
     }
   }
 }

@@ -124,72 +124,92 @@ const BreakTimeScheduler = ({ navigation }) => {
     return { hour, minute };
   };
 
-  const scheduleBreakNotifications = async (breakInTime, breakOutTime) => {
-    const inStr = fmtHHMM(breakInTime);
-    const outStr = fmtHHMM(breakOutTime);
+ const scheduleBreakNotifications = async (breakInTime, breakOutTime) => {
+  const inStr = fmtHHMM(breakInTime);
+  const outStr = fmtHHMM(breakOutTime);
 
-    const inEarly = fiveMinutesBefore(breakInTime);
-    const outEarly = fiveMinutesBefore(breakOutTime);
+  const inEarly = fiveMinutesBefore(breakInTime);
+  const outEarly = fiveMinutesBefore(breakOutTime);
 
-    const inEarlyTrigger = getNextTriggerDate(inEarly.hour, inEarly.minute);
-    const inTrigger = getNextTriggerDate(breakInTime.getHours(), breakInTime.getMinutes());
-    const outEarlyTrigger = getNextTriggerDate(outEarly.hour, outEarly.minute);
-    const outTrigger = getNextTriggerDate(breakOutTime.getHours(), breakOutTime.getMinutes());
+  const inEarlyDate = getNextTriggerDate(inEarly.hour, inEarly.minute);
+  const inDate = getNextTriggerDate(
+    breakInTime.getHours(),
+    breakInTime.getMinutes()
+  );
+  const outEarlyDate = getNextTriggerDate(outEarly.hour, outEarly.minute);
+  const outDate = getNextTriggerDate(
+    breakOutTime.getHours(),
+    breakOutTime.getMinutes()
+  );
 
-    const notifications = [];
+  const notifications = [];
 
-    // Before Break In
-    notifications.push(
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "Break Starting Soon 🍴",
-          body: `Your break starts at ${inStr}`,
-          data: { screen: "BreakScreen" },
-        },
-        trigger: inEarlyTrigger,
-      })
-    );
+  // 🔔 Before Break In
+  notifications.push(
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Break Starting Soon 🍴",
+        body: `Your break starts at ${inStr}`,
+        data: { screen: "BreakScreen" },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: inEarlyDate,
+      },
+    })
+  );
 
-    // At Break In
-    notifications.push(
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "Break Time!",
-          body: `Time to take your break (${inStr} - ${outStr}).`,
-          data: { screen: "BreakScreen" },
-        },
-        trigger: inTrigger,
-      })
-    );
-    
+  // 🔔 At Break In
+  notifications.push(
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Break Time!",
+        body: `Time to take your break (${inStr} - ${outStr}).`,
+        data: { screen: "BreakScreen" },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: inDate,
+      },
+    })
+  );
 
-    // Before Break Out
-    notifications.push(
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "Break Ending Soon ⏳",
-          body: `Your break ends at ${outStr}`,
-          data: { screen: "BreakScreen" },
-        },
-        trigger: outEarlyTrigger,
-      })
-    );
+  // 🔔 Before Break Out
+  notifications.push(
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Break Ending Soon ⏳",
+        body: `Your break ends at ${outStr}`,
+        data: { screen: "BreakScreen" },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: outEarlyDate,
+      },
+    })
+  );
 
-    // At Break Out
-    notifications.push(
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "Break Over ✅",
-          body: "Break time is over. Please resume work.",
-          data: { screen: "BreakScreen" },
-        },
-        trigger: outTrigger,
-      })
-    );
+  // 🔔 At Break Out
+  notifications.push(
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Break Over ✅",
+        body: "Break time is over. Please resume work.",
+        data: { screen: "BreakScreen" },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: outDate,
+      },
+    })
+  );
 
-    scheduledIdsRef.current = notifications;
-    await AsyncStorage.setItem("breakScheduledIds", JSON.stringify(notifications));
-  };
+  scheduledIdsRef.current = notifications;
+  await AsyncStorage.setItem(
+    "breakScheduledIds",
+    JSON.stringify(notifications)
+  );
+};
 
   const handleSave = async () => {
     if (!employeeId) {
@@ -204,7 +224,6 @@ const BreakTimeScheduler = ({ navigation }) => {
       setLoading(false);
 
       Alert.alert("Success", "Break reminders have been set successfully!");
-      navigation.navigate("DashboardScreen");
     } catch (err) {
       console.error(err);
       setLoading(false);

@@ -9,6 +9,8 @@ import {
   SafeAreaView,
   Image,
   ActivityIndicator,
+        BackHandler,
+
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { storeMedicineId } from "../utils/storage";
@@ -52,7 +54,23 @@ const MedicineScreen = () => {
     const matchesTab = activeTab === "All" || item.category.trim() === activeTab;
     return matchesSearch && matchesTab;
   });
-
+ useEffect(() => {
+        const backAction = () => {
+          // Instead of going back step by step, reset navigation to Sidebar/Home
+          navigation.reset({
+            index: 0,
+            routes: [{ name: "bottomtab" }], // <-- replace with your sidebar/home screen name
+          });
+          return true; // prevents default back behavior
+        };
+      
+        const backHandler = BackHandler.addEventListener(
+          "hardwareBackPress",
+          backAction
+        );
+      
+        return () => backHandler.remove(); // clean up on unmount
+      }, []);
   const renderMedicine = ({ item }) => (
     <View style={styles.card}>
       <View style={styles.imageBox}>

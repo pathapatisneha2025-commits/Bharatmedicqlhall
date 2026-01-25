@@ -9,6 +9,9 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
+          BackHandler,
+
+
 } from "react-native";
 
 import { Ionicons } from "@expo/vector-icons";
@@ -90,7 +93,23 @@ export default function DoctorAppointmentScreen() {
 
     return matchesDepartment && matchesSearch && filterByFee(doctor.consultance_fee);
   });
-
+  useEffect(() => {
+        const backAction = () => {
+          // Instead of going back step by step, reset navigation to Sidebar/Home
+          navigation.reset({
+            index: 0,
+            routes: [{ name: "bottomtab" }], // <-- replace with your sidebar/home screen name
+          });
+          return true; // prevents default back behavior
+        };
+      
+        const backHandler = BackHandler.addEventListener(
+          "hardwareBackPress",
+          backAction
+        );
+      
+        return () => backHandler.remove(); // clean up on unmount
+      }, []);
   const renderDoctor = ({ item }) => {
     const initials = item.name
       .split(" ")

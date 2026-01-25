@@ -70,8 +70,10 @@ export default function EmployeeUpdateScreen({ navigation }) {
   const [showScheduleOutPicker, setShowScheduleOutPicker] = useState(false);
   const [showBreakInPicker, setShowBreakInPicker] = useState(false);
   const [showBreakOutPicker, setShowBreakOutPicker] = useState(false);
+const [clickedAfterApproved, setClickedAfterApproved] = useState(false);
 
   const [image, setImage] = useState(null);
+const [pendingUpdateForm, setPendingUpdateForm] = useState(null);
 
   // Fetch employee ID
   useEffect(() => {
@@ -196,67 +198,119 @@ export default function EmployeeUpdateScreen({ navigation }) {
   };
 
   // Handle update
-  const handleUpdateEmployee = async () => {
-    if (!employeeId) {
-      Alert.alert("Error", "Employee ID not found.");
+
+
+const handleUpdateEmployee = async () => {
+  if (!employeeId) {
+    Alert.alert("Error", "Employee ID not found.");
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    // 1️⃣ Fetch current status
+    const statusRes = await fetch(`${BASE_URL}/employee/${employeeId}`);
+    const statusData = await statusRes.json();
+
+    if (!statusData.success || !statusData.employee) {
+      Alert.alert("Error", "Unable to fetch employee status");
       return;
     }
 
-    if (form.password && form.password !== form.confirmPassword) {
-      Alert.alert("Validation Error", "Passwords do not match.");
-      return;
-    }
+    const currentStatus = statusData.employee.pending_approve_update;
 
+    // 2️⃣ Prepare FormData
     const formData = new FormData();
     Object.entries(form).forEach(([key, value]) => {
-      if (key === "dob" || key === "dateOfJoining") {
-        formData.append(key, value.toISOString().split("T")[0]);
-      } else if (
-        key === "temporaryAddresses" ||
-        key === "permanentAddresses"
-      ) {
+      if (value instanceof Date) {
+        formData.append(key, value.toISOString());
+      } else if (typeof value === "object" && value !== null) {
         formData.append(key, JSON.stringify(value));
       } else {
         formData.append(key, value);
       }
     });
 
-    if (image && image.uri && !image.uri.startsWith("http")) {
-      const uriParts = image.uri.split(".");
-      const fileType = uriParts[uriParts.length - 1];
+    if (image && !image.uri.startsWith("http")) {
+      const ext = image.uri.split(".").pop();
       formData.append("image", {
         uri: image.uri,
-        name: `profile.${fileType}`,
-        type: `image/${fileType}`,
+        name: `profile.${ext}`,
+        type: `image/${ext}`,
       });
     }
 
-    try {
-      setLoading(true);
-      const response = await fetch(
-        `${BASE_URL}/employee/update/${employeeId}`,
-        {
+    // 3️⃣ Behavior based on current status
+    if (currentStatus === "approved") {
+      if (!clickedAfterApproved) {
+        // First click → update directly
+        const updateRes = await fetch(`${BASE_URL}/employee/update/${employeeId}`, {
           method: "PUT",
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
           body: formData,
-        }
-      );
+        });
 
-      const result = await response.json();
-      if (response.ok && result.success) {
-        Alert.alert("Success", "Employee updated successfully");
-        navigation.navigate("ProfileScreen", { refresh: true });
+        const updateData = await updateRes.json();
+
+        if (!updateData.success) {
+          Alert.alert("Error", updateData.message || "Update failed");
+          return;
+        }
+
+        Alert.alert("Updated", "Your profile was updated successfully.");
+        setClickedAfterApproved(true); // Next click will set pending
+        return;
       } else {
-        Alert.alert("Update Failed", result.message || "Something went wrong");
+        // Second click → mark pending
+        const pendingRes = await fetch(`${BASE_URL}/employee/pending-update/${employeeId}`, {
+          method: "PUT",
+        });
+        const pendingData = await pendingRes.json();
+
+        if (!pendingData.success) {
+          Alert.alert("Error", pendingData.message || "Failed to set pending");
+          return;
+        }
+
+        Alert.alert(
+          "Pending",
+          "Your profile is now pending admin approval."
+        );
+        setClickedAfterApproved(false); // Reset after sending to pending
+        return;
       }
-    } catch (error) {
-      Alert.alert("Error", "Failed to update employee");
-    } finally {
-      setLoading(false);
     }
-  };
+
+    // 4️⃣ If not approved (pending or rejected) → mark pending directly
+    const pendingRes = await fetch(`${BASE_URL}/employee/pending-update/${employeeId}`, {
+      method: "PUT",
+    });
+    const pendingData = await pendingRes.json();
+
+    if (!pendingData.success) {
+      Alert.alert("Error", pendingData.message || "Failed to set pending");
+      return;
+    }
+
+    Alert.alert(
+      "Update Sent",
+      "Your profile changes have been sent to admin for approval."
+    );
+
+  } catch (err) {
+    console.error("Update error:", err);
+    Alert.alert("Error", "Something went wrong");
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+
+
+
+
+
 
   if (loading && !form.fullName) {
     return (

@@ -10,12 +10,14 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import Checkbox from "expo-checkbox";
 import { Picker } from "@react-native-picker/picker";
 import * as Notifications from "expo-notifications";
+import { getEmployeeId } from "../utils/storage";
 
 const BASE_URL = "https://hospitaldatabasemanagement.onrender.com";
 
@@ -29,6 +31,11 @@ Notifications.setNotificationHandler({
 });
 
 const CreateTaskScreen = ({ navigation }) => {
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const MAX_FORM_WIDTH = 420; // max width for tablet/desktop
+
+  const containerWidth = SCREEN_WIDTH > MAX_FORM_WIDTH ? MAX_FORM_WIDTH : SCREEN_WIDTH - 20;
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [assignees, setAssignees] = useState([]);
@@ -43,6 +50,7 @@ const CreateTaskScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [dropdownVisible, setDropdownVisible] = useState(false);
 
+  // Fetch employees
   useEffect(() => {
     const fetchEmployees = async () => {
       try {
@@ -70,6 +78,7 @@ const CreateTaskScreen = ({ navigation }) => {
     fetchEmployees();
   }, []);
 
+  // Filter employees by search query
   useEffect(() => {
     if (!searchQuery.trim()) {
       setFilteredEmployees(allEmployees);
@@ -90,72 +99,68 @@ const CreateTaskScreen = ({ navigation }) => {
     });
   };
 
-  const showLocalNotification = async (taskTitle) => {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: "Task Created ✅",
-        body: `Task "${taskTitle}" has been assigned.`,
-        sound: true,
-      },
-      trigger: null,
-    });
-  };
-
   const handleCreateTask = async () => {
-    if (!title.trim() || !description.trim() || assignees.length === 0) {
-      Alert.alert("Validation Error", "Please fill all required fields.");
-      return;
-    }
-
-    const formattedDate = dueDate.toISOString().split("T")[0];
-    const formattedTime = dueTime.toTimeString().split(" ")[0];
-
-    const payload = {
-      title: title.trim(),
-      description: description.trim(),
-      assignto: assignees.map((a) => a.email),
-      priority,
-      due_date: formattedDate,
-      due_time: formattedTime,
-    };
-
     try {
+      if (!title.trim()) return Alert.alert("Validation Error", "Task title is required.");
+      if (!description.trim()) return Alert.alert("Validation Error", "Task description is required.");
+      if (assignees.length === 0) return Alert.alert("Validation Error", "Please select at least one assignee.");
+
+      const formattedDate = dueDate.toISOString().split("T")[0];
+      const formattedTime = dueTime.toTimeString().split(" ")[0];
+
+      const createdBy = await getEmployeeId();
+      if (!createdBy) return Alert.alert("Error", "Unable to get your user ID.");
+
+      const payload = {
+        title: title.trim(),
+        description: description.trim(),
+        assignto: assignees.map((a) => a.email),
+        priority,
+        due_date: formattedDate,
+        due_time: formattedTime,
+        created_by: createdBy,
+      };
+
       setLoading(true);
       const response = await fetch(`${BASE_URL}/task/add`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+
       const data = await response.json();
 
       if (response.ok && data?.task) {
-        await showLocalNotification(title);
+        await Notifications.scheduleNotificationAsync({
+          content: { title: "Task Created ✅", body: `Task "${title}" has been assigned.` },
+          trigger: null,
+        });
+
         Alert.alert("Success", data.message || "Task created successfully!", [
           { text: "OK", onPress: () => navigation.goBack() },
         ]);
       } else {
-        throw new Error(data.message || "Task creation failed");
+        Alert.alert("Error", data?.error || data?.message || "Task creation failed.");
       }
     } catch (error) {
-      Alert.alert("Error", "Could not create task. Please try again.");
+      Alert.alert("Error", error.message || "Could not create task. Please try again.");
     } finally {
       setLoading(false);
     }
   };
-if (loading)
-      return (
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color="#007bff" />
-          <Text>Loading...</Text>
-        </View>
-      );
+
+  if (loading)
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="large" color="#007bff" />
+        <Text>Loading...</Text>
+      </View>
+    );
+
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.container}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 40, alignItems: "center" }}>
+        <View style={[styles.container, { width: containerWidth }]}>
           {/* Header */}
           <View style={styles.topBar}>
             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
@@ -166,12 +171,7 @@ if (loading)
 
           {/* Title */}
           <Text style={styles.label}>Task Title *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter task title"
-            value={title}
-            onChangeText={setTitle}
-          />
+          <TextInput style={styles.input} placeholder="Enter task title" value={title} onChangeText={setTitle} />
 
           {/* Description */}
           <Text style={styles.label}>Description *</Text>
@@ -192,15 +192,9 @@ if (loading)
               activeOpacity={0.7}
             >
               <Text style={styles.dropdownButtonText}>
-                {assignees.length > 0
-                  ? `${assignees.length} Selected`
-                  : "Select Employees"}
+                {assignees.length > 0 ? `${assignees.length} Selected` : "Select Employees"}
               </Text>
-              <Ionicons
-                name={dropdownVisible ? "chevron-up" : "chevron-down"}
-                size={18}
-                color="#2563eb"
-              />
+              <Ionicons name={dropdownVisible ? "chevron-up" : "chevron-down"} size={18} color="#2563eb" />
             </TouchableOpacity>
 
             {dropdownVisible && (
@@ -213,21 +207,15 @@ if (loading)
                 />
                 <ScrollView style={{ maxHeight: 250 }}>
                   {filteredEmployees.map((emp, idx) => {
-                    const isSelected = assignees.some(
-                      (a) => a.email === emp.email
-                    );
+                    const isSelected = assignees.some((a) => a.email === emp.email);
                     return (
                       <TouchableOpacity
                         key={idx}
                         onPress={() => toggleAssignee(emp)}
-                        activeOpacity={0.7}
+                        activeOpacity={1}
                         style={styles.checkboxItem}
                       >
-                        <Checkbox
-                          value={isSelected}
-                          onValueChange={() => toggleAssignee(emp)}
-                          color={isSelected ? "#2563eb" : undefined}
-                        />
+                        <Checkbox value={isSelected} onValueChange={() => toggleAssignee(emp)} color={isSelected ? "#2563eb" : undefined} />
                         <Text style={styles.checkboxLabel}>
                           {emp.full_name} ({emp.email})
                         </Text>
@@ -242,10 +230,7 @@ if (loading)
           {/* Priority */}
           <Text style={styles.label}>Priority *</Text>
           <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={priority}
-              onValueChange={(itemValue) => setPriority(itemValue)}
-            >
+            <Picker selectedValue={priority} onValueChange={(itemValue) => setPriority(itemValue)}>
               <Picker.Item label="High" value="High" />
               <Picker.Item label="Medium" value="Medium" />
               <Picker.Item label="Low" value="Low" />
@@ -254,14 +239,9 @@ if (loading)
 
           {/* Due Date */}
           <Text style={styles.label}>Due Date *</Text>
-          <TouchableOpacity
-            style={styles.datePicker}
-            onPress={() => setShowDatePicker(true)}
-          >
+          <TouchableOpacity style={styles.datePicker} onPress={() => setShowDatePicker(true)}>
             <Ionicons name="calendar-outline" size={20} color="#2563eb" />
-            <Text style={styles.dateText}>
-              {dueDate.toLocaleDateString()}
-            </Text>
+            <Text style={styles.dateText}>{dueDate.toLocaleDateString()}</Text>
           </TouchableOpacity>
           {showDatePicker && (
             <DateTimePicker
@@ -269,23 +249,18 @@ if (loading)
               mode="date"
               display="default"
               minimumDate={new Date()}
-              onChange={(event, selectedDate) => {
+              onChange={(e, selected) => {
                 setShowDatePicker(false);
-                if (selectedDate) setDueDate(selectedDate);
+                if (selected) setDueDate(selected);
               }}
             />
           )}
 
           {/* Due Time */}
           <Text style={styles.label}>Due Time *</Text>
-          <TouchableOpacity
-            style={styles.datePicker}
-            onPress={() => setShowTimePicker(true)}
-          >
+          <TouchableOpacity style={styles.datePicker} onPress={() => setShowTimePicker(true)}>
             <Ionicons name="time-outline" size={20} color="#2563eb" />
-            <Text style={styles.dateText}>
-              {dueTime.toLocaleTimeString([], { hour12: false })}
-            </Text>
+            <Text style={styles.dateText}>{dueTime.toLocaleTimeString([], { hour12: false })}</Text>
           </TouchableOpacity>
           {showTimePicker && (
             <DateTimePicker
@@ -293,35 +268,23 @@ if (loading)
               mode="time"
               display="default"
               is24Hour
-              onChange={(event, selectedTime) => {
+              onChange={(e, selected) => {
                 setShowTimePicker(false);
-                if (selectedTime) setDueTime(selectedTime);
+                if (selected) setDueTime(selected);
               }}
             />
           )}
 
           {/* Buttons */}
-          {loading ? (
-            <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 20 }} />
-          ) : (
-            <View style={styles.buttonRow}>
-              <TouchableOpacity
-                style={[styles.button, styles.cancelButton]}
-                onPress={() => navigation.goBack()}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
+          <View style={styles.buttonRow}>
+            <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={() => navigation.goBack()} activeOpacity={0.8}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.button, styles.createButton]}
-                onPress={handleCreateTask}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.createText}>+ Create Task</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+            <TouchableOpacity style={[styles.button, styles.createButton]} onPress={handleCreateTask} activeOpacity={0.8}>
+              <Text style={styles.createText}>+ Create Task</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -331,12 +294,12 @@ if (loading)
 export default CreateTaskScreen;
 
 const styles = StyleSheet.create({
-  scrollContainer: { paddingBottom: 40 },
   container: {
     flex: 1,
     padding: 20,
     backgroundColor: "#f8faff",
   },
+  scrollContainer: { paddingBottom: 40, alignItems: "center" },
   topBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -347,95 +310,21 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   backButton: { paddingHorizontal: 10 },
-  header: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "white",
-    marginLeft: 10,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 6,
-    color: "#333",
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#d0d7e2",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 15,
-    backgroundColor: "white",
-    elevation: 1,
-  },
-  searchInput: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 10,
-    backgroundColor: "white",
-  },
+  header: { fontSize: 20, fontWeight: "bold", color: "white", marginLeft: 10 },
+  label: { fontSize: 14, fontWeight: "600", marginBottom: 6, color: "#333" },
+  input: { borderWidth: 1, borderColor: "#d0d7e2", borderRadius: 10, padding: 12, marginBottom: 15, backgroundColor: "white", elevation: 1 },
+  searchInput: { borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10, marginBottom: 10, backgroundColor: "white" },
   dropdownContainer: { marginBottom: 20 },
-  dropdownButton: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    borderWidth: 1,
-    borderColor: "#d0d7e2",
-    borderRadius: 10,
-    padding: 12,
-    backgroundColor: "white",
-    elevation: 1,
-  },
+  dropdownButton: { flexDirection: "row", justifyContent: "space-between", borderWidth: 1, borderColor: "#d0d7e2", borderRadius: 10, padding: 12, backgroundColor: "white", elevation: 1 },
   dropdownButtonText: { fontSize: 14, color: "#333" },
-  checkboxContainer: {
-    backgroundColor: "white",
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#d0d7e2",
-    marginTop: 5,
-    elevation: 2,
-  },
-  checkboxItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 6,
-  },
+  checkboxContainer: { backgroundColor: "white", padding: 10, borderRadius: 10, borderWidth: 1, borderColor: "#d0d7e2", marginTop: 5, elevation: 2 },
+  checkboxItem: { flexDirection: "row", alignItems: "center", paddingVertical: 6 },
   checkboxLabel: { marginLeft: 10, fontSize: 14, color: "#333" },
-  pickerContainer: {
-    borderWidth: 1,
-    borderColor: "#d0d7e2",
-    borderRadius: 10,
-    marginBottom: 15,
-    backgroundColor: "white",
-    elevation: 1,
-  },
-  datePicker: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#d0d7e2",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 20,
-    backgroundColor: "white",
-    elevation: 1,
-  },
+  pickerContainer: { borderWidth: 1, borderColor: "#d0d7e2", borderRadius: 10, marginBottom: 15, backgroundColor: "white", elevation: 1 },
+  datePicker: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: "#d0d7e2", borderRadius: 10, padding: 12, marginBottom: 20, backgroundColor: "white", elevation: 1 },
   dateText: { marginLeft: 10, fontSize: 14, color: "#333" },
-  buttonRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 15,
-  },
-  button: {
-    flex: 1,
-    padding: 15,
-    borderRadius: 10,
-    alignItems: "center",
-    marginHorizontal: 5,
-    elevation: 2,
-  },
+  buttonRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 15 },
+  button: { flex: 1, padding: 15, borderRadius: 10, alignItems: "center", marginHorizontal: 5, elevation: 2 },
   cancelButton: { backgroundColor: "#f3f4f6" },
   createButton: { backgroundColor: "#2563eb" },
   cancelText: { color: "#333", fontWeight: "600" },

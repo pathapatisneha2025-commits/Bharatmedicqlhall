@@ -5,10 +5,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  ActivityIndicator,
+     Platform ,
+ActivityIndicator,
   Image,
   StatusBar,
   ScrollView,
+      useWindowDimensions,
+
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
@@ -17,6 +20,9 @@ import { useNavigation } from '@react-navigation/native';
 import { getEmployeeId } from '../utils/storage';
 
 const OffDutyScreen = () => {
+    const { width: SCREEN_WIDTH } = useWindowDimensions();
+    const MAX_WIDTH = 420; // maximum width for desktop/tablet
+    const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
   const navigation = useNavigation();
   const [permission, requestPermission] = useCameraPermissions();
   const [locationVerified, setLocationVerified] = useState(false);
@@ -35,16 +41,25 @@ const OffDutyScreen = () => {
  const FIXED_LATITUDE = 21.930424;
   const FIXED_LONGITUDE = 86.726709;
   const ALLOWED_RADIUS_METERS = 2000;
-
+const showAlert = (title, message) => {
+  if (Platform.OS === "web") {
+    // Web fallback
+    window.alert(`${title}\n\n${message}`);
+  } else {
+    // Android / iOS native alert
+    Alert.alert(title, message);
+  }
+};
   useEffect(() => {
     const fetchId = async () => {
       const id = await getEmployeeId();
       if (id) setEmployeeId(id.toString());
-      else Alert.alert('Error', 'No employee ID found. Please log in again.');
+      else showAlert('Error', 'No employee ID found. Please log in again.');
     };
     fetchId();
   }, []);
 
+  // ✅ Check location and camera permissions
   useEffect(() => {
     if (!employeeId) return;
     (async () => {
@@ -52,12 +67,13 @@ const OffDutyScreen = () => {
         setLoading(true);
         const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
         if (locStatus !== 'granted') {
-          Alert.alert('Permission denied', 'Location access is required.');
+          showAlert('Permission denied', 'Location access is required.');
           setLoading(false);
           return;
         }
 
         if (!permission?.granted) await requestPermission();
+
         const currentLocation = await Location.getCurrentPositionAsync({});
         const { latitude, longitude } = currentLocation.coords;
 
@@ -72,14 +88,14 @@ const OffDutyScreen = () => {
           await verifyLocationAPI(latitude, longitude);
         } else {
           setLocationVerified(false);
-          Alert.alert(
+         showAlert(
             'Location Error',
             `You are outside the allowed radius. Distance: ${Math.round(distance)}m`
           );
         }
       } catch (error) {
         console.error('Permission Error:', error);
-        Alert.alert('Error', 'Permission request failed');
+        showAlert('Error', 'Permission request failed');
       } finally {
         setLoading(false);
       }
@@ -110,7 +126,7 @@ const OffDutyScreen = () => {
       );
       const data = await res.json();
       setLocationVerified(data.locationVerified);
-      if (!data.locationVerified) Alert.alert('❌ Location not verified');
+      if (!data.locationVerified)  showAlert('❌ Location not verified');
     } catch (err) {
       console.error('Location Verify Error:', err);
       setLocationVerified(false);
@@ -142,10 +158,10 @@ const OffDutyScreen = () => {
       if (data.success && data.faceVerified) {
         setFaceVerified(true);
         setCapturedUrl(data.capturedUrl);
-        Alert.alert('✅ Face Verified', `Confidence: ${data.message}%`);
+       showAlert('✅ Face Verified', `Confidence: ${data.message}%`);
       } else {
         setFaceVerified(false);
-        Alert.alert('❌ Face not recognized');
+        showAlert('❌ Face not recognized');
       }
     } catch (err) {
       console.error('Face Verify Error:', err);
@@ -156,8 +172,8 @@ const OffDutyScreen = () => {
   };
 
   const handleOffDuty = async () => {
-    if (!locationVerified) return Alert.alert('Location Error', 'You are not in the allowed location.');
-    if (!faceVerified || !capturedUrl) return Alert.alert('Face Error', 'Please verify your face first.');
+    if (!locationVerified) return  showAlert('Location Error', 'You are not in the allowed location.');
+    if (!faceVerified || !capturedUrl) return  showAlert('Face Error', 'Please verify your face first.');
 
     try {
       const res = await fetch(
@@ -178,10 +194,10 @@ const OffDutyScreen = () => {
       if (data.success) {
         setMessage('✅ Off Duty marked successfully!');
         setHoursData(data.data);
-        Alert.alert('Success', data.message || 'Off Duty marked successfully');
+        showAlert('Success', data.message || 'Off Duty marked successfully');
       } else {
         setMessage('❌ Failed to mark Off Duty.');
-        Alert.alert('Error', data.message || 'Failed to mark Off Duty.');
+        showAlert('Error', data.message || 'Failed to mark Off Duty.');
       }
     } catch (err) {
       console.error('Off Duty API Error:', err);
@@ -223,6 +239,7 @@ const OffDutyScreen = () => {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
+        <View style={[styles.mainWrapper, { width: containerWidth, alignSelf: 'center' }]}>
 
       {/* Header */}
       <View style={styles.header}>
@@ -304,6 +321,7 @@ const OffDutyScreen = () => {
           <Text style={styles.hoursText}>Monthly Hours: {hoursData.monthlyHours}</Text>
         </View>
       )}
+      </View>
     </ScrollView>
   );
 };

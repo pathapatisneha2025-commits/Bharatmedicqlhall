@@ -158,14 +158,18 @@ const styles = StyleSheet.create({
     color: "#f1f5f9",
     fontWeight: "500",
   },
-  logout: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: "#1e293b",
-    backgroundColor: "#1e293b",
-  },
+ logout: {
+  flexDirection: "row",
+  alignItems: "center",
+  padding: 20,
+  borderTopWidth: 1,
+  borderTopColor: "#1e293b",
+  backgroundColor: "#1e293b",
+  marginBottom: 30,      // <-- Add some space from bottom
+  borderRadius: 10,      // Optional: rounded corners for style
+  marginHorizontal: 10,  // Optional: small horizontal padding
+},
+
   logoutText: {
     fontSize: 16,
     color: "#ff4d4d",
