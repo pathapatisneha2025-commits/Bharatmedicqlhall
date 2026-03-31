@@ -7,13 +7,35 @@ import {
   FlatList,
   SafeAreaView,
   ActivityIndicator,
-        BackHandler,
-
   Alert,
+  useWindowDimensions,
+  Platform,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { getPatientId, storeDeliveryAddressId } from "../utils/storage";
+
+/* =======================
+    PREMIUM COUNTING LOADER
+======================= */
+const CountingLoader = ({ text = "Loading..." }) => {
+  const [loadingCount, setLoadingCount] = useState(1);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLoadingCount((prev) => (prev >= 100 ? 100 : prev + 1));
+    }, 15);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <View style={styles.loaderContainer}>
+      <View style={styles.loaderCircle}>
+          <Text style={styles.loaderNumber}>{loadingCount}%</Text>
+          <Text style={styles.loaderSubText}>{text}</Text>
+      </View>
+    </View>
+  );
+};
 
 const DeliveryAddressScreen = () => {
   const [selectedAddress, setSelectedAddress] = useState(null);
@@ -23,23 +45,26 @@ const DeliveryAddressScreen = () => {
 
   const navigation = useNavigation();
   const route = useRoute();
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+
+  const showAlert = (title, message) => {
+    if (Platform.OS === "web") window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
 
   useEffect(() => {
     const fetchPatientId = async () => {
-      try {
-        const storedId = await getPatientId();
-        const id = route?.params?.patientId || storedId || 1;
-        setPatientId(id);
-      } catch (error) {
-        console.error("Failed to load patient ID:", error);
-        setPatientId(1);
-      }
+      const storedId = await getPatientId();
+      setPatientId(route?.params?.patientId || storedId || 1);
     };
     fetchPatientId();
   }, [route?.params?.patientId]);
 
+  useEffect(() => {
+    if (patientId) fetchDeliveryAddresses();
+  }, [patientId]);
+
   const fetchDeliveryAddresses = async () => {
-    if (!patientId) return;
     try {
       setLoading(true);
       const response = await fetch(
@@ -48,154 +73,112 @@ const DeliveryAddressScreen = () => {
       const data = await response.json();
       setAddresses(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error("API Error:", error);
-      Alert.alert("Error", "Failed to fetch delivery addresses.");
-      setAddresses([]);
+      showAlert("Error", "Failed to sync addresses.");
     } finally {
-      setLoading(false);
+      // Small delay to let the counting loader finish smoothly
+      setTimeout(() => setLoading(false), 800);
     }
   };
-
-  useEffect(() => {
-    if (patientId) fetchDeliveryAddresses();
-  }, [patientId]);
 
   const handleSelectAddress = async (item) => {
     setSelectedAddress(item);
     await storeDeliveryAddressId(item.id);
   };
 
-  const renderItem = ({ item }) => {
+  const renderAddressItem = ({ item }) => {
     const isSelected = selectedAddress?.id === item.id;
-
-    let iconName = "location-outline";
-    let iconColor = "#FFA500"; // orange for others
-    if (item.address_type.toLowerCase() === "home") {
-      iconName = "home-outline";
-      iconColor = "#4A90E2"; // blue
-    } else if (item.address_type.toLowerCase() === "work") {
-      iconName = "briefcase-outline";
-      iconColor = "#28A745"; // green
-    }
-     useEffect(() => {
-            const backAction = () => {
-              // Instead of going back step by step, reset navigation to Sidebar/Home
-              navigation.reset({
-                index: 0,
-                routes: [{ name: "patienthomescreen" }], // <-- replace with your sidebar/home screen name
-              });
-              return true; // prevents default back behavior
-            };
-          
-            const backHandler = BackHandler.addEventListener(
-              "hardwareBackPress",
-              backAction
-            );
-          
-            return () => backHandler.remove(); // clean up on unmount
-          }, []);
-
-     if (loading)
-            return (
-              <View style={styles.loader}>
-                <ActivityIndicator size="large" color="#007bff" />
-                <Text>Loading...</Text>
-              </View>
-            );
-    
 
     return (
       <TouchableOpacity
-        style={[styles.card, isSelected && styles.cardSelected]}
+        style={[styles.addressBox, isSelected && styles.addressBoxSelected]}
         onPress={() => handleSelectAddress(item)}
+        activeOpacity={0.8}
       >
-        <View style={styles.row}>
-          <Ionicons
-            name={iconName}
-            size={28}
-            color={iconColor}
-            style={{ marginRight: 12 }}
-          />
-          <View style={{ flex: 1 }}>
-            <View style={styles.row}>
-              <Text style={styles.name}>{item.name}</Text>
-              <View style={styles.tag}>
-                <Text style={styles.tagText}>{item.address_type}</Text>
-              </View>
+        <View style={styles.addressHeader}>
+          <View style={[styles.statusDot, isSelected && styles.statusDotActive]} />
+          <Text style={styles.addressTypeText}>{item.address_type.toUpperCase()}</Text>
+          {isSelected && (
+            <View style={styles.selectedBadge}>
+              <Ionicons name="checkmark-circle" size={16} color="#0080FF" />
+              <Text style={styles.selectedBadgeText}>ACTIVE</Text>
             </View>
-            <Text style={styles.phone}>📞 {item.mobile}</Text>
-            <Text style={styles.address}>
-              {item.flat}, {item.street}
-            </Text>
-            <Text style={styles.address}>
-              {item.city} - {item.pincode}
-            </Text>
-            {item.landmark && (
-              <Text style={styles.landmark}>Landmark: {item.landmark}</Text>
-            )}
-          </View>
-          <View style={[styles.radioOuter, isSelected && styles.radioOuterActive]}>
-            {isSelected && <View style={styles.radioInner} />}
-          </View>
+          )}
         </View>
+
+        <View style={styles.patientDetailRow}>
+          <Text style={styles.patientNameText}>{item.name}</Text>
+          <Text style={styles.patientPhoneText}>📞 {item.mobile}</Text>
+        </View>
+
+        <Text style={styles.fullAddressText}>
+          {item.flat}, {item.street}, {item.city} - {item.pincode}
+        </Text>
+
+        {item.landmark && (
+          <View style={styles.landmarkBox}>
+            <Text style={styles.landmarkLabel}>LANDMARK: </Text>
+            <Text style={styles.landmarkValue}>{item.landmark}</Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#4A90E2" />
-        <Text style={{ marginTop: 10 }}>Loading addresses...</Text>
-      </SafeAreaView>
-    );
-  }
+  if (loading) return <CountingLoader text="Syncing your locations..." />;
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header with icon */}
-      <View style={styles.headerContainer}>
-       <TouchableOpacity  onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#333" />
+      {/* Header Styled like Login Header */}
+      <View style={styles.topHeader}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="chevron-back" size={24} color="#0080FF" />
         </TouchableOpacity>
-        <Ionicons name="home-outline" size={28} color="#4A90E2" style={{ marginRight: 8 }} />
-        <Text style={styles.header}>Delivery Addresses</Text>
+        <View style={styles.headerTextGroup}>
+          <Text style={styles.mainTitle}>Delivery <Text style={{color: '#0080FF'}}>Address</Text></Text>
+          <Text style={styles.subTitle}>Select a saved location for your medical delivery</Text>
+        </View>
       </View>
-   
 
-      {addresses.length === 0 ? (
-        <Text style={styles.noAddressText}>
-          No addresses found. Add a new one below.
-        </Text>
-      ) : (
+      <View style={styles.content}>
         <FlatList
           data={addresses}
           keyExtractor={(item) => item.id.toString()}
-          renderItem={renderItem}
-          contentContainerStyle={{ paddingBottom: 20 }}
+          renderItem={renderAddressItem}
+          contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <TouchableOpacity
+              onPress={() => navigation.navigate("addaddress")}
+              style={styles.addAddressPrompt}
+            >
+              <View style={styles.addIconCircle}>
+                <Ionicons name="location" size={20} color="#0080FF" />
+              </View>
+              <Text style={styles.addAddressText}>Add New Delivery Location</Text>
+              <Ionicons name="chevron-forward" size={18} color="#94A3B8" style={{marginLeft: 'auto'}} />
+            </TouchableOpacity>
+          }
+          ListEmptyComponent={
+            <View style={styles.centered}>
+              <MaterialCommunityIcons name="map-marker-off-outline" size={70} color="#E2E8F0" />
+              <Text style={styles.emptyText}>No addresses found in your profile</Text>
+            </View>
+          }
         />
+      </View>
+
+      {/* Primary Action Button - Matches Login Style */}
+      {selectedAddress && (
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={styles.primaryActionBtn}
+            onPress={() => navigation.navigate("checkout", { patientId, address: selectedAddress })}
+          >
+            <Text style={styles.primaryActionText}>Continue to Checkout</Text>
+            <Ionicons name="arrow-forward" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
       )}
-
-      <TouchableOpacity
-        style={styles.addBtn}
-        onPress={() => navigation.navigate("addaddress")}
-      >
-        <Ionicons name="add-circle-outline" size={20} color="#fff" />
-        <Text style={styles.addBtnText}> Add New Address</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[styles.paymentBtn, !selectedAddress && styles.disabledBtn]}
-        disabled={!selectedAddress}
-        onPress={() =>
-          navigation.navigate("checkout", {
-            patientId,
-            address: selectedAddress,
-          })
-        }
-      >
-        <Text style={styles.paymentText}>Continue to Payment</Text>
-      </TouchableOpacity>
     </SafeAreaView>
   );
 };
@@ -203,61 +186,131 @@ const DeliveryAddressScreen = () => {
 export default DeliveryAddressScreen;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8f8f8", padding: 16 },
-  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  headerContainer: { flexDirection: "row", alignItems: "center", marginBottom: 4 },
-  header: { fontSize: 22, fontWeight: "700", color: "#333" },
-  subHeader: { fontSize: 14, color: "#555", marginBottom: 12 },
-  noAddressText: { textAlign: "center", fontSize: 16, color: "#777", marginTop: 20 },
-  card: {
+  container: { flex: 1, backgroundColor: "#FFFFFF" },
+  
+  // Header Style
+  topHeader: { paddingHorizontal: 30, paddingTop: 20, paddingBottom: 15 },
+  backButton: {
+    width: 45,
+    height: 45,
+    borderRadius: 15,
+    backgroundColor: '#F8FAFC',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 25,
+    borderWidth: 1,
+    borderColor: '#F1F5F9'
+  },
+  headerTextGroup: { marginBottom: 10 },
+  mainTitle: { fontSize: 32, fontWeight: "800", color: "#1E293B" },
+  subTitle: { fontSize: 15, color: "#64748B", marginTop: 5, lineHeight: 22 },
+
+  content: { flex: 1 },
+  listContainer: { padding: 25, paddingBottom: 120 },
+  
+  // Add Address Box
+  addAddressPrompt: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    padding: 18,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderStyle: "dashed",
+    marginBottom: 30,
+  },
+  addIconCircle: {
+    width: 40,
+    height: 40,
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    backgroundColor: "#fff",
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 15,
+  },
+  addAddressText: { fontSize: 16, fontWeight: "700", color: "#1E293B" },
+
+  // Address Cards (Signup Input Style)
+  addressBox: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: "#F1F5F9",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
     elevation: 2,
   },
-  cardSelected: { borderColor: "#4A90E2", backgroundColor: "#e6f0ff" },
-  row: { flexDirection: "row", alignItems: "center" },
-  name: { fontSize: 16, fontWeight: "600", color: "#333" },
-  tag: {
-    backgroundColor: "#eef4ff",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 5,
-    marginLeft: 8,
+  addressBoxSelected: {
+    borderColor: "#0080FF",
+    backgroundColor: "#F0F9FF",
   },
-  tagText: { fontSize: 12, color: "#4A90E2" },
-  phone: { marginTop: 4, color: "#555" },
-  address: { color: "#555" },
-  landmark: { color: "#777", fontSize: 13, marginTop: 4 },
-  addBtn: {
+  addressHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#CBD5E1", marginRight: 8 },
+  statusDotActive: { backgroundColor: "#0080FF" },
+  addressTypeText: { fontSize: 11, fontWeight: "800", color: "#64748B", letterSpacing: 0.5 },
+  selectedBadge: {
     flexDirection: "row",
-    borderRadius: 8,
-    padding: 16,
     alignItems: "center",
-    justifyContent: "center",
-    marginTop: 10,
-    marginBottom: 12,
-    backgroundColor: "#4A90E2",
+    marginLeft: "auto",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#0080FF",
+    gap: 5,
   },
-  addBtnText: { color: "#fff", fontSize: 16, fontWeight: "600", marginLeft: 6 },
-  paymentBtn: { backgroundColor: "#4A90E2", padding: 16, borderRadius: 8, alignItems: "center" },
-  disabledBtn: { backgroundColor: "#ccc" },
-  paymentText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  radioOuter: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: "#bbb",
-    marginLeft: 12,
+  selectedBadgeText: { fontSize: 10, fontWeight: "900", color: "#0080FF" },
+
+  patientDetailRow: { marginBottom: 8 },
+  patientNameText: { fontSize: 18, fontWeight: "800", color: "#1E293B" },
+  patientPhoneText: { fontSize: 14, color: "#0080FF", fontWeight: "700", marginTop: 2 },
+  fullAddressText: { fontSize: 14, color: "#475569", lineHeight: 22 },
+  
+  landmarkBox: {
+    marginTop: 15,
+    flexDirection: "row",
+    backgroundColor: "#F1F5F9",
+    padding: 12,
+    borderRadius: 12,
+  },
+  landmarkLabel: { fontSize: 11, fontWeight: "800", color: "#64748B" },
+  landmarkValue: { fontSize: 11, color: "#1E293B", fontWeight: "700" },
+
+  // Primary Button Style (Matches Login)
+  footer: {
+    position: "absolute",
+    bottom: 0,
+    width: "100%",
+    padding: 25,
+    backgroundColor: "rgba(255,255,255,0.95)",
+  },
+  primaryActionBtn: {
+    backgroundColor: "#0080FF",
+    height: 65,
+    borderRadius: 18,
+    flexDirection: "row",
+    justifyContent: "center",
     alignItems: "center",
-    justifyContent: "center",
+    gap: 12,
+    ...Platform.select({
+      web: { boxShadow: '0px 10px 25px rgba(0, 128, 255, 0.4)' },
+      default: { elevation: 8, shadowColor: '#0080FF', shadowOpacity: 0.4, shadowRadius: 10 }
+    })
   },
-  radioOuterActive: { borderColor: "#4A90E2" },
-  radioInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#4A90E2" },
+  primaryActionText: { color: "#fff", fontSize: 18, fontWeight: "800" },
+
+  // Loader Styles
+  loaderContainer: { flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' },
+  loaderCircle: { width: 200, height: 200, borderRadius: 100, backgroundColor: '#F0F9FF', justifyContent: 'center', alignItems: 'center', borderWidth: 8, borderColor: '#0080FF' },
+  loaderNumber: { fontSize: 48, fontWeight: '900', color: '#0080FF' },
+  loaderSubText: { fontSize: 14, color: '#64748B', fontWeight: '600', marginTop: 5 },
+
+  centered: { flex: 1, justifyContent: "center", alignItems: "center", marginTop: 50 },
+  emptyText: { marginTop: 15, color: "#94A3B8", fontSize: 16, fontWeight: '600' },
 });

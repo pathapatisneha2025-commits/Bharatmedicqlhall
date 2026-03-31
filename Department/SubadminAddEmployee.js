@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, Image, ActivityIndicator, Alert
+  ScrollView, Image, ActivityIndicator, Alert, Platform,
+  useWindowDimensions,KeyboardAvoidingView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -47,7 +48,14 @@ const [showScheduleInPicker, setShowScheduleInPicker] = useState(false);
 const [showScheduleOutPicker, setShowScheduleOutPicker] = useState(false);
 const [showBreakInPicker, setShowBreakInPicker] = useState(false);
 const [showBreakOutPicker, setShowBreakOutPicker] = useState(false);
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
+  const MAX_WIDTH = 420;
+  const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
 
+  const showAlert = (title, message) => {
+    if (Platform.OS === 'web') window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
   const handleDateChange = (setter, setterVisible) => (event, selectedDate) => {
     setterVisible(false);
     if (selectedDate) setter(selectedDate);
@@ -247,18 +255,29 @@ else if (esiNumber.length < 5) errors.esiNumber = 'Invalid ESI number';
       const data = await res.json();
       setLoading(false);
       if (res.ok && data.success) {
-        Alert.alert('Success', '✅ Registration Successful!');
+       showAlert('Success', '✅ Registration Successful!');
         navigation.navigate('EmpLogin');
-      } else Alert.alert('Error', data.message || 'Failed');
+      } else showAlert('Error', data.message || 'Failed');
     } catch (err) {
       setLoading(false);
-      Alert.alert('Error', err.message);
+      showAlert('Error', err.message);
     }
   };
 
   // -------------------- UI --------------------
   return (
+   <KeyboardAvoidingView
+  style={{ flex: 1, backgroundColor: '#fff' }}
+  behavior={Platform.OS === 'ios' ? 'padding' : 'height'} // <--- 'height' for Android
+  keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0} // adjust if you have a header
+>
    <ScrollView contentContainerStyle={styles.container}>
+    {/* <View
+                                    style={[
+                                      styles.mainWrapper,
+                                      { width: containerWidth, alignSelf: "center", flex: 1 },
+                                    ]}
+                                  > */}
   <TouchableOpacity onPress={() => navigation.goBack()}>
     <Ionicons name="arrow-back" size={24} color="#333" />
   </TouchableOpacity>
@@ -408,26 +427,54 @@ else if (esiNumber.length < 5) errors.esiNumber = 'Invalid ESI number';
   numberOfLines={4}
 />
 {validationErrors.jobDescription && <Text style={styles.error}>{validationErrors.jobDescription}</Text>}
-  {/* Date of Joining */}
-<TouchableOpacity style={styles.input} onPress={() => setShowDOJPicker(true)}>
-  <Text>{dateOfJoining ? dateOfJoining.toDateString() : 'Select Date of Joining'}</Text>
+ {/* DOB */}
+<TouchableOpacity
+  style={styles.input}
+  onPress={() => Platform.OS !== 'web' && setShowDobPicker(true)}
+>
+  {Platform.OS === 'web' ? (
+    <input
+      type="date"
+      value={dob.toISOString().split('T')[0]}
+      onChange={(e) => setDob(new Date(e.target.value))}
+      style={{  padding: 10, borderRadius: 8, borderColor: '#ccc', borderWidth: 1 }}
+    />
+  ) : (
+    <Text>{dob.toDateString()}</Text>
+  )}
 </TouchableOpacity>
-{showDOJPicker && (
+{showDobPicker && Platform.OS !== 'web' && (
   <DateTimePicker
-    value={dateOfJoining}
+    value={dob}
     mode="date"
     display="calendar"
-    onChange={handleDateChange(setDateOfJoining, setShowDOJPicker)}
+    onChange={handleDateChange(setDob, setShowDobPicker)}
     maximumDate={new Date()}
   />
 )}
-{validationErrors.dateOfJoining && <Text style={styles.error}>{validationErrors.dateOfJoining}</Text>}
 
- {/* Schedule In */}
-<TouchableOpacity style={styles.input} onPress={() => setShowScheduleInPicker(true)}>
-  <Text>{scheduleIn ? formatTime(scheduleIn) : 'Select Schedule In'}</Text>
+{/* Schedule In */}
+<TouchableOpacity
+  style={styles.input}
+  onPress={() => Platform.OS !== 'web' && setShowScheduleInPicker(true)}
+>
+  {Platform.OS === 'web' ? (
+    <input
+      type="time"
+      value={scheduleIn ? formatTime(scheduleIn) : ''}
+      onChange={(e) => {
+        const [hh, mm] = e.target.value.split(':');
+        const d = new Date();
+        d.setHours(parseInt(hh), parseInt(mm));
+        setScheduleIn(d);
+      }}
+      style={{  padding: 10, borderRadius: 8, borderColor: '#ccc', borderWidth: 1 }}
+    />
+  ) : (
+    <Text>{scheduleIn ? formatTime(scheduleIn) : 'Select Schedule In'}</Text>
+  )}
 </TouchableOpacity>
-{showScheduleInPicker && (
+{showScheduleInPicker && Platform.OS !== 'web' && (
   <DateTimePicker
     value={scheduleIn || new Date()}
     mode="time"
@@ -435,13 +482,29 @@ else if (esiNumber.length < 5) errors.esiNumber = 'Invalid ESI number';
     onChange={handleTimeChange(setScheduleIn, setShowScheduleInPicker)}
   />
 )}
-{validationErrors.scheduleIn && <Text style={styles.error}>{validationErrors.scheduleIn}</Text>}
 
 {/* Schedule Out */}
-<TouchableOpacity style={styles.input} onPress={() => setShowScheduleOutPicker(true)}>
-  <Text>{scheduleOut ? formatTime(scheduleOut) : 'Select Schedule Out'}</Text>
+<TouchableOpacity
+  style={styles.input}
+  onPress={() => Platform.OS !== 'web' && setShowScheduleOutPicker(true)}
+>
+  {Platform.OS === 'web' ? (
+    <input
+      type="time"
+      value={scheduleOut ? formatTime(scheduleOut) : ''}
+      onChange={(e) => {
+        const [hh, mm] = e.target.value.split(':');
+        const d = new Date();
+        d.setHours(parseInt(hh), parseInt(mm));
+        setScheduleOut(d);
+      }}
+      style={{  padding: 10, borderRadius: 8, borderColor: '#ccc', borderWidth: 1 }}
+    />
+  ) : (
+    <Text>{scheduleOut ? formatTime(scheduleOut) : 'Select Schedule Out'}</Text>
+  )}
 </TouchableOpacity>
-{showScheduleOutPicker && (
+{showScheduleOutPicker && Platform.OS !== 'web' && (
   <DateTimePicker
     value={scheduleOut || new Date()}
     mode="time"
@@ -449,13 +512,29 @@ else if (esiNumber.length < 5) errors.esiNumber = 'Invalid ESI number';
     onChange={handleTimeChange(setScheduleOut, setShowScheduleOutPicker)}
   />
 )}
-{validationErrors.scheduleOut && <Text style={styles.error}>{validationErrors.scheduleOut}</Text>}
 
 {/* Break In */}
-<TouchableOpacity style={styles.input} onPress={() => setShowBreakInPicker(true)}>
-  <Text>{breakIn ? formatTime(breakIn) : 'Select Break In'}</Text>
+<TouchableOpacity
+  style={styles.input}
+  onPress={() => Platform.OS !== 'web' && setShowBreakInPicker(true)}
+>
+  {Platform.OS === 'web' ? (
+    <input
+      type="time"
+      value={breakIn ? formatTime(breakIn) : ''}
+      onChange={(e) => {
+        const [hh, mm] = e.target.value.split(':');
+        const d = new Date();
+        d.setHours(parseInt(hh), parseInt(mm));
+        setBreakIn(d);
+      }}
+      style={{ padding: 10, borderRadius: 8, borderColor: '#ccc', borderWidth: 1 }}
+    />
+  ) : (
+    <Text>{breakIn ? formatTime(breakIn) : 'Select Break In'}</Text>
+  )}
 </TouchableOpacity>
-{showBreakInPicker && (
+{showBreakInPicker && Platform.OS !== 'web' && (
   <DateTimePicker
     value={breakIn || new Date()}
     mode="time"
@@ -463,13 +542,29 @@ else if (esiNumber.length < 5) errors.esiNumber = 'Invalid ESI number';
     onChange={handleTimeChange(setBreakIn, setShowBreakInPicker)}
   />
 )}
-{validationErrors.breakIn && <Text style={styles.error}>{validationErrors.breakIn}</Text>}
 
 {/* Break Out */}
-<TouchableOpacity style={styles.input} onPress={() => setShowBreakOutPicker(true)}>
-  <Text>{breakOut ? formatTime(breakOut) : 'Select Break Out'}</Text>
+<TouchableOpacity
+  style={styles.input}
+  onPress={() => Platform.OS !== 'web' && setShowBreakOutPicker(true)}
+>
+  {Platform.OS === 'web' ? (
+    <input
+      type="time"
+      value={breakOut ? formatTime(breakOut) : ''}
+      onChange={(e) => {
+        const [hh, mm] = e.target.value.split(':');
+        const d = new Date();
+        d.setHours(parseInt(hh), parseInt(mm));
+        setBreakOut(d);
+      }}
+      style={{  padding: 10, borderRadius: 8, borderColor: '#ccc', borderWidth: 1 }}
+    />
+  ) : (
+    <Text>{breakOut ? formatTime(breakOut) : 'Select Break Out'}</Text>
+  )}
 </TouchableOpacity>
-{showBreakOutPicker && (
+{showBreakOutPicker && Platform.OS !== 'web' && (
   <DateTimePicker
     value={breakOut || new Date()}
     mode="time"
@@ -477,6 +572,8 @@ else if (esiNumber.length < 5) errors.esiNumber = 'Invalid ESI number';
     onChange={handleTimeChange(setBreakOut, setShowBreakOutPicker)}
   />
 )}
+
+{validationErrors.breakOut && <Text style={styles.error}>{validationErrors.breakOut}</Text>}
 {validationErrors.breakOut && <Text style={styles.error}>{validationErrors.breakOut}</Text>}
 
 
@@ -502,8 +599,10 @@ else if (esiNumber.length < 5) errors.esiNumber = 'Invalid ESI number';
  <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
   {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>ADD</Text>}
 </TouchableOpacity>
+{/* </View> */}
 
 </ScrollView>
+</KeyboardAvoidingView>
 
   );
 }

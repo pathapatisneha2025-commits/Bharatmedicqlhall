@@ -10,6 +10,8 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+    Platform,
+  useWindowDimensions,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -19,8 +21,8 @@ import { useRoute, useNavigation } from "@react-navigation/native";
 
 const BASE_URL = "https://hospitaldatabasemanagement.onrender.com";
 
-export default function AdminUpdateEmployeeScreen({ navigation }) {
-  const [employeeId, setEmployeeId] = useState(null);
+export default function UpdateEmployeeScreen({ navigation }) {
+   const [employeeId, setEmployeeId] = useState(null);
   const [loading, setLoading] = useState(false);
 const route = useRoute();
     const { id } = route.params; // 👈 coming from navigation.navigate("AdminUpdateEmployeeScreen", { id })
@@ -28,7 +30,25 @@ const route = useRoute();
   // API-driven dropdowns
   const [departmentOptions, setDepartmentOptions] = useState([]);
   const [roleOptions, setRoleOptions] = useState([]);
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
+  const MAX_WIDTH = 420;
+  const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
 
+ const showAlert = (title, message, buttons) => {
+    if (Platform.OS === "web") {
+      if (buttons && buttons.length > 1) {
+        const confirmed = window.confirm(`${title}\n\n${message}`);
+        if (confirmed) {
+          const okBtn = buttons.find(b => b.style !== "cancel");
+          okBtn?.onPress?.();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
+  };
   // Form state
   const [form, setForm] = useState({
     fullName: "",
@@ -154,10 +174,10 @@ const route = useRoute();
           });
           setImage(emp.image ? { uri: emp.image } : null);
         } else {
-          Alert.alert("Error", data.message || "Failed to fetch employee details");
+          showAlert("Error", data.message || "Failed to fetch employee details");
         }
       } catch (error) {
-        Alert.alert("Error", "Failed to fetch employee details");
+        showAlert("Error", "Failed to fetch employee details");
       } finally {
         setLoading(false);
       }
@@ -170,7 +190,7 @@ const route = useRoute();
     const permissionResult =
       await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permissionResult.granted) {
-      Alert.alert("Permission Denied", "Camera roll access is required.");
+     showAlert("Permission Denied", "Camera roll access is required.");
       return;
     }
 
@@ -188,12 +208,12 @@ const route = useRoute();
   // Handle update
   const handleUpdateEmployee = async () => {
     if (!id) {
-      Alert.alert("Error", "Employee ID not found.");
+      showAlert("Error", "Employee ID not found.");
       return;
     }
 
     if (form.password && form.password !== form.confirmPassword) {
-      Alert.alert("Validation Error", "Passwords do not match.");
+     showAlert("Validation Error", "Passwords do not match.");
       return;
     }
 
@@ -227,21 +247,19 @@ const route = useRoute();
         `${BASE_URL}/employee/update/${id}`,
         {
           method: "PUT",
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
+          
           body: formData,
         }
       );
 
       const result = await response.json();
       if (response.ok && result.success) {
-        Alert.alert("Success", "Employee updated successfully");
+        showAlert("Success", "Employee updated successfully");
       } else {
-        Alert.alert("Update Failed", result.message || "Something went wrong");
+       showAlert("Update Failed", result.message || "Something went wrong");
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to update employee");
+      showAlert("Error", "Failed to update employee");
     } finally {
       setLoading(false);
     }
@@ -256,7 +274,13 @@ const route = useRoute();
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[styles.container, { paddingBottom: 50 }]}>
+      {/* <View
+                                style={[
+                                  styles.mainWrapper,
+                                  { width: containerWidth, alignSelf: "center", flex: 1 },
+                                ]}
+                              > */}
       <TouchableOpacity
         style={styles.backButton}
         onPress={() => navigation.goBack()}
@@ -745,6 +769,7 @@ const route = useRoute();
           <Text style={styles.updateButtonText}>Update Employee Details</Text>
         )}
       </TouchableOpacity>
+      {/* </View> */}
     </ScrollView>
   );
 }

@@ -9,19 +9,26 @@ import {
   Image,
   StatusBar,
   ScrollView,
+  Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { getAdminId } from '../utils/storage'; // ✅ Admin ID import
+import { getAdminId } from '../utils/storage';
 
 const AdminOffDutyScreen = () => {
   const navigation = useNavigation();
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const isWeb = Platform.OS === 'web' && SCREEN_WIDTH > 800;
+
   const [permission, requestPermission] = useCameraPermissions();
   const [locationVerified, setLocationVerified] = useState(false);
   const [faceVerified, setFaceVerified] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingCount, setLoadingCount] = useState(0);
+  
   const [message, setMessage] = useState('');
   const [imageUri, setImageUri] = useState(null);
   const [capturedUrl, setCapturedUrl] = useState(null);
@@ -31,18 +38,41 @@ const AdminOffDutyScreen = () => {
 
   const cameraRef = useRef(null);
 
-  // ✅ Fixed office coordinates
-  const FIXED_LATITUDE = 17.677829;
-  const FIXED_LONGITUDE = 83.198689;
-  const ALLOWED_RADIUS_METERS = 2000; // 2 km
+  const FIXED_LATITUDE = 21.930424;
+  const FIXED_LONGITUDE = 86.726709;
+  const ALLOWED_RADIUS_METERS = 2000;
 
-  // ------------------- GET ADMIN ID -------------------
+  const showAlert = (title, message, buttons) => {
+    if (Platform.OS === "web") {
+      if (buttons && buttons.length > 1) {
+        const confirmed = window.confirm(`${title}\n\n${message}`);
+        if (confirmed) {
+          const okBtn = buttons.find(b => b.style !== "cancel");
+          okBtn?.onPress?.();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
+  };
+
+  useEffect(() => {
+    let interval;
+    if (loading) {
+      setLoadingCount(0);
+      interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+    } else clearInterval(interval);
+    return () => clearInterval(interval);
+  }, [loading]);
+
   useEffect(() => {
     const fetchId = async () => {
       try {
         const id = await getAdminId();
         if (id) setAdminId(id.toString());
-        else Alert.alert('Error', 'No Admin ID found. Please log in again.');
+        else showAlert('Error', 'No Admin ID found. Please log in again.');
       } catch (err) {
         console.error('Admin ID Fetch Error:', err);
       }
@@ -50,47 +80,29 @@ const AdminOffDutyScreen = () => {
     fetchId();
   }, []);
 
-  // ------------------- VERIFY LOCATION -------------------
   useEffect(() => {
     if (!adminId) return;
-
     (async () => {
       try {
         setLoading(true);
-
-        const { status: locStatus } =
-          await Location.requestForegroundPermissionsAsync();
+        const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
         if (locStatus !== 'granted') {
-          Alert.alert('Permission denied', 'Location access is required.');
+          showAlert('Permission denied', 'Location access is required.');
           return setLoading(false);
         }
-
         if (!permission?.granted) await requestPermission();
-
         const currentLocation = await Location.getCurrentPositionAsync({});
         const { latitude, longitude } = currentLocation.coords;
-
-        const distance = getDistance(
-          FIXED_LATITUDE,
-          FIXED_LONGITUDE,
-          latitude,
-          longitude
-        );
+        const distance = getDistance(FIXED_LATITUDE, FIXED_LONGITUDE, latitude, longitude);
 
         if (distance <= ALLOWED_RADIUS_METERS) {
           await verifyLocationAPI(latitude, longitude);
         } else {
           setLocationVerified(false);
-          Alert.alert(
-            'Location Error',
-            `You are outside the allowed 2km radius. Distance: ${Math.round(
-              distance
-            )}m`
-          );
+          showAlert('Location Error', `Outside 2km radius. Distance: ${Math.round(distance)}m`);
         }
       } catch (error) {
-        console.error('Permission Error:', error);
-        Alert.alert('Error', 'Permission request failed');
+        showAlert('Error', 'Permission request failed');
       } finally {
         setLoading(false);
       }
@@ -102,27 +114,20 @@ const AdminOffDutyScreen = () => {
     const R = 6371000;
     const dLat = deg2rad(lat2 - lat1);
     const dLon = deg2rad(lon2 - lon1);
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon / 2) ** 2;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
   const verifyLocationAPI = async (latitude, longitude) => {
     try {
-      const res = await fetch(
-        'https://hospitaldatabasemanagement.onrender.com/attendance/verify-location',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ adminId, latitude, longitude }),
-        }
-      );
+      const res = await fetch('https://hospitaldatabasemanagement.onrender.com/attendance/verify-location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminId, latitude, longitude }),
+      });
       const data = await res.json();
       setLocationVerified(!!data.locationVerified);
-      if (!data.locationVerified) Alert.alert('❌ Location not verified');
     } catch (err) {
-      console.error('Location Verify Error:', err);
       setLocationVerified(false);
     }
   };
@@ -141,24 +146,20 @@ const AdminOffDutyScreen = () => {
       const formData = new FormData();
       formData.append('adminId', adminId);
       formData.append('image', { uri, type: 'image/jpeg', name: 'face.jpg' });
-
-      const res = await fetch(
-        'https://hospitaldatabasemanagement.onrender.com/attendance/verify-face',
-        { method: 'POST', body: formData, headers: { Accept: 'application/json' } }
-      );
-
+      const res = await fetch('https://hospitaldatabasemanagement.onrender.com/attendance/verify-face', {
+        method: 'POST',
+        body: formData,
+        headers: { Accept: 'application/json' }
+      });
       const data = await res.json();
-
       if (data.success && data.faceVerified) {
         setFaceVerified(true);
         setCapturedUrl(data.capturedUrl);
-        Alert.alert('✅ Face Verified', `Confidence: ${data.message}%`);
       } else {
         setFaceVerified(false);
-        Alert.alert('❌ Face not recognized');
+        showAlert('❌ Face not recognized');
       }
     } catch (err) {
-      console.error('Face Verify Error:', err);
       setFaceVerified(false);
     } finally {
       setFaceLoading(false);
@@ -166,147 +167,173 @@ const AdminOffDutyScreen = () => {
   };
 
   const handleOffDuty = async () => {
-    if (!locationVerified) {
-      return Alert.alert('Location Error', 'You are not in the allowed location.');
-    }
-    if (!faceVerified || !capturedUrl) {
-      return Alert.alert('Face Error', 'Please capture and verify your face first.');
-    }
-
+    if (!locationVerified) return showAlert('Location Error', 'Not in allowed location.');
+    if (!faceVerified || !capturedUrl) return showAlert('Face Error', 'Face verify first.');
     try {
-      const res = await fetch(
-        'https://hospitaldatabasemanagement.onrender.com/attendance/logout',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            adminId,
-            capturedUrl,
-            locationVerified: true,
-            faceVerified: true,
-          }),
-        }
-      );
-
+      const res = await fetch('https://hospitaldatabasemanagement.onrender.com/attendance/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminId, capturedUrl, locationVerified: true, faceVerified: true }),
+      });
       const data = await res.json();
       if (data.success) {
         setMessage('✅ Off Duty marked successfully!');
-        Alert.alert('Success', data.message || 'Off Duty marked successfully');
       } else {
         setMessage('❌ Failed to mark Off Duty.');
-        Alert.alert('Error', data.message || 'Failed to mark Off Duty.');
       }
     } catch (err) {
-      console.error('Off Duty API Error:', err);
       setMessage('❌ Error marking Off Duty.');
-      Alert.alert('Error', 'Something went wrong while marking Off Duty.');
     }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#007BFF" />
-        <Text style={styles.loadingText}>Verifying location...</Text>
-      </View>
-    );
-  }
+  if (loading) return (
+    <View style={styles.loaderContainer}>
+      <ActivityIndicator size="large" color="#4361ee" />
+      <Text style={styles.loadingText}>Verifying position ({loadingCount}s)</Text>
+    </View>
+  );
 
-  if (!permission?.granted) {
-    return (
-      <View style={styles.centered}>
-        <Ionicons name="warning-outline" size={40} color="red" />
-        <Text style={styles.permissionText}>Camera permission denied.</Text>
-        <TouchableOpacity style={styles.button} onPress={requestPermission}>
-          <Text style={styles.buttonText}>Grant Camera Permission</Text>
+  if (showCamera) return (
+    <CameraView ref={cameraRef} style={{ flex: 1 }} facing="front">
+      <View style={styles.cameraOverlay}>
+        <TouchableOpacity style={styles.captureBtn} onPress={captureImage}>
+          <Ionicons name="camera" size={30} color="#fff" />
         </TouchableOpacity>
       </View>
-    );
-  }
-
-  if (showCamera) {
-    return (
-      <CameraView ref={cameraRef} style={{ flex: 1 }} facing="front">
-        <View style={styles.cameraButtonContainer}>
-          <TouchableOpacity style={styles.captureButton} onPress={captureImage}>
-            <Text style={{ color: '#fff', fontSize: 16 }}>📸 Capture</Text>
-          </TouchableOpacity>
-        </View>
-      </CameraView>
-    );
-  }
+    </CameraView>
+  );
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f4f6f8" />
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={28} color="#007BFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Admin Off Duty</Text>
-        <View style={{ width: 28 }} />
-      </View>
+    <View style={styles.mainContainer}>
+      <StatusBar barStyle="light-content" />
 
-      <View style={styles.infoBox}>
-        <Text style={styles.statusText}>GPS Status:</Text>
-        <Ionicons
-          name={locationVerified ? 'location' : 'location-outline'}
-          size={28}
-          color={locationVerified ? 'green' : 'red'}
-        />
-        <Text style={{ color: locationVerified ? 'green' : 'red', marginLeft: 8 }}>
-          {locationVerified ? 'Verified' : 'Not Verified'}
-        </Text>
-      </View>
-
-      <View style={styles.infoBox}>
-        <Text style={styles.statusText}>Face Status:</Text>
-        {faceLoading ? (
-          <Text style={{ color: '#555', marginLeft: 8 }}>⏳ Verifying...</Text>
-        ) : (
-          <>
-            <Ionicons
-              name={faceVerified ? 'checkmark-circle' : 'close-circle'}
-              size={28}
-              color={faceVerified ? 'green' : 'red'}
-            />
-            <Text style={{ color: faceVerified ? 'green' : 'red', marginLeft: 8 }}>
-              {faceVerified ? 'Verified' : 'Not Verified'}
+      {/* LEFT SIDE: BRANDING */}
+      {isWeb && (
+        <View style={styles.brandSection}>
+          <View style={styles.brandContent}>
+            <Text style={styles.brandTitle}>Finish your shift 🚀</Text>
+            <Text style={styles.brandSub}>
+              Ensure all your daily tasks are logged. Your off-duty status helps maintain accurate facility records.
             </Text>
-          </>
-        )}
+
+            <View style={styles.listContainer}>
+              <View style={styles.listItem}>
+                <View style={styles.bullet} />
+                <Text style={styles.listText}>Secure identity check</Text>
+              </View>
+              <View style={styles.listItem}>
+                <View style={styles.bullet} />
+                <Text style={styles.listText}>Location-based clock out</Text>
+              </View>
+              <View style={styles.listItem}>
+                <View style={styles.bullet} />
+                <Text style={styles.listText}>Instant shift reporting</Text>
+              </View>
+            </View>
+
+            <Text style={styles.footerBrand}>© 2026 Admin Portal. All rights reserved.</Text>
+          </View>
+        </View>
+      )}
+
+      {/* RIGHT SIDE: FORM */}
+      <View style={[styles.formSection, { width: isWeb ? '55%' : '100%' }]}>
+        <ScrollView contentContainerStyle={styles.scrollPadding}>
+          <View style={styles.formCard}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+                <Ionicons name="arrow-back" size={24} color="#1f2937" />
+            </TouchableOpacity>
+            
+            <Text style={styles.formHeading}>Mark Off Duty</Text>
+            <Text style={styles.formDescription}>Complete the steps below to end your duty</Text>
+
+            {/* GPS Field */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>GPS Verification</Text>
+              <View style={styles.inputStyle}>
+                <Text style={[styles.inputPlaceholder, locationVerified && { color: '#10b981' }]}>
+                  {locationVerified ? 'Location Verified' : 'Awaiting location...'}
+                </Text>
+                <MaterialCommunityIcons name="map-marker-check" size={20} color={locationVerified ? '#10b981' : '#9ca3af'} />
+              </View>
+            </View>
+
+            {/* Face Field */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>Face ID</Text>
+              <TouchableOpacity style={styles.inputStyle} onPress={() => setShowCamera(true)}>
+                <Text style={[styles.inputPlaceholder, faceVerified && { color: '#10b981' }]}>
+                  {faceLoading ? 'Verifying...' : faceVerified ? 'Identity Confirmed' : 'Scan face to verify'}
+                </Text>
+                <Ionicons name="person-outline" size={20} color={faceVerified ? '#10b981' : '#9ca3af'} />
+              </TouchableOpacity>
+            </View>
+
+            {imageUri && <Image source={{ uri: imageUri }} style={styles.imagePreview} />}
+
+            <TouchableOpacity 
+              style={[styles.mainBtn, (!locationVerified || !faceVerified) && styles.disabledBtn]} 
+              onPress={handleOffDuty}
+              disabled={!locationVerified || !faceVerified}
+            >
+              <Text style={styles.btnText}>Submit Off Duty</Text>
+            </TouchableOpacity>
+
+            {message !== '' && <Text style={styles.resultMsg}>{message}</Text>}
+          </View>
+        </ScrollView>
       </View>
-
-      <TouchableOpacity style={styles.button} onPress={() => setShowCamera(true)}>
-        <Text style={styles.buttonText}>Open Front Camera</Text>
-      </TouchableOpacity>
-
-      {imageUri && <Image source={{ uri: imageUri }} style={styles.previewImage} />}
-
-      <TouchableOpacity style={styles.button} onPress={handleOffDuty}>
-        <Text style={styles.buttonText}>Submit Off Duty</Text>
-      </TouchableOpacity>
-
-      {message !== '' && <Text style={styles.message}>{message}</Text>}
-    </ScrollView>
+    </View>
   );
 };
 
-export default AdminOffDutyScreen;
-
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, backgroundColor: '#f4f6f8', paddingHorizontal: 20, marginTop: 35, paddingTop: 20 },
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 25, justifyContent: 'space-between' },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: '#333' },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 10, fontSize: 16, color: '#555' },
-  permissionText: { marginTop: 10, fontSize: 16, color: '#ff0000', textAlign: 'center', paddingHorizontal: 20 },
-  infoBox: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, padding: 15, borderRadius: 10, backgroundColor: '#fff', elevation: 2 },
-  statusText: { fontSize: 16, fontWeight: '600', marginRight: 8, color: '#333' },
-  button: { backgroundColor: '#007BFF', padding: 15, marginVertical: 10, borderRadius: 10, alignItems: 'center', elevation: 2 },
-  buttonText: { color: 'white', fontSize: 16, fontWeight: '600' },
-  previewImage: { width: '100%', height: 300, borderRadius: 10, marginVertical: 10, borderWidth: 1, borderColor: '#ddd' },
-  message: { fontSize: 18, textAlign: 'center', color: 'green', marginTop: 15 },
-  cameraButtonContainer: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', marginBottom: 40 },
-  captureButton: { backgroundColor: '#007BFF', padding: 15, borderRadius: 50 },
+  mainContainer: { flex: 1, flexDirection: 'row', backgroundColor: '#fff' },
+  
+  // Left Sidebar Styles
+  brandSection: { width: '45%', backgroundColor: '#4361ee', justifyContent: 'center', paddingHorizontal: 60 },
+  brandContent: { maxWidth: 400 },
+  brandTitle: { color: '#fff', fontSize: 38, fontWeight: '800', marginBottom: 20 },
+  brandSub: { color: 'rgba(255,255,255,0.8)', fontSize: 16, lineHeight: 26, marginBottom: 40 },
+  listContainer: { marginBottom: 60 },
+  listItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
+  bullet: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff', marginRight: 15 },
+  listText: { color: '#fff', fontSize: 15 },
+  footerBrand: { color: 'rgba(255,255,255,0.4)', fontSize: 13 },
+
+  // Right Form Styles
+  formSection: { backgroundColor: '#fff' },
+  scrollPadding: { flexGrow: 1, justifyContent: 'center', padding: 40 },
+  formCard: { width: '100%', maxWidth: 420, alignSelf: 'center' },
+  backButton: { marginBottom: 20 },
+  formHeading: { fontSize: 26, fontWeight: '700', color: '#111827', marginBottom: 8 },
+  formDescription: { fontSize: 14, color: '#6b7280', marginBottom: 35 },
+
+  fieldGroup: { marginBottom: 20 },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },
+  inputStyle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  inputPlaceholder: { flex: 1, fontSize: 14, color: '#9ca3af' },
+
+  mainBtn: { backgroundColor: '#4361ee', paddingVertical: 16, borderRadius: 10, alignItems: 'center', marginTop: 10 },
+  disabledBtn: { backgroundColor: '#cbd5e1' },
+  btnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  
+  imagePreview: { width: '100%', height: 200, borderRadius: 12, marginVertical: 15, borderWidth: 1, borderColor: '#e5e7eb' },
+  resultMsg: { marginTop: 20, textAlign: 'center', color: '#10b981', fontWeight: 'bold' },
+
+  loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 15, color: '#4361ee', fontWeight: '600' },
+  cameraOverlay: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 40 },
+  captureBtn: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#4361ee', justifyContent: 'center', alignItems: 'center', borderWidth: 5, borderColor: 'rgba(255,255,255,0.3)' },
 });
+
+export default AdminOffDutyScreen;

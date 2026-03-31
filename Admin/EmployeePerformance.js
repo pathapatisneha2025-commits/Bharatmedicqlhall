@@ -11,6 +11,7 @@ import {
   Platform,
   StyleSheet,
   TextInput,
+  useWindowDimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native"; // ✅ Add this import
@@ -31,6 +32,9 @@ export default function AllEmployeesPerformance() {
   const [details, setDetails] = useState({});
   const [searchQuery, setSearchQuery] = useState("");
   const navigation = useNavigation(); // ✅ Initialize navigation
+const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const MAX_WIDTH = 420;
+  const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
 
   // Fetch all employees
   useEffect(() => {
@@ -98,303 +102,187 @@ export default function AllEmployeesPerformance() {
     );
   }
 
-  return (
-   <ScrollView
-  style={styles.container}
-  contentContainerStyle={{ paddingBottom: 120 }}
-  bounces={true}
-  overScrollMode="always"
->
-
-<View style={styles.topHeader}>
-  <TouchableOpacity onPress={() => navigation.navigate("AdminDashboard")}>
-    <Ionicons name="arrow-back" size={24} color="#2c3e50" />
+return (
+    <View style={styles.webContainer}>
+      {/* SIDEBAR */}
+    
+      {/* MAIN CONTENT */}
+      <View style={styles.mainContent}>
+        <View style={styles.contentHeader}>
+      <View style={styles.headerLeft}>
+  <TouchableOpacity
+    style={styles.backBtn}
+    onPress={() => navigation.goBack()}
+  >
+    <Ionicons name="arrow-back" size={22} color="#1e293b" />
   </TouchableOpacity>
-  <Text style={styles.header}>All Employees Performance</Text>
+
+  <View>
+    <Text style={styles.mainTitle}>Employee Performance</Text>
+    <Text style={styles.subTitle}>
+      Track productivity, attendance, and leave summaries
+    </Text>
+  </View>
 </View>
 
-      {/* 🔍 Search Bar */}
-      <View style={styles.searchContainer}>
-      
-        <Ionicons name="search" size={18} color="#888" style={{ marginHorizontal: 8 }} />
-        <TextInput
-          placeholder="Search by name or department..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          style={styles.searchInput}
-          placeholderTextColor="#000"
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery("")}>
-            <Ionicons name="close-circle" size={18} color="#888" />
-          </TouchableOpacity>
-        )}
+          <View style={styles.searchBox}>
+            <Ionicons name="search" size={18} color="#94a3b8" />
+            <TextInput
+              placeholder="Search employee..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              style={styles.searchInput}
+            />
+          </View>
+        </View>
+
+        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+          {filteredEmployees.length === 0 ? (
+            <View style={styles.emptyContainer}><Text style={styles.emptyText}>No matching employees found.</Text></View>
+          ) : (
+            filteredEmployees.map((emp) => {
+              const empDetails = details[emp.id] || {};
+              const { tasks = [], attendance, leaveSummary } = empDetails;
+
+              return (
+                <View key={emp.id} style={styles.empCard}>
+                  <TouchableOpacity style={styles.cardHeader} onPress={() => toggleExpand(emp.id)} activeOpacity={0.7}>
+                    <View style={styles.empInfo}>
+                      <View style={styles.avatarMini}><Text style={styles.avatarText}>{emp.full_name.charAt(0)}</Text></View>
+                      <View>
+                        <Text style={styles.empName}>{emp.full_name}</Text>
+                        <Text style={styles.empDept}>{emp.department || "General Store"}</Text>
+                      </View>
+                    </View>
+                    <Ionicons name={expanded[emp.id] ? "chevron-up" : "chevron-down"} size={20} color="#94a3b8" />
+                  </TouchableOpacity>
+
+                  {expanded[emp.id] && (
+                    <View style={styles.expandedArea}>
+                      <View style={styles.statsGrid}>
+                        {/* Attendance Section */}
+                        <View style={styles.statsCard}>
+                          <Text style={styles.statsTitle}>Attendance</Text>
+                          {attendance ? (
+                            <View style={styles.statsRow}>
+                              <Stat label="Present" value={attendance.total_present} color="#10b981" />
+                              <Stat label="Late" value={attendance.total_late} color="#f59e0b" />
+                              <Stat label="Absent" value={attendance.total_absent} color="#ef4444" />
+                            </View>
+                          ) : <ActivityIndicator size="small" color="#2563EB" />}
+                        </View>
+
+                        {/* Leave Section */}
+                        <View style={styles.statsCard}>
+                          <Text style={styles.statsTitle}>Leaves</Text>
+                          {leaveSummary ? (
+                            <View style={styles.statsRow}>
+                              <Stat label="Used" value={leaveSummary.annual_used_leaves} color="#3b82f6" />
+                              <Stat label="Left" value={leaveSummary.remaining_annual_paid_leaves} color="#10b981" />
+                              <Stat label="Paid" value={leaveSummary.monthly_paid_leaves} color="#8b5cf6" />
+                            </View>
+                          ) : <ActivityIndicator size="small" color="#2563EB" />}
+                        </View>
+                      </View>
+
+                      {/* Task Section */}
+                      <View style={styles.taskSection}>
+                        <Text style={styles.statsTitle}>Active Tasks</Text>
+                        {tasks.length > 0 ? (
+                          tasks.slice(0, 3).map((task) => (
+                            <TaskItem key={task.id} name={task.title} status={task.status} priority={task.priority} />
+                          ))
+                        ) : <Text style={styles.noData}>No recent tasks.</Text>}
+                      </View>
+                    </View>
+                  )}
+                </View>
+              );
+            })
+          )}
+        </ScrollView>
       </View>
-
-      {filteredEmployees.length === 0 ? (
-        <Text style={styles.noData}>No employees found.</Text>
-      ) : (
-        filteredEmployees.map((emp) => {
-          const empDetails = details[emp.id] || {};
-          const { tasks = [], attendance, leaveSummary } = empDetails;
-
-          // Calculate percentages
-          const completedCount = tasks.filter((t) => t.status === "completed").length;
-          const completionRate =
-            tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
-
-          const attendanceRate = attendance
-            ? Math.round((attendance.total_present / attendance.total_days) * 100)
-            : 0;
-
-          const leaveUsage =
-            leaveSummary && leaveSummary.total_annual_paid_leaves > 0
-              ? Math.round(
-                  (leaveSummary.annual_used_leaves /
-                    leaveSummary.total_annual_paid_leaves) *
-                    100
-                )
-              : 0;
-
-          return (
-            <View key={emp.id} style={styles.empCard}>
-              <View style={styles.empHeader}>
-                <View>
-                  <Text style={styles.empName}>{emp.full_name}</Text>
-                  <Text style={styles.empDept}>
-                    <Ionicons name="briefcase-outline" size={13} color="#3498db" />{" "}
-                    {emp.department || "N/A"}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.viewBtn}
-                  onPress={() => toggleExpand(emp.id)}
-                >
-                  <Text style={styles.viewBtnText}>
-                    {expanded[emp.id] ? "Hide" : "Performance"}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Expanded Section */}
-              {expanded[emp.id] && (
-                <View style={styles.expandedArea}>
-                  {/* Tasks */}
-                  <Text style={styles.sectionTitle}>
-                    <Ionicons name="clipboard-outline" size={18} color="#2980b9" /> Task
-                    Overview
-                  </Text>
-                  {tasks.length > 0 ? (
-                    <FlatList
-                      data={tasks}
-                      keyExtractor={(item) => item.id.toString()}
-                      renderItem={({ item }) => (
-                        <TaskItem
-                          name={item.title}
-                          status={item.status}
-                          priority={item.priority}
-                        />
-                      )}
-                    />
-                  ) : (
-                    <Text style={styles.noData}>No tasks found.</Text>
-                  )}
-
-                  {/* Attendance */}
-                  <Text style={styles.sectionTitle}>
-                    <Ionicons name="calendar-outline" size={18} color="#3498db" />{" "}
-                    Attendance Summary
-                  </Text>
-                  {attendance ? (
-                    <View style={styles.statsRow}>
-                      <Stat
-                        label="Present"
-                        value={attendance.total_present}
-                        color="#2ecc71"
-                      />
-                      <Stat label="Late" value={attendance.total_late} color="#f1c40f" />
-                      <Stat
-                        label="Absent"
-                        value={attendance.total_absent}
-                        color="#e74c3c"
-                      />
-                    </View>
-                  ) : (
-                    <Text style={styles.noData}>No attendance data.</Text>
-                  )}
-
-                  {/* Leave */}
-                  <Text style={styles.sectionTitle}>
-                    <Ionicons name="bed-outline" size={18} color="#27ae60" /> Leave Summary
-                  </Text>
-                  {leaveSummary ? (
-                    <View style={styles.statsRow}>
-                      <Stat
-                        label="Taken"
-                        value={leaveSummary.annual_used_leaves}
-                        color="#3498db"
-                      />
-                      <Stat
-                        label="Remaining"
-                        value={leaveSummary.remaining_annual_paid_leaves}
-                        color="#2ecc71"
-                      />
-                      <Stat
-                        label="Monthly Paid"
-                        value={leaveSummary.monthly_paid_leaves}
-                        color="#f39c12"
-                      />
-                    </View>
-                  ) : (
-                    <Text style={styles.noData}>No leave data.</Text>
-                  )}
-                </View>
-              )}
-            </View>
-          );
-        })
-      )}
-    </ScrollView>
+    </View>
   );
 }
 
-/* ---------- Reusable Components ---------- */
 const TaskItem = ({ name, status, priority }) => (
   <View style={styles.taskItem}>
-    <View>
-      <Text style={styles.taskName}>{name}</Text>
-      <Text
-        style={[
-          styles.taskStatus,
-          { color: status === "completed" ? "#27ae60" : "#e74c3c" },
-        ]}
-      >
-        {status}
-      </Text>
+    <View style={{ flex: 1 }}>
+      <Text style={styles.taskName} numberOfLines={1}>{name}</Text>
+      <Text style={[styles.taskStatus, { color: status === "completed" ? "#10b981" : "#ef4444" }]}>{status}</Text>
     </View>
-    <Text
-      style={[
-        styles.priorityTag,
-        {
-          backgroundColor:
-            priority === "High"
-              ? "#f8d7da"
-              : priority === "Medium"
-              ? "#fff3cd"
-              : "#d4edda",
-          color:
-            priority === "High"
-              ? "#c0392b"
-              : priority === "Medium"
-              ? "#b7950b"
-              : "#27ae60",
-        },
-      ]}
-    >
-      {priority}
-    </Text>
+    <View style={[styles.priorityBadge, priority === "High" ? styles.pHigh : priority === "Medium" ? styles.pMed : styles.pLow]}>
+      <Text style={[styles.priorityText, priority === "High" ? styles.ptHigh : priority === "Medium" ? styles.ptMed : styles.ptLow]}>{priority}</Text>
+    </View>
   </View>
 );
 
 const Stat = ({ label, value, color }) => (
-  <View style={{ alignItems: "center" }}>
+  <View style={styles.statContainer}>
     <Text style={[styles.statValue, { color }]}>{value}</Text>
     <Text style={styles.statLabel}>{label}</Text>
   </View>
 );
 
-/* ---------- Styles ---------- */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f9fbfc", padding: 15 , marginTop: 30},
+  webContainer: { flex: 1, flexDirection: 'row', backgroundColor: '#F8FAFC' },
   centered: { flex: 1, justifyContent: "center", alignItems: "center" },
- topHeader: {
-  flexDirection: "row",
-  alignItems: "center",
-  marginBottom: 15,
-  gap: 10,
-},
-header: {
-  fontSize: 20,
-  fontWeight: "700",
-  color: "#2c3e50",
-},
+  
+  // Sidebar
+  sidebar: { width: 260, backgroundColor: '#fff', borderRightWidth: 1, borderRightColor: '#e2e8f0', padding: 24 },
+  sidebarBrand: { flexDirection: 'row', alignItems: 'center', marginBottom: 40 },
+  brandIcon: { width: 38, height: 38, backgroundColor: '#2563EB', borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  brandLetter: { color: '#fff', fontWeight: 'bold', fontSize: 20 },
+  brandTitle: { fontSize: 18, fontWeight: '800', color: '#1e293b' },
+  brandSub: { fontSize: 12, color: '#64748b', marginTop: -4 },
+  sidebarMenu: { flex: 1 },
+  sidebarItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 10, marginBottom: 6 },
+  sidebarItemActive: { backgroundColor: '#2563EB' },
+  sidebarLabel: { marginLeft: 12, fontSize: 15, color: '#64748b', fontWeight: '600' },
+  sidebarLabelActive: { color: '#fff' },
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', padding: 12 },
+  logoutText: { marginLeft: 12, color: '#ef4444', fontWeight: '700' },
 
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginBottom: 15,
-    elevation: 2,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: "#333",
-    paddingVertical: 4,
-  },
-  empCard: {
-    backgroundColor: "#fff",
-    borderRadius: 15,
-    padding: 15,
-    marginBottom: 15,
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-  },
-  empHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  empName: { fontSize: 16, fontWeight: "600", color: "#2c3e50" },
-  empDept: { fontSize: 12, color: "#7f8c8d", marginTop: 2 },
-  viewBtn: {
-    backgroundColor: "#3498db",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-  },
-  viewBtnText: { color: "#fff", fontWeight: "600", fontSize: 12 },
-  expandedArea: { marginTop: 10 },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#2c3e50",
-    marginTop: 10,
-    marginBottom: 5,
-  },
-  taskItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    backgroundColor: "#f4f6f7",
-    borderRadius: 10,
-    padding: 10,
-    marginVertical: 5,
-  },
-  taskName: { fontSize: 13, fontWeight: "600", color: "#2c3e50" },
-  taskStatus: { fontSize: 11 },
-  priorityTag: {
-    fontSize: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 10,
-    fontWeight: "600",
-  },
-  statsRow: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    marginVertical: 10,
-  },
-  statLabel: { fontSize: 12, color: "#555" },
-  statValue: { fontSize: 16, fontWeight: "700" },
-  noData: {
-    textAlign: "center",
-    color: "#7f8c8d",
-    fontSize: 13,
-    marginVertical: 8,
-  },
+  // Main Content
+  mainContent: { flex: 1, padding: 32 },
+  contentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 },
+  mainTitle: { fontSize: 28, fontWeight: '800', color: '#1e293b' },
+  subTitle: { color: '#64748b', marginTop: 4 },
+  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, paddingHorizontal: 16, width: 300 },
+  searchInput: { paddingVertical: 10, marginLeft: 10, flex: 1, fontSize: 14,outlineStyle: "none" },
+
+  // Employee Card
+  empCard: { backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 16, overflow: 'hidden' },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20 },
+  empInfo: { flexDirection: 'row', alignItems: 'center' },
+  avatarMini: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+  avatarText: { color: '#2563EB', fontWeight: 'bold' },
+  empName: { fontSize: 16, fontWeight: '700', color: '#1e293b' },
+  empDept: { fontSize: 13, color: '#64748b' },
+
+  // Expanded Area
+  expandedArea: { padding: 20, backgroundColor: '#F8FAFC', borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+  statsGrid: { flexDirection: 'row', gap: 16, marginBottom: 16 },
+  statsCard: { flex: 1, backgroundColor: '#fff', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
+  statsTitle: { fontSize: 14, fontWeight: '700', color: '#475569', marginBottom: 12 },
+  statsRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  statContainer: { alignItems: 'center' },
+  statValue: { fontSize: 18, fontWeight: '800' },
+  statLabel: { fontSize: 11, color: '#94a3b8', fontWeight: '600', marginTop: 2 },
+
+  // Tasks
+  taskSection: { backgroundColor: '#fff', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
+  taskItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  taskName: { fontSize: 14, fontWeight: '600', color: '#334155' },
+  taskStatus: { fontSize: 12, fontWeight: '500' },
+  priorityBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  pHigh: { backgroundColor: '#fee2e2' }, ptHigh: { color: '#ef4444' },
+  pMed: { backgroundColor: '#fef3c7' }, ptMed: { color: '#d97706' },
+  pLow: { backgroundColor: '#dcfce7' }, ptLow: { color: '#16a34a' },
+  priorityText: { fontSize: 11, fontWeight: '700' },
+
+  emptyContainer: { padding: 40, alignItems: 'center' },
+  emptyText: { color: '#64748b' },
+  noData: { color: '#94a3b8', fontSize: 13, fontStyle: 'italic' }
 });

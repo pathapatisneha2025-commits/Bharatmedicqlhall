@@ -1,4 +1,4 @@
-import React, {useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,143 +6,137 @@ import {
   TouchableOpacity,
   SafeAreaView,
   ScrollView,
+  useWindowDimensions,
+  Platform,
 } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { getOrderId } from "../utils/storage";
+
+// Bharat Medical Theme Colors
+const COLORS = {
+  primary: "#3b82f6",
+  secondary: "#10b981", // Success green
+  background: "#f8fafc",
+  white: "#ffffff",
+  textDark: "#1e293b",
+  textLight: "#64748b",
+  border: "#e2e8f0",
+};
 
 const OrderSuccessScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-const [orderId, setOrderId] = useState();
+  const [orderId, setOrderId] = useState();
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const MAX_WIDTH = 500;
+  const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 32;
 
-  // ✅ Get data from CheckoutScreen
   const totalAmount = route?.params?.totalAmount || 0;
-  const expectedDelivery =
-    route?.params?.expectedDelivery || new Date().toISOString();
+  const expectedDelivery = route?.params?.expectedDelivery || new Date().toISOString();
   const orderDate = route?.params?.orderDate || new Date().toISOString();
   let orderSummary = route?.params?.orderSummary || [];
-useEffect(() => {
-  const fetchOrderId = async () => {
-    if (!route?.params?.orderId) {
-      const storedOrderId = await getOrderId();
-      if (storedOrderId) setOrderId(storedOrderId);
-    } else {
-      setOrderId(route.params.orderId);
-    }
-  };
-  fetchOrderId();
-}, [route?.params?.orderId]);
-  // 🔍 Debug log to confirm what we are receiving
-  useEffect(() => {
-    console.log("🛍️ Received orderSummary:", orderSummary);
-  }, []);
 
-  // ✅ Ensure orderSummary is always an array
+  useEffect(() => {
+    const fetchOrderId = async () => {
+      if (!route?.params?.orderId) {
+        const storedOrderId = await getOrderId();
+        if (storedOrderId) setOrderId(storedOrderId);
+      } else {
+        setOrderId(route.params.orderId);
+      }
+    };
+    fetchOrderId();
+  }, [route?.params?.orderId]);
+
   if (!Array.isArray(orderSummary)) {
     orderSummary = [orderSummary];
   }
 
-  // ✅ Extract product names correctly
-  const orderNames =
-    orderSummary.length > 0
-      ? orderSummary
-          .map((item, index) => {
-            return (
-              item?.name ||
-              item?.productName ||
-              item?.title ||
-              item?.itemName ||
-              `Item ${index + 1}`
-            );
-          })
-          .join(", ")
-      : "No items found";
+  const orderNames = orderSummary.length > 0
+      ? orderSummary.map((item, index) => item?.name || item?.productName || `Item ${index + 1}`).join(", ")
+      : "Medicine Package";
 
-  // ✅ Calculate dynamic delivery days
   const getDeliveryDays = () => {
     const today = new Date();
     const deliveryDate = new Date(expectedDelivery);
     const diffTime = deliveryDate - today;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    if (diffDays <= 0) return "today or tomorrow";
-    return `${diffDays} day${diffDays > 1 ? "s" : ""}`;
+    return diffDays <= 0 ? "today or tomorrow" : `${diffDays} days`;
   };
 
-  // ✅ Format date & time
   const formatDateTime = (datetime) => {
     const dateObj = new Date(datetime);
-    const date = dateObj.toLocaleDateString();
-    const time = dateObj.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    return `${date} at ${time}`;
+    return `${dateObj.toLocaleDateString()} at ${dateObj.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
-        {/* ✅ Success Icon */}
-        <View style={styles.iconContainer}>
-          <Ionicons name="checkmark-circle" size={100} color="#28a745" />
-        </View>
-
-        {/* 🎉 Success Message */}
-        <Text style={styles.title}>Order Placed Successfully!</Text>
-        <Text style={styles.subtitle}>
-          Thank you for your order. Your medicines will be delivered soon.
-        </Text>
-
-        {/* 📦 Delivery Estimate */}
-        <Text style={styles.deliveryInfo}>
-          📦 Expected to arrive in {getDeliveryDays()}.
-        </Text>
-
-        {/* 📦 Order Details Card */}
-        <View style={styles.card}>
-          <Text style={styles.detailRow}>
-            <Text style={styles.label}>Order ID: </Text>
-            <Text style={styles.value}>{orderId}</Text>
-          </Text>
-
-          <Text style={styles.detailRow}>
-            <Text style={styles.label}>Items Ordered: </Text>
-            <Text style={styles.value}>{orderNames}</Text>
-          </Text>
-
-          <Text style={styles.detailRow}>
-            <Text style={styles.label}>Order Date & Time: </Text>
-            <Text style={styles.value}>{formatDateTime(orderDate)}</Text>
-          </Text>
-
-          <Text style={styles.detailRow}>
-            <Text style={styles.label}>Expected Delivery: </Text>
-            <Text style={styles.value}>
-              {new Date(expectedDelivery).toDateString()}
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={[styles.mainCard, { width: containerWidth }]}>
+          
+          {/* ✅ Status Header */}
+          <View style={styles.successHeader}>
+            <View style={styles.iconCircle}>
+              <Ionicons name="checkmark-sharp" size={40} color={COLORS.white} />
+            </View>
+            <Text style={styles.title}>Order Placed!</Text>
+            <Text style={styles.subtitle}>
+              Your request has been received and is being processed by our pharmacy.
             </Text>
-          </Text>
+          </View>
 
-          <Text style={styles.detailRow}>
-            <Text style={styles.label}>Total Amount: </Text>
-            <Text style={styles.value}>₹{totalAmount.toFixed(2)}</Text>
-          </Text>
+          <View style={styles.divider} />
+
+          {/* 📦 Delivery Banner */}
+          <View style={styles.deliveryBanner}>
+            <MaterialIcons name="local-shipping" size={20} color={COLORS.secondary} />
+            <Text style={styles.deliveryText}>
+              Arriving in <Text style={styles.boldText}>{getDeliveryDays()}</Text>
+            </Text>
+          </View>
+
+          {/* 📋 Order Information */}
+          <View style={styles.infoSection}>
+            <View style={styles.infoRow}>
+              <Text style={styles.label}>Order ID</Text>
+              <Text style={styles.value}>#{orderId || 'N/A'}</Text>
+            </View>
+            
+            <View style={styles.infoRow}>
+              <Text style={styles.label}>Placed On</Text>
+              <Text style={styles.value}>{formatDateTime(orderDate)}</Text>
+            </View>
+
+            <View style={styles.infoRow}>
+              <Text style={styles.label}>Items</Text>
+              <Text style={styles.value} numberOfLines={1}>{orderNames}</Text>
+            </View>
+
+            <View style={[styles.infoRow, styles.totalRow]}>
+              <Text style={styles.totalLabel}>Total Paid</Text>
+              <Text style={styles.totalValue}>₹{totalAmount.toFixed(2)}</Text>
+            </View>
+          </View>
+
+          {/* 🏠 Actions */}
+          <View style={styles.buttonGroup}>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={() => navigation.navigate("bottomtab")}
+            >
+              <Text style={styles.btnText}>Return to Home</Text>
+              <Ionicons name="home-outline" size={18} color={COLORS.white} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={() => navigation.navigate("patientorders")}
+            >
+              <Text style={styles.secondaryBtnText}>Track Order</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-
-        {/* 🏠 Navigation Buttons */}
-        <TouchableOpacity
-          style={styles.primaryBtn}
-          onPress={() => navigation.navigate("bottomtab")}
-        >
-          <Text style={styles.btnText}>Go to Home</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.secondaryBtn}
-          onPress={() => navigation.navigate("patientorders")}
-        >
-          <Text style={styles.secondaryBtnText}>View My Orders</Text>
-        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -153,87 +147,140 @@ export default OrderSuccessScreen;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8F9FA",
+    backgroundColor: COLORS.background,
   },
-  content: {
-    width: "90%",
-    alignSelf: "center",
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
     alignItems: "center",
-    paddingVertical: 30,
+    paddingVertical: 40,
   },
-  iconContainer: {
-    backgroundColor: "#e9f9ef",
-    borderRadius: 100,
-    padding: 15,
+  mainCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    padding: 32,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    ...Platform.select({
+      web: { boxShadow: '0 10px 25px rgba(0,0,0,0.05)' },
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.05, shadowRadius: 20 },
+      android: { elevation: 5 }
+    })
+  },
+  successHeader: {
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: COLORS.secondary,
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 20,
   },
   title: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#28a745",
-    textAlign: "center",
+    fontSize: 28,
+    fontWeight: "800",
+    color: COLORS.textDark,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 15,
-    color: "#555",
+    color: COLORS.textLight,
     textAlign: "center",
-    marginBottom: 8,
-    paddingHorizontal: 20,
+    lineHeight: 22,
   },
-  deliveryInfo: {
-    fontSize: 15,
-    color: "#333",
-    textAlign: "center",
-    marginBottom: 20,
-    fontWeight: "500",
-  },
-  card: {
-    backgroundColor: "#fff",
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.border,
     width: "100%",
-    padding: 20,
-    borderRadius: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    elevation: 3,
-    marginBottom: 30,
+    marginVertical: 20,
   },
-  detailRow: {
-    fontSize: 16,
-    marginBottom: 8,
+  deliveryBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ecfdf5",
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 24,
+    gap: 8,
+  },
+  deliveryText: {
+    color: "#065f46",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  infoSection: {
+    gap: 16,
+    marginBottom: 32,
+  },
+  infoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   label: {
-    fontWeight: "600",
-    color: "#333",
+    color: COLORS.textLight,
+    fontSize: 14,
+    fontWeight: "500",
   },
   value: {
-    color: "#555",
+    color: COLORS.textDark,
+    fontSize: 14,
+    fontWeight: "600",
+    maxWidth: '60%',
+    textAlign: 'right'
+  },
+  totalRow: {
+    marginTop: 8,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    borderStyle: 'dashed'
+  },
+  totalLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: COLORS.textDark,
+  },
+  totalValue: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: COLORS.primary,
+  },
+  buttonGroup: {
+    gap: 12,
   },
   primaryBtn: {
-    backgroundColor: "#4A90E2",
-    paddingVertical: 14,
-    borderRadius: 10,
-    width: "100%",
+    backgroundColor: COLORS.primary,
+    flexDirection: 'row',
+    paddingVertical: 16,
+    borderRadius: 14,
+    justifyContent: "center",
     alignItems: "center",
-    marginBottom: 12,
+    gap: 8,
   },
   btnText: {
-    color: "#fff",
+    color: COLORS.white,
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   secondaryBtn: {
-    backgroundColor: "#e0e0e0",
-    paddingVertical: 14,
-    borderRadius: 10,
-    width: "100%",
+    paddingVertical: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     alignItems: "center",
   },
   secondaryBtnText: {
-    color: "#333",
-    fontSize: 16,
+    color: COLORS.textDark,
+    fontSize: 15,
     fontWeight: "600",
   },
+  boldText: {
+    fontWeight: "800",
+  }
 });

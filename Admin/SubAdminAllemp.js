@@ -9,25 +9,57 @@ import {
   Alert,
   Modal,
   TextInput,
+  useWindowDimensions,
+  KeyboardAvoidingView,
+  Platform,
+  Linking,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons ,Feather} from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { Linking } from "react-native";
 
 const BASE_URL = 'https://hospitaldatabasemanagement.onrender.com';
 
 const SubAdminAllEmpListScreen = () => {
   const navigation = useNavigation();
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const MAX_WIDTH = 420;
+  const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
+
   const [subadmins, setSubadmins] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingCount, setLoadingCount] = useState(0);
+  
   const [updatingId, setUpdatingId] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [editSubadmin, setEditSubadmin] = useState(null);
 
-  // Fetch all subadmins
-  const fetchSubadmins = async () => {
+ const showAlert = (title, message, buttons) => {
+  if (Platform.OS === "web") {
+    if (buttons && buttons.length > 1) {
+      const confirmed = window.confirm(`${title}\n\n${message}`);
+      if (confirmed) {
+        const okBtn = buttons.find(b => b.style !== "cancel");
+        okBtn?.onPress?.();
+      }
+    } else {
+      window.alert(`${title}\n\n${message}`);
+    }
+  } else {
+    Alert.alert(title, message, buttons);
+  }
+};  
+
+ useEffect(() => {
+          let interval;
+          if (loading) {
+            setLoadingCount(0);
+            interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+          } else clearInterval(interval);
+          return () => clearInterval(interval);
+        }, [loading]);
+const fetchSubadmins = async () => {
     setLoading(true);
     try {
       const res = await fetch(`${BASE_URL}/subadmin/all`);
@@ -36,11 +68,11 @@ const SubAdminAllEmpListScreen = () => {
         setSubadmins(data.data);
         setFiltered(data.data);
       } else {
-        Alert.alert('Error', data.message || 'Failed to fetch subadmins');
+        showAlert('Error', data.message || 'Failed to fetch subadmins');
       }
     } catch (error) {
       console.error(error);
-      Alert.alert('Error', 'Something went wrong while fetching subadmins');
+      showAlert('Error', 'Something went wrong while fetching subadmins');
     } finally {
       setLoading(false);
     }
@@ -52,20 +84,13 @@ const SubAdminAllEmpListScreen = () => {
 
   // Search filter
   useEffect(() => {
-    if (search.trim() === '') {
-      setFiltered(subadmins);
-    } else {
+    if (!search.trim()) setFiltered(subadmins);
+    else {
       const lower = search.toLowerCase();
-      const results = subadmins.filter(
-        (s) =>
-          s.name.toLowerCase().includes(lower) ||
-          s.email.toLowerCase().includes(lower)
-      );
-      setFiltered(results);
+      setFiltered(subadmins.filter(s => s.name.toLowerCase().includes(lower) || s.email.toLowerCase().includes(lower)));
     }
   }, [search, subadmins]);
 
-  // Update status
   const updateStatus = async (id, status) => {
     setUpdatingId(id);
     try {
@@ -76,80 +101,65 @@ const SubAdminAllEmpListScreen = () => {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        Alert.alert('Success', data.message);
-        setSubadmins((prev) =>
-          prev.map((sub) =>
-            sub.id === id ? { ...sub, status: data.data.status } : sub
-          )
-        );
+        showAlert('Success', data.message);
+        setSubadmins(prev => prev.map(sub => sub.id === id ? { ...sub, status: data.data.status } : sub));
       } else {
-        Alert.alert('Error', data.message || 'Failed to update status');
+        showAlert('Error', data.message || 'Failed to update status');
       }
     } catch (error) {
       console.error(error);
-      Alert.alert('Error', 'Something went wrong while updating status');
+      showAlert('Error', 'Something went wrong while updating status');
     } finally {
       setUpdatingId(null);
     }
   };
 
-  // Delete subadmin
   const deleteSubadmin = async (id) => {
-    Alert.alert('Confirm', 'Are you sure you want to delete this subadmin?', [
+   showAlert('Confirm', 'Are you sure you want to delete this subadmin?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
           try {
-            const res = await fetch(`${BASE_URL}/subadmin/delete/${id}`, {
-              method: 'DELETE',
-            });
+            const res = await fetch(`${BASE_URL}/subadmin/delete/${id}`, { method: 'DELETE' });
             const data = await res.json();
             if (res.ok && data.success) {
-              Alert.alert('Deleted', data.message);
-              setSubadmins((prev) => prev.filter((sub) => sub.id !== id));
+              showAlert('Deleted', data.message);
+              setSubadmins(prev => prev.filter(sub => sub.id !== id));
             } else {
-              Alert.alert('Error', data.message || 'Failed to delete subadmin');
+              showAlert('Error', data.message || 'Failed to delete subadmin');
             }
           } catch (error) {
             console.error(error);
-            Alert.alert('Error', 'Something went wrong while deleting');
+            showAlert('Error', 'Something went wrong while deleting');
           }
         },
       },
     ]);
   };
-  const exportToExcel = () => {
-  const url = "https://hospitaldatabasemanagement.onrender.com/subadmin/export";
 
-  Alert.alert(
-    "Export CSV",
-    "The file will open in your browser for download.",
-    [
-      { text: "Cancel", style: "cancel" },
-      { text: "Download", onPress: () => Linking.openURL(url) }
-    ]
-  );
+  const exportToExcel = () => {
+    const url = "https://hospitaldatabasemanagement.onrender.com/subadmin/export";
+    if (Platform.OS === 'web') window.open(url, '_blank');
+    else Linking.openURL(url);
+  };
+
+ const openEditModal = (sub) => {
+  setEditSubadmin({
+    id: sub.id,
+    name: sub.name,
+    email: sub.email,
+    phone: sub.phone,
+    joining_date: sub.joining_date ? sub.joining_date.split('T')[0] : '', // <-- safe fallback
+    status: sub.status,
+    password: '',
+    confirm_password: '',
+  });
+  setModalVisible(true);
 };
 
 
-  // Open edit modal
-  const openEditModal = (sub) => {
-    setEditSubadmin({
-      id: sub.id,
-      name: sub.name,
-      email: sub.email,
-      phone: sub.phone,
-      joining_date: sub.joining_date.split('T')[0],
-      status: sub.status,
-      password: '',
-      confirm_password: '',
-    });
-    setModalVisible(true);
-  };
-
-  // Save changes
   const handleSaveChanges = async () => {
     try {
       const res = await fetch(`${BASE_URL}/subadmin/update/${editSubadmin.id}`, {
@@ -159,324 +169,241 @@ const SubAdminAllEmpListScreen = () => {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        Alert.alert('Success', data.message);
+        showAlert('Success', data.message);
         setModalVisible(false);
         fetchSubadmins();
       } else {
-        Alert.alert('Error', data.message || 'Failed to update subadmin');
+        showAlert('Error', data.message || 'Failed to update subadmin');
       }
     } catch (error) {
       console.error(error);
-      Alert.alert('Error', 'Something went wrong while updating');
+      showAlert('Error', 'Something went wrong while updating');
     }
   };
-  if (loading)
-      return (
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color="#007bff" />
-          <Text>Loading...</Text>
-        </View>
-      );
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {/* Header */}
-      <View style={styles.headerContainer}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#2563eb" />
-        </TouchableOpacity>
-        <Text style={styles.header}>SubAdmin List</Text>
-        <View style={{ width: 24 }} />
-<TouchableOpacity onPress={exportToExcel} style={{ padding: 4 }}>
-  <Ionicons name="download-outline" size={26} color="#2563eb" />
-</TouchableOpacity>
+    <View style={styles.webWrapper}>
+    
+      {/* MAIN CONTENT */}
+      <View style={styles.mainContent}>
+        <View style={styles.contentHeader}>
+        <View style={styles.headerLeft}>
+  <TouchableOpacity
+    style={styles.backBtn}
+    onPress={() => navigation.goBack()}
+  >
+    <Ionicons name="arrow-back" size={22} color="#1e293b" />
+  </TouchableOpacity>
 
+  <View>
+    <Text style={styles.mainTitle}>SubAdmin Management</Text>
+    <Text style={styles.subTitle}>
+      Manage and approve sub-administrative accounts
+    </Text>
+  </View>
+</View>
 
-      </View>
-
-      {/* Search */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search-outline" size={18} color="#6b7280" />
-        <TextInput
-          placeholder="Search by name or email..."
-          placeholderTextColor="#000"
-          style={styles.searchInput}
-          value={search}
-          onChangeText={setSearch}
-        />
-        {search.length > 0 && (
-          <TouchableOpacity onPress={() => setSearch('')}>
-            <Ionicons name="close-circle" size={18} color="#9ca3af" />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Table */}
-      {loading ? (
-        <ActivityIndicator size="large" color="#2563eb" />
-      ) : (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.table}>
-            <View style={[styles.row, styles.headerRow]}>
-              <Text style={[styles.cell, styles.headerCell, { minWidth: 60 }]}>ID</Text>
-              <Text style={[styles.cell, styles.headerCell, { minWidth: 150 }]}>Name</Text>
-              <Text style={[styles.cell, styles.headerCell, { minWidth: 220 }]}>Email</Text>
-              <Text style={[styles.cell, styles.headerCell, { minWidth: 150 }]}>Phone</Text>
-              <Text style={[styles.cell, styles.headerCell, { minWidth: 180 }]}>Joining Date</Text>
-              <Text style={[styles.cell, styles.headerCell, { minWidth: 150 }]}>Status</Text>
-              <Text style={[styles.cell, styles.headerCell, { minWidth: 300 }]}>Actions</Text>
-            </View>
-
-            {/* DATA ROWS */}
-            {filtered.map((sub) => {
-              
-              const isDisabled = updatingId === sub.id;  // FIXED ⭐
-
-              return (
-                <View key={sub.id} style={styles.row}>
-                  <Text style={[styles.cell, { minWidth: 60 }]}>{sub.id}</Text>
-                  <Text style={[styles.cell, { minWidth: 150 }]}>{sub.name}</Text>
-                  <Text style={[styles.cell, { minWidth: 220 }]}>{sub.email}</Text>
-                  <Text style={[styles.cell, { minWidth: 150 }]}>{sub.phone}</Text>
-                  <Text style={[styles.cell, { minWidth: 180 }]}>
-                    {new Date(sub.joining_date).toLocaleDateString()}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.cell,
-                      { minWidth: 150, color: sub.status === 'approved' ? '#16a34a' : '#dc2626' },
-                    ]}
-                  >
-                    {sub.status || 'Pending'}
-                  </Text>
-
-                  {/* ACTION BUTTONS */}
-                  <View style={[styles.cell, styles.actionCell, { minWidth: 300 }]}>
-
-                    {/* APPROVE */}
-                    <TouchableOpacity
-                      style={[styles.button, styles.approveBtn, 
-                        (sub.status === 'approved' || sub.status === 'cancelled') && styles.disabledButton
-                      ]}
-                      onPress={() => updateStatus(sub.id, 'approved')}
-                      disabled={sub.status === 'approved' || sub.status === 'cancelled'}
-                    >
-                      <Text style={styles.btnText}>Approve</Text>
-                    </TouchableOpacity>
-
-                    {/* CANCEL */}
-                    <TouchableOpacity
-                      style={[styles.button, styles.cancelBtn, 
-                        (sub.status === 'approved' || sub.status === 'cancelled') && styles.disabledButton
-                      ]}
-                      onPress={() => updateStatus(sub.id, 'cancelled')}
-                      disabled={sub.status === 'approved' || sub.status === 'cancelled'}
-                    >
-                      <Text style={styles.btnText}>Cancel</Text>
-                    </TouchableOpacity>
-
-                    {/* EYE (VIEW) */}
-                   <TouchableOpacity style={styles.iconBtn} onPress={() => openEditModal(sub)}>
-  <Ionicons name="eye-outline" size={22} color="#2563eb" />
-</TouchableOpacity>
-
-
-                    {/* EDIT (NEVER DISABLED) */}
-                    <TouchableOpacity style={styles.iconBtn} onPress={() => openEditModal(sub)}>
-                      <Ionicons name="create-outline" size={22} color="#2563eb" />
-                    </TouchableOpacity>
-
-                    {/* DELETE (NEVER DISABLED) */}
-                    <TouchableOpacity style={styles.iconBtn} onPress={() => deleteSubadmin(sub.id)}>
-                      <Ionicons name="trash-outline" size={22} color="#ef4444" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        </ScrollView>
-      )}
-
-      {/* EDIT MODAL */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalBox}>
-            <View style={styles.modalHeader}>
-              <Ionicons name="person-circle-outline" size={28} color="#2563eb" />
-              <Text style={styles.modalTitle}>Edit Subadmin</Text>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <View style={styles.inputGroup}>
-                <Ionicons name="person-outline" size={18} color="#2563eb" />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Full Name"
-                  value={editSubadmin?.name}
-                  onChangeText={(t) => setEditSubadmin({ ...editSubadmin, name: t })}
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Ionicons name="mail-outline" size={18} color="#2563eb" />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Email"
-                  value={editSubadmin?.email}
-                  onChangeText={(t) => setEditSubadmin({ ...editSubadmin, email: t })}
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Ionicons name="call-outline" size={18} color="#2563eb" />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Phone"
-                  value={editSubadmin?.phone}
-                  onChangeText={(t) => setEditSubadmin({ ...editSubadmin, phone: t })}
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Ionicons name="calendar-outline" size={18} color="#2563eb" />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Joining Date"
-                  value={editSubadmin?.joining_date}
-                  onChangeText={(t) => setEditSubadmin({ ...editSubadmin, joining_date: t })}
-                />
-              </View>
-            </ScrollView>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveChanges}>
-                <Ionicons name="save-outline" size={18} color="#fff" />
-                <Text style={styles.btnText}>Update</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.cancelModalBtn}
-                onPress={() => setModalVisible(false)}
-              >
-                <Ionicons name="close-circle-outline" size={18} color="#fff" />
-                <Text style={styles.btnText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-
+          <View style={styles.headerActions}>
+            <TouchableOpacity onPress={exportToExcel} style={styles.exportBtn}>
+              <Ionicons name="download-outline" size={20} color="#fff" />
+              <Text style={styles.exportBtnText}>Export Excel</Text>
+            </TouchableOpacity>
           </View>
         </View>
-      </Modal>
 
-    </ScrollView>
+        <View style={styles.tableCard}>
+          <View style={styles.cardTop}>
+             <View style={styles.searchBox}>
+              <Ionicons name="search" size={18} color="#94a3b8" />
+              <TextInput
+                style={styles.searchInputWeb}
+                placeholder="Search by name or email..."
+                value={search}
+                onChangeText={setSearch}
+              />
+            </View>
+          </View>
+
+          {loading ? (
+            <View style={styles.loaderContainer}>
+              <ActivityIndicator size="large" color="#2563EB" />
+              <Text style={styles.loaderText}>Loading Data ({loadingCount}s)...</Text>
+            </View>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+              <View style={styles.table}>
+                <View style={styles.tableHeaderRow}>
+                  <Text style={[styles.headerCell, { width: 60 }]}>ID</Text>
+                  <Text style={[styles.headerCell, { width: 180 }]}>Name</Text>
+                  <Text style={[styles.headerCell, { width: 220 }]}>Email</Text>
+                  <Text style={[styles.headerCell, { width: 140 }]}>Phone</Text>
+                  <Text style={[styles.headerCell, { width: 140 }]}>Joining Date</Text>
+                  <Text style={[styles.headerCell, { width: 120 }]}>Status</Text>
+                  <Text style={[styles.headerCell, { width: 280, textAlign: 'center' }]}>Actions</Text>
+                </View>
+
+                <ScrollView>
+                  {filtered.length === 0 ? (
+                    <Text style={styles.emptyText}>No subadmins found.</Text>
+                  ) : (
+                    filtered.map(sub => (
+                      <View key={sub.id} style={styles.tableBodyRow}>
+                        <Text style={[styles.bodyCell, { width: 60 }]}>#{sub.id}</Text>
+                        <Text style={[styles.bodyCell, { width: 180, fontWeight: '600' }]}>{sub.name}</Text>
+                        <Text style={[styles.bodyCell, { width: 220 }]} numberOfLines={1}>{sub.email}</Text>
+                        <Text style={[styles.bodyCell, { width: 140 }]}>{sub.phone}</Text>
+                        <Text style={[styles.bodyCell, { width: 140 }]}>{new Date(sub.joining_date).toLocaleDateString()}</Text>
+                        <View style={{ width: 120 }}>
+                          <View style={[styles.statusBadge, sub.status === 'approved' ? styles.statusApproved : styles.statusPending]}>
+                            <Text style={[styles.statusText, sub.status === 'approved' ? styles.statusTextApproved : styles.statusTextPending]}>
+                              {sub.status || 'Pending'}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={[styles.actionCellWeb, { width: 280 }]}>
+                          <TouchableOpacity 
+                            style={[styles.actionBtn, styles.btnApprove, (sub.status === 'approved' || sub.status === 'cancelled') && styles.btnDisabled]} 
+                            onPress={() => updateStatus(sub.id, 'approved')}
+                            disabled={sub.status === 'approved' || sub.status === 'cancelled'}
+                          >
+                            <Text style={styles.actionBtnText}>Approve</Text>
+                          </TouchableOpacity>
+                          
+                          <TouchableOpacity 
+                            style={[styles.actionBtn, styles.btnCancel, (sub.status === 'approved' || sub.status === 'cancelled') && styles.btnDisabled]} 
+                            onPress={() => updateStatus(sub.id, 'cancelled')}
+                            disabled={sub.status === 'approved' || sub.status === 'cancelled'}
+                          >
+                            <Text style={styles.actionBtnText}>Cancel</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity style={styles.iconCircle} onPress={() => openEditModal(sub)}>
+                            <Feather name="edit-2" size={16} color="#2563eb" />
+                          </TouchableOpacity>
+                          <TouchableOpacity style={[styles.iconCircle, { backgroundColor: '#fee2e2' }]} onPress={() => deleteSubadmin(sub.id)}>
+                            <Feather name="trash-2" size={16} color="#ef4444" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))
+                  )}
+                </ScrollView>
+              </View>
+            </ScrollView>
+          )}
+        </View>
+      </View>
+
+      {/* EDIT MODAL - REUSED FROM YOUR CODE */}
+      <Modal visible={modalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'center', alignItems: 'center', width: '100%' }}>
+            <ScrollView style={styles.modalBox} contentContainerStyle={{ paddingBottom: 20 }}>
+              <View style={styles.modalHeader}>
+                <Ionicons name="person-circle-outline" size={28} color="#2563eb" />
+                <Text style={styles.modalTitle}>Edit Subadmin</Text>
+              </View>
+              <View style={styles.inputGroup}>
+                <Ionicons name="person-outline" size={18} color="#2563eb" />
+                <TextInput style={styles.input} placeholder="Full Name" value={editSubadmin?.name} onChangeText={(t) => setEditSubadmin({ ...editSubadmin, name: t })} />
+              </View>
+              <View style={styles.inputGroup}>
+                <Ionicons name="mail-outline" size={18} color="#2563eb" />
+                <TextInput style={styles.input} placeholder="Email" value={editSubadmin?.email} onChangeText={(t) => setEditSubadmin({ ...editSubadmin, email: t })} />
+              </View>
+              <View style={styles.inputGroup}>
+                <Ionicons name="call-outline" size={18} color="#2563eb" />
+                <TextInput style={styles.input} placeholder="Phone" keyboardType="phone-pad" value={editSubadmin?.phone} onChangeText={(t) => setEditSubadmin({ ...editSubadmin, phone: t })} />
+              </View>
+              
+              
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.saveBtn} onPress={handleSaveChanges}>
+                  <Text style={styles.btnText}>Update</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.cancelModalBtn} onPress={() => setModalVisible(false)}>
+                  <Text style={styles.btnText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+    </View>
   );
 };
 
-export default SubAdminAllEmpListScreen;
-
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    padding: 16,
-    backgroundColor: '#f8fafc',
-    marginTop: 30,
-  },
-  headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    justifyContent: 'space-between',
-  },
-  backButton: { padding: 4 },
-  header: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#2563eb',
-    textAlign: 'center',
-    flex: 1,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginBottom: 16,
-    elevation: 2,
-  },
-  searchInput: { flex: 1, marginLeft: 8, fontSize: 14 },
-  table: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
-    minWidth: 1200,
-    backgroundColor: '#fff',
-  },
-  row: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  headerRow: { backgroundColor: '#2563eb' },
-  cell: { paddingHorizontal: 6, fontSize: 13, textAlign: 'center' },
-  headerCell: { color: '#fff', fontWeight: 'bold' },
-  actionCell: { flexDirection: 'row', justifyContent: 'space-around' },
+  webWrapper: { flex: 1, flexDirection: 'row', backgroundColor: '#F8FAFC' },
+  
+  // Sidebar Styles
+  sidebar: { width: 260, backgroundColor: '#fff', borderRightWidth: 1, borderRightColor: '#e2e8f0', padding: 24 },
+  sidebarBrand: { flexDirection: 'row', alignItems: 'center', marginBottom: 40 },
+  brandIcon: { width: 38, height: 38, backgroundColor: '#2563EB', borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  brandLetter: { color: '#fff', fontWeight: 'bold', fontSize: 20 },
+  brandTitle: { fontSize: 18, fontWeight: '800', color: '#1e293b' },
+  brandSub: { fontSize: 12, color: '#64748b', marginTop: -4 },
+  sidebarMenu: { flex: 1 },
+  sidebarItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 10, marginBottom: 6 },
+  sidebarItemActive: { backgroundColor: '#2563EB' },
+  sidebarLabel: { marginLeft: 12, fontSize: 15, color: '#64748b', fontWeight: '600' },
+  sidebarLabelActive: { color: '#fff' },
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', padding: 12 },
+  logoutText: { marginLeft: 12, color: '#ef4444', fontWeight: '700' },
 
-  button: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    marginHorizontal: 4,
-  },
-  approveBtn: { backgroundColor: '#22c55e' },
-  cancelBtn: { backgroundColor: '#ef4444' },
-  disabledButton: { backgroundColor: '#94a3b8' },
+  // Main Content Styles
+  mainContent: { flex: 1, padding: 32 },
+  contentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 },
+  mainTitle: { fontSize: 28, fontWeight: '800', color: '#1e293b' },
+  subTitle: { color: '#64748b', marginTop: 4 },
+  exportBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2563EB', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 },
+  exportBtnText: { color: '#fff', fontWeight: '600', marginLeft: 8 },
 
-  iconBtn: { paddingHorizontal: 4 },
+  // Table Card Styles
+  tableCard: { backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOpacity: 0.02, elevation: 2, flex: 1 },
+  cardTop: { padding: 20, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, paddingHorizontal: 16, width: 350 },
+  searchInputWeb: { paddingVertical: 10, marginLeft: 10, flex: 1, fontSize: 14 ,outlineStyle: "none"},
 
-  modalContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  modalBox: {
-    backgroundColor: '#fff',
-    width: '95%',
-    borderRadius: 12,
-    padding: 20,
-    maxHeight: '85%',
-  },
-  modalHeader: { flexDirection: 'row', justifyContent: 'center', marginBottom: 10 },
-  modalTitle: { fontSize: 20, fontWeight: '700', color: '#2563eb', marginLeft: 6 },
-  inputGroup: {
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
-    marginVertical: 8,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-  },
-  input: { flex: 1, height: 40 },
-  modalActions: { flexDirection: 'row', marginTop: 16 },
-  saveBtn: {
-    flexDirection: 'row',
-    flex: 1,
-    backgroundColor: '#2563eb',
-    paddingVertical: 10,
-    justifyContent: 'center',
-    marginRight: 10,
-    borderRadius: 8,
-  },
-  cancelModalBtn: {
-    flexDirection: 'row',
-    flex: 1,
-    backgroundColor: '#ef4444',
-    paddingVertical: 10,
-    justifyContent: 'center',
-    borderRadius: 8,
-  },
+  // Table Core
+  table: { padding: 0 },
+  tableHeaderRow: { flexDirection: 'row', backgroundColor: '#f8fafc', paddingVertical: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
+  headerCell: { fontSize: 13, fontWeight: '700', color: '#64748b', textTransform: 'uppercase' },
+  tableBodyRow: { flexDirection: 'row', paddingVertical: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', alignItems: 'center' },
+  bodyCell: { fontSize: 14, color: '#334155' },
+
+  // Badges & Actions
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, alignSelf: 'flex-start' },
+  statusApproved: { backgroundColor: '#dcfce7' },
+  statusPending: { backgroundColor: '#fee2e2' },
+  statusText: { fontSize: 12, fontWeight: '700' },
+  statusTextApproved: { color: '#16a34a' },
+  statusTextPending: { color: '#ef4444' },
+
+  actionCellWeb: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  actionBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
+  btnApprove: { backgroundColor: '#22c55e' },
+  btnCancel: { backgroundColor: '#ef4444' },
+  btnDisabled: { backgroundColor: '#cbd5e1' },
+  actionBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  iconCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#eff6ff', justifyContent: 'center', alignItems: 'center' },
+
+  // Loader & Others
+  loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loaderText: { marginTop: 12, color: '#64748b' },
+  emptyText: { textAlign: 'center', padding: 40, color: '#94a3b8' },
+
+  // Modal (Existing logic preserved)
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", padding: 20 },
+  modalBox: { backgroundColor: "#fff", width: "100%", maxWidth: 450, borderRadius: 16, padding: 24 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', marginLeft: 10 },
+  inputGroup: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, paddingHorizontal: 12, marginBottom: 15 },
+  input: { flex: 1, height: 45, marginLeft: 10 },
+  modalActions: { flexDirection: 'row', gap: 10 },
+  saveBtn: { flex: 1, backgroundColor: '#2563eb', padding: 12, borderRadius: 8, alignItems: 'center' },
+  cancelModalBtn: { flex: 1, backgroundColor: '#ef4444', padding: 12, borderRadius: 8, alignItems: 'center' },
+  btnText: { color: '#fff', fontWeight: '700' }
 });
+
+export default SubAdminAllEmpListScreen;

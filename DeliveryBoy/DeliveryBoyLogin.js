@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   ScrollView,
   Alert,
+  Platform,
+  useWindowDimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { storeEmployeeId } from "../utils/storage";
@@ -21,14 +23,32 @@ export default function DeliveryBoyLoginScreen() {
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingCount, setLoadingCount] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+
   const navigation = useNavigation();
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const isLargeScreen = SCREEN_WIDTH > 800;
+
+  const showAlert = (title, message) => {
+    if (Platform.OS === 'web') window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
+
+  useEffect(() => {
+    let interval;
+    if (loading) {
+      setLoadingCount(0);
+      interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+    } else clearInterval(interval);
+    return () => clearInterval(interval);
+  }, [loading]);
 
   const validateFields = () => {
     let valid = true;
     setEmailError("");
     setPasswordError("");
-
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!email) {
@@ -38,178 +58,322 @@ export default function DeliveryBoyLoginScreen() {
       setEmailError("Enter a valid email address.");
       valid = false;
     }
-
     if (!password) {
       setPasswordError("Password is required.");
       valid = false;
-    } else if (password.length < 4) {
-      setPasswordError("Password must be at least 4 characters.");
-      valid = false;
     }
-
     return valid;
   };
 
   const handleLogin = async () => {
-  if (!validateFields()) return;
-
-  setLoading(true);
-  try {
-    const res = await fetch(`${BASE_URL}/employee/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-
-    const data = await res.json();
-
-    if (res.ok) {
-      const employee = data.employee;
-
-      await storeEmployeeId(employee.id); // store employee ID
-
-      Alert.alert("Login successful!", `Welcome ${employee.full_name}`);
-
-      // Redirect based on role
-      const role = employee.role?.toLowerCase();
-      if (role === "hd delivery") {
-        navigation.navigate("DeliverBoyTabs");
-      } else if (role === "picker") {
-        navigation.navigate("PickerTabs");
-      
+    if (!validateFields()) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${BASE_URL}/employee/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const employee = data.employee;
+        await storeEmployeeId(employee.id);
+        showAlert("Login successful!", `Welcome ${employee.full_name}`);
+        const role = employee.role?.toLowerCase();
+        if (role === "hd delivery") navigation.navigate("DeliverBoyDashboard");
+        else if (role === "picker") navigation.navigate("PickerDashboardScreen");
+        else showAlert("Access Denied", "You do not have access.");
       } else {
-        Alert.alert("Access Denied", "You do not have access to any dashboard.");
+        setPasswordError(data.error || "Invalid credentials.");
       }
-
-    } else {
-      setPasswordError(data.error || "Invalid credentials. Try again.");
+    } catch (error) {
+      showAlert("Error", "Something went wrong.");
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    console.error("Login error:", error);
-    Alert.alert("Error", "Something went wrong. Please try again later.");
-  } finally {
-    setLoading(false);
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color="#0ea5e9" />
+        <Text style={{ marginTop: 10 }}>Loading {loadingCount}s</Text>
+      </View>
+    );
   }
-};
 
-if (loading)
-      return (
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color="#007bff" />
-          <Text>Loading...</Text>
-        </View>
-      );
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Ionicons name="bicycle" size={70} color="#2196F3" style={{ marginBottom: 10 }} />
-      <Text style={styles.title}>Delivery Boy Login</Text>
+    <View style={styles.container}>
+      <View style={[styles.card, isLargeScreen && styles.row]}>
+        
+        {/* LEFT SECTION (Form) */}
+        <View style={[styles.formSection, isLargeScreen ? { width: '50%' } : { width: '100%' }]}>
+          <TouchableOpacity 
+            onPress={() => navigation.goBack()}
+            style={styles.backButton}
+          >
+            <Ionicons name="chevron-back" size={18} color="#64748b" />
+            <Text style={styles.backText}>Back to role selection</Text>
+          </TouchableOpacity>
 
-      <View style={{ width: "100%" }}>
-        {/* Email Input */}
-        <View style={styles.inputContainer}>
-          <Ionicons name="mail-outline" size={20} color="#888" style={{ marginRight: 10 }} />
-          <TextInput
-            style={[styles.input, { flex: 1 }]}
-            placeholder="Enter Email"
-            value={email}
-            onChangeText={(text) => {
-              setEmail(text);
-              if (emailError) setEmailError("");
-            }}
-            keyboardType="email-address"
-          />
-        </View>
-        {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
+          <View style={styles.brandRow}>
+            <View style={styles.logoBox}>
+              <Text style={styles.logoText}>BM</Text>
+            </View>
+            <Text style={styles.brandTitle}>Bharat Medical Hall</Text>
+          </View>
 
-        {/* Password Input */}
-        <View style={styles.inputContainer}>
-          <Ionicons name="lock-closed-outline" size={20} color="#888" style={{ marginRight: 10 }} />
-          <TextInput
-            style={[styles.input, { flex: 1 }]}
-            placeholder="Enter Password"
-            value={password}
-            onChangeText={(text) => {
-              setPassword(text);
-              if (passwordError) setPasswordError("");
-            }}
-            secureTextEntry={!showPassword}
-          />
-          <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-            <Ionicons
-              name={showPassword ? "eye-outline" : "eye-off-outline"}
-              size={20}
-              color="#888"
+          <Text style={styles.title}>Delivery Login</Text>
+          <Text style={styles.subtitle}>Enter your credentials to access your dashboard</Text>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Email Address</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your email"
+              value={email}
+              onChangeText={(text) => { setEmail(text); setEmailError(""); }}
+              keyboardType="email-address"
+              placeholderTextColor="#94a3b8"
             />
+            {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Password</Text>
+            <View style={styles.passwordWrapper}>
+              <TextInput
+                style={[styles.input, { flex: 1, borderBottomWidth: 0, backgroundColor: 'transparent', height: '100%' }]}
+                placeholder="Enter your password"
+                value={password}
+                onChangeText={(text) => { setPassword(text); setPasswordError(""); }}
+                secureTextEntry={!showPassword}
+                placeholderTextColor="#94a3b8"
+              />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+                <Ionicons name={showPassword ? "eye-outline" : "eye-off-outline"} size={20} color="#94a3b8" />
+              </TouchableOpacity>
+            </View>
+            {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
+          </View>
+
+          <View style={styles.optionsRow}>
+            {/* <TouchableOpacity style={styles.checkboxRow} onPress={() => setRememberMe(!rememberMe)}>
+              <View style={[styles.checkbox, rememberMe && styles.checkboxActive]}>
+                {rememberMe && <Ionicons name="checkmark" size={12} color="white" />}
+              </View> */}
+              {/* <Text style={styles.rememberText}>Remember me</Text> */}
+            {/* </TouchableOpacity> */}
+            <TouchableOpacity onPress={() => navigation.navigate("EmpResetPasswordScreen")}>
+              <Text style={styles.forgotText}>Forgot Password?</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity style={styles.signInButton} onPress={handleLogin}>
+            <Text style={styles.signInText}>Sign In</Text>
+            <Ionicons name="arrow-forward" size={18} color="white" style={{ marginLeft: 8 }} />
           </TouchableOpacity>
         </View>
-        {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
 
-        {/* Forgot Password Link */}
-        <TouchableOpacity
-          style={{ alignSelf: "flex-end", marginVertical: 5 }}
-          onPress={() => navigation.navigate("EmpResetPasswordScreen")}
-        >
-          <Text style={{ color: "#2196F3", fontWeight: "500" }}>Forgot Password?</Text>
-        </TouchableOpacity>
-
-        {/* Login Button */}
-        <TouchableOpacity
-          style={[styles.button, (!email || !password || emailError || passwordError) && { opacity: 0.6 }]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
-        </TouchableOpacity>
+        {/* RIGHT SECTION (Hero) - Only visible on large screens */}
+        {isLargeScreen && (
+          <View style={styles.heroSection}>
+            <View style={styles.heroLogoBox}>
+               <Text style={styles.heroLogoText}>BM</Text>
+            </View>
+            <Text style={styles.heroTitle}>Welcome Back</Text>
+            <Text style={styles.heroSubtitle}>
+              Access your healthcare management dashboard and stay connected with your medical records.
+            </Text>
+          </View>
+        )}
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexGrow: 1,
+    flex: 1,
+    backgroundColor: "#f8fafc",
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#f9f9f9",
-    padding: 20,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#2196F3",
-    marginBottom: 20,
-  },
-  inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 10,
+  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  card: {
+    width: '100%',
+    maxWidth: 1000,
+    minHeight: 600,
     backgroundColor: "#fff",
-    paddingHorizontal: 10,
-    marginBottom: 5,
+    flexDirection: "column",
+    overflow: 'hidden',
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 10,
   },
-  input: {
-    paddingVertical: 12,
+  row: {
+    flexDirection: "row",
+  },
+  formSection: {
+    padding: 40,
+    justifyContent: 'center',
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  backText: {
+    color: '#64748b',
+    fontSize: 14,
+    marginLeft: 4,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  logoBox: {
+    backgroundColor: '#0ea5e9',
+    padding: 8,
+    borderRadius: 8,
+    marginRight: 10,
+  },
+  logoText: {
+    color: 'white',
+    fontWeight: 'bold',
     fontSize: 16,
   },
-  errorText: {
-    color: "red",
-    fontSize: 13,
-    marginBottom: 10,
-    marginLeft: 5,
-  },
-  button: {
-    backgroundColor: "#2196F3",
-    paddingVertical: 12,
-    borderRadius: 10,
-    width: "100%",
-    alignItems: "center",
-    marginTop: 10,
-  },
-  buttonText: {
-    color: "#fff",
+  brandTitle: {
     fontSize: 18,
+    fontWeight: 'bold',
+    color: '#0369a1',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#1e293b",
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: "#64748b",
+    marginBottom: 30,
+  },
+  inputGroup: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#334155',
+    marginBottom: 8,
+  },
+  input: {
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: "#1e293b",
+    outlineStyle: "none"
+    
+  },
+  passwordWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    paddingRight: 12,
+  },
+  eyeIcon: {
+    padding: 4,
+  },
+  optionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 4,
+    marginRight: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxActive: {
+    backgroundColor: '#0ea5e9',
+    borderColor: '#0ea5e9',
+  },
+  rememberText: {
+    color: '#64748b',
+    fontSize: 14,
+  },
+  forgotText: {
+    color: "#0ea5e9",
     fontWeight: "600",
+    fontSize: 14,
+  },
+  signInButton: {
+    backgroundColor: "#06b6d4",
+    paddingVertical: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  signInText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  heroSection: {
+    width: '50%',
+    backgroundColor: '#0ea5e9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 60,
+  },
+  heroLogoBox: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    padding: 30,
+    borderRadius: 20,
+    marginBottom: 40,
+  },
+  heroLogoText: {
+    color: 'white',
+    fontSize: 48,
+    fontWeight: 'bold',
+  },
+  heroTitle: {
+    color: 'white',
+    fontSize: 42,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  heroSubtitle: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  errorText: {
+    color: "#ef4444",
+    fontSize: 12,
+    marginTop: 4,
   },
 });

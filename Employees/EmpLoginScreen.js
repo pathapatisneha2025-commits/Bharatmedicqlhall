@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState,useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 export default function LoginScreen() {
   const navigation = useNavigation();
   const { width, height } = useWindowDimensions();
+const isDesktop = width >= 1024;
 
   // --- Responsive Scaling ---
   const headingSize = Math.min(Math.max(width * 0.06, 22), 32); // 22-32px
@@ -28,17 +29,42 @@ export default function LoginScreen() {
   const containerPadding = Math.min(Math.max(width * 0.05, 20), 60);
 
   // --- Limit input/button width for web ---
-  const maxInputWidth = Math.min(width * 0.9, 400); // max 400px
-  const maxButtonWidth = Math.min(width * 0.85, 400);
+  const maxInputWidth = isDesktop ? 420 : Math.min(width * 0.9, 400);
+const maxButtonWidth = isDesktop ? 420 : Math.min(width * 0.85, 400);
+
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+           const [loadingCount, setLoadingCount] = useState(0);
+  useEffect(() => {
+                  let interval;
+                  if (loading) {
+                    setLoadingCount(0);
+                    interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+                  } else clearInterval(interval);
+                  return () => clearInterval(interval);
+                }, [loading]);
+ const showAlert = (title, message, buttons) => {
+    if (Platform.OS === "web") {
+      if (buttons && buttons.length > 1) {
+        const confirmed = window.confirm(`${title}\n\n${message}`);
+        if (confirmed) {
+          const okBtn = buttons.find(b => b.style !== "cancel");
+          okBtn?.onPress?.();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
+    };
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Missing Fields', 'Please enter both email and password');
+      showAlert('Missing Fields', 'Please enter both email and password');
       return;
     }
 
@@ -61,7 +87,7 @@ export default function LoginScreen() {
         const employee = data.employee;
 
         if (employee.status !== "approved") {
-          Alert.alert(
+         showAlert(
             "⏳ Pending Approval",
             "Admin has not approved your credentials yet."
           );
@@ -83,11 +109,11 @@ export default function LoginScreen() {
           });
         }
       } else {
-        Alert.alert('❌ Login Failed', data.message || 'Invalid email or password.');
+        showAlert('❌ Login Failed', data.message || 'Invalid email or password.');
       }
     } catch (error) {
       setLoading(false);
-      Alert.alert('❌ Error', error.message || 'Something went wrong');
+      showAlert('❌ Error', error.message || 'Something went wrong');
     }
   };
 
@@ -95,197 +121,158 @@ export default function LoginScreen() {
     return (
       <View style={styles.loader}>
         <ActivityIndicator size="large" color="#007bff" />
-        <Text>Loading...</Text>
+        <Text>Loading{loadingCount}s</Text>
       </View>
     );
 
-  return (
-    <ScrollView
-      contentContainerStyle={[
-        styles.container,
-        { paddingHorizontal: containerPadding },
-      ]}
-    >
-      {/* Back Button */}
-      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-        <Ionicons name="arrow-back" size={24} color="#333" />
-      </TouchableOpacity>
-
-      <View style={styles.innerContainer}>
-        {/* Heading */}
-        <Text style={[styles.heading, { fontSize: headingSize }]}>Employee Login</Text>
-        <Text style={[styles.description, { fontSize: descSize }]}>
-          Sign in to access the hospital management system
-        </Text>
-
-        {/* Email Input */}
-        <View
-          style={[
-            styles.inputContainer,
-            { height: inputHeight, maxWidth: maxInputWidth },
-          ]}
-        >
-          <Ionicons name="mail-outline" size={20} color="#888" style={styles.icon} />
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your email"
-            placeholderTextColor="#999"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-        </View>
-
-        {/* Password Input */}
-        <View
-          style={[
-            styles.passwordContainer,
-            { height: inputHeight, maxWidth: maxInputWidth },
-          ]}
-        >
-          <Ionicons name="lock-closed-outline" size={20} color="#888" style={{ marginRight: 10 }} />
-          <TextInput
-            style={styles.passwordInput}
-            placeholder="Enter your password"
-            placeholderTextColor="#999"
-            secureTextEntry={!showPassword}
-            value={password}
-            onChangeText={setPassword}
-          />
-          <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-            <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={22} color="#888" />
+ return (
+    <View style={styles.mainContainer}>
+      {/* LEFT SIDE: LOGIN FORM */}
+      <View style={[styles.loginSection, { paddingHorizontal: isDesktop ? width * 0.05 : 20 }]}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          
+          <TouchableOpacity style={styles.backLink} onPress={() => navigation.goBack()}>
+            <Ionicons name="chevron-back" size={18} color="#666" />
+            <Text style={styles.backText}>Back to role selection</Text>
           </TouchableOpacity>
-        </View>
 
-        {/* Forgot Password */}
-        <TouchableOpacity
-          onPress={() => navigation.navigate("EmpResetPasswordScreen")}
-          style={styles.forgotButton}
-        >
-          <Text style={styles.forgotButtonText}>Forgot Password</Text>
-        </TouchableOpacity>
+          <View style={styles.headerRow}>
+            <View style={styles.logoBadge}><Text style={styles.logoBadgeText}>BM</Text></View>
+            <Text style={styles.brandName}>Bharat Medical Hall</Text>
+          </View>
 
-        {/* Login Button */}
-        <TouchableOpacity
-          style={[
-            styles.button,
-            { height: buttonHeight, maxWidth: maxButtonWidth },
-            loading && { opacity: 0.7 },
-          ]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#FFF" />
-          ) : (
-            <Text style={[styles.buttonText, { fontSize: buttonFontSize }]}>Login →</Text>
-          )}
-        </TouchableOpacity>
+          <Text style={styles.title}>Employee Login</Text>
+          <Text style={styles.subtitle}>Enter your credentials to access your dashboard</Text>
 
-        {/* Footer */}
-        <Text style={styles.footer}>
-          Don’t have an account?{' '}
-          <Text
-            style={styles.link}
-            onPress={() => navigation.navigate('EmpSignUp')}
-          >
-            Sign Up
-          </Text>
-        </Text>
+          <View style={styles.form}>
+            <Text style={styles.label}>Email Address</Text>
+            <View style={styles.inputWrapper}>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter your email"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+
+            <Text style={styles.label}>Password</Text>
+            <View style={styles.inputWrapper}>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter your password"
+                secureTextEntry={!showPassword}
+                value={password}
+                onChangeText={setPassword}
+              />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#999" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.rowBetween}>
+              {/* <TouchableOpacity style={styles.checkboxRow} onPress={() => setRememberMe(!rememberMe)}>
+                <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]} />
+                <Text style={styles.checkboxLabel}>Remember me</Text>
+              </TouchableOpacity> */}
+              <TouchableOpacity onPress={() => navigation.navigate("EmpResetPasswordScreen")}>
+                <Text style={styles.forgotText}>Forgot Password?</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity style={styles.signInButton} onPress={handleLogin} disabled={loading}>
+              {loading ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <View style={styles.buttonInner}>
+                  <Text style={styles.signInButtonText}>Sign In</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#FFF" />
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </View>
-    </ScrollView>
+
+      {/* RIGHT SIDE: BRANDING (Visible only on Desktop) */}
+      {isDesktop && (
+        <View style={styles.brandingSection}>
+          <View style={styles.brandingContent}>
+            <View style={styles.largeLogoBadge}><Text style={styles.largeLogoText}>BM</Text></View>
+            <Text style={styles.welcomeTitle}>Welcome Back</Text>
+            <Text style={styles.welcomeSubtitle}>
+              Access your healthcare management dashboard and stay connected with your medical records.
+            </Text>
+          </View>
+        </View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    backgroundColor: '#E3F2FD',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  innerContainer: {
-    width: '100%',
-    alignItems: 'center',
-  },
-  backButton: {
-    alignSelf: 'flex-start',
-    marginBottom: 10,
-  },
-  heading: {
-    fontWeight: '700',
-    marginVertical: 20,
-    color: '#1E88E5',
-    textAlign: 'center',
-  },
-  description: {
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 20,
-    width: '90%',
-  },
-  inputContainer: {
+  mainContainer: { flex: 1, flexDirection: 'row', backgroundColor: '#FFF' },
+    loader: { flex: 1, justifyContent: "center", alignItems: "center" },
+
+  loginSection: { flex: 1, justifyContent: 'center' },
+  scrollContent: { flexGrow: 1, justifyContent: 'center', paddingVertical: 40, maxWidth: 500, alignSelf: 'center', width: '100%' },
+  
+  // Header styles
+  backLink: { flexDirection: 'row', alignItems: 'center', marginBottom: 30 },
+  backText: { color: '#666', marginLeft: 4, fontSize: 14 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 30 },
+  logoBadge: { backgroundColor: '#1E88E5', width: 40, height: 40, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  logoBadgeText: { color: '#FFF', fontWeight: 'bold', fontSize: 16 },
+  brandName: { fontSize: 20, fontWeight: '700', color: '#1E88E5' },
+  
+  // Typography
+  title: { fontSize: 28, fontWeight: '700', color: '#1a1a1a', marginBottom: 8 },
+  subtitle: { fontSize: 15, color: '#777', marginBottom: 30 },
+  label: { fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 8, marginTop: 15 },
+  
+  // Inputs
+  inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF',
-    borderRadius: 8,
-    width: '100%',
-    marginVertical: 6,
-    paddingHorizontal: 12,
-    elevation: 2,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    height: 55,
   },
-  icon: {
-    marginRight: 10,
-  },
-  input: {
-    flex: 1,
-  },
-  passwordContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF',
-    borderRadius: 8,
-    width: '100%',
-    marginVertical: 6,
-    paddingHorizontal: 12,
-    justifyContent: 'space-between',
-    elevation: 2,
-  },
-  passwordInput: {
-    flex: 1,
-  },
-  button: {
-    backgroundColor: '#1E88E5',
-    borderRadius: 10,
-    width: '100%',
-    alignItems: 'center',
+  input: { flex: 1, fontSize: 15, color: '#000', outlineStyle: "none", },
+  
+  // Controls
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 20 },
+  checkboxRow: { flexDirection: 'row', alignItems: 'center' },
+  checkbox: { width: 18, height: 18, borderRadius: 4, borderWidth: 1, borderColor: '#D1D5DB', marginRight: 8 },
+  checkboxChecked: { backgroundColor: '#1E88E5', borderColor: '#1E88E5' },
+  checkboxLabel: { color: '#666', fontSize: 14 },
+  forgotText: { color: '#1E88E5', fontSize: 14, fontWeight: '600' },
+  
+  // Button
+  signInButton: {
+    backgroundColor: '#00B4D8', // Cyan-blue gradient feel from your image
+    height: 55,
+    borderRadius: 30,
+    marginTop: 35,
     justifyContent: 'center',
-    marginVertical: 20,
-    elevation: 3,
+    alignItems: 'center',
+    shadowColor: '#00B4D8',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
   },
-  buttonText: {
-    color: '#FFF',
-    fontWeight: '600',
-  },
-  footer: {
-    fontSize: 14,
-    marginTop: 10,
-    textAlign: 'center',
-  },
-  link: {
-    color: '#1E88E5',
-    fontWeight: '500',
-  },
-  forgotButton: {
-    marginLeft: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    justifyContent: "center",
-  },
-  forgotButtonText: {
-    color: "#4a90e2",
-    fontWeight: "500",
-    textDecorationLine: "underline",
-  },
+  buttonInner: { flexDirection: 'row', alignItems: 'center' },
+  signInButtonText: { color: '#FFF', fontSize: 17, fontWeight: '600', marginRight: 8 },
+
+  // Branding Side
+  brandingSection: { flex: 1, backgroundColor: '#0077B6', justifyContent: 'center', alignItems: 'center' },
+  brandingContent: { width: '70%', alignItems: 'center' },
+  largeLogoBadge: { backgroundColor: 'rgba(255,255,255,0.2)', width: 120, height: 120, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginBottom: 40 },
+  largeLogoText: { color: '#FFF', fontSize: 48, fontWeight: '800' },
+  welcomeTitle: { color: '#FFF', fontSize: 42, fontWeight: '700', marginBottom: 20 },
+  welcomeSubtitle: { color: 'rgba(255,255,255,0.8)', fontSize: 18, textAlign: 'center', lineHeight: 26 },
 });

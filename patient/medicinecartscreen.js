@@ -8,286 +8,264 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-    BackHandler,
-
+  useWindowDimensions,
+  Platform,
+  SafeAreaView,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { getPatientId } from "../utils/storage";
-import { LinearGradient } from "expo-linear-gradient";
 
 export default function ShoppingCartScreen({ route }) {
   const [cartItems, setCartItems] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [updatingItem, setUpdatingItem] = useState(false);
   const [patientId, setPatientId] = useState(null);
 
   const navigation = useNavigation();
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const isDesktop = SCREEN_WIDTH > 1024;
+
   const deliveryFee = 40;
   const taxRate = 0.05;
 
+  const showAlert = (title, message) => {
+    if (Platform.OS === "web") window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
+
   useEffect(() => {
     const fetchPatientId = async () => {
-      try {
-        const storedId = await getPatientId();
-        setPatientId(route?.params?.patientId || storedId || 1);
-      } catch (e) {
-        console.error("❌ Failed to get patient ID:", e);
-        setPatientId(1);
-      }
+      const storedId = await getPatientId();
+      setPatientId(route?.params?.patientId || storedId || 1);
     };
     fetchPatientId();
   }, [route?.params?.patientId]);
 
   useEffect(() => {
-    if (!patientId) return;
-
-    const fetchCartItems = async () => {
-      try {
-        setLoading(true);
-        const res = await fetch(
-          `https://hospitaldatabasemanagement.onrender.com/cart/${patientId}`
-        );
-        const data = await res.json();
-        setCartItems(Array.isArray(data) ? data : data.items || []);
-      } catch (error) {
-        console.log("Error fetching cart:", error);
-        Alert.alert("Error", "Failed to fetch cart items");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchCartItems();
+    if (patientId) fetchCartItems();
   }, [patientId]);
 
-  const incrementQty = (id) => {
-    setCartItems((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, quantity: item.quantity + 1 } : item
-      )
-    );
-  };
-
-  const decrementQty = (id) => {
-    setCartItems((prev) =>
-      prev.map((item) =>
-        item.id === id && item.quantity > 1
-          ? { ...item, quantity: item.quantity - 1 }
-          : item
-      )
-    );
+  const fetchCartItems = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`https://hospitaldatabasemanagement.onrender.com/cart/${patientId}`);
+      const data = await res.json();
+      setCartItems(Array.isArray(data) ? data : data.items || []);
+    } catch (error) {
+      showAlert("Error", "Failed to fetch cart items");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const removeItem = async (id) => {
     try {
-      setUpdatingItem(true);
-      const res = await fetch(
-        `https://hospitaldatabasemanagement.onrender.com/cart/${id}`,
-        { method: "DELETE" }
-      );
+      const res = await fetch(`https://hospitaldatabasemanagement.onrender.com/cart/${id}`, { method: "DELETE" });
       if (res.ok) {
-        Alert.alert("Success", "Item removed from cart");
         setCartItems((prev) => prev.filter((item) => item.id !== id));
-      } else {
-        const data = await res.json();
-        Alert.alert("Error", data.message || "Failed to remove item");
       }
     } catch (error) {
-      console.log("Error deleting cart item:", error);
-      Alert.alert("Error", "Something went wrong while removing item");
-    } finally {
-      setUpdatingItem(false);
+      showAlert("Error", "Failed to remove item");
     }
   };
 
-  const subtotal = Array.isArray(cartItems)
-    ? cartItems.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0)
-    : 0;
+  const subtotal = cartItems.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
   const tax = Math.round(subtotal * taxRate);
   const total = subtotal + deliveryFee + tax;
-  useEffect(() => {
-        const backAction = () => {
-          // Instead of going back step by step, reset navigation to Sidebar/Home
-          navigation.reset({
-            index: 0,
-            routes: [{ name: "bottomtab" }], // <-- replace with your sidebar/home screen name
-          });
-          return true; // prevents default back behavior
-        };
-      
-        const backHandler = BackHandler.addEventListener(
-          "hardwareBackPress",
-          backAction
-        );
-      
-        return () => backHandler.remove(); // clean up on unmount
-      }, []);
-  if (loading) {
-    return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color="#EF4444" />
-      </View>
-    );
-  }
+
+  if (loading) return (
+    <View style={styles.loader}><ActivityIndicator size="large" color="#002E5B" /></View>
+  );
 
   return (
-    <ScrollView style={styles.container}>
-      {/* Back Button */}
-      <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-        <Ionicons name="arrow-back" size={28} color="#3B82F6" />
-      </TouchableOpacity>
-
-      {/* Title with Cart Icon */}
-      <View style={styles.titleRow}>
-        <Text style={styles.title}>Shopping Cart</Text>
-        <View style={styles.cartIconWrapper}>
-          <Ionicons name="cart-outline" size={28} color="#3B82F6" />
-          {cartItems.length > 0 && (
-            <View style={styles.cartBadge}>
-              <Text style={styles.cartBadgeText}>{cartItems.length}</Text>
-            </View>
-          )}
+    <SafeAreaView style={styles.container}>
+      {/* Patient Dashboard Header */}
+      <View style={styles.dashboardHeader}>
+        <View>
+          <Text style={styles.greetingText}>My Medical Cart</Text>
+          <Text style={styles.subGreeting}>Manage your prescriptions and health products</Text>
         </View>
+        <TouchableOpacity style={styles.closeBtn} onPress={() => navigation.goBack()}>
+          <Ionicons name="close" size={24} color="#64748B" />
+        </TouchableOpacity>
       </View>
 
-      {/* Cart Items */}
-      {cartItems.length === 0 ? (
-        <Text style={styles.emptyText}>Your cart is empty</Text>
-      ) : (
-        cartItems.map((item) => (
-          <View key={item.id} style={styles.itemCard}>
-            <View style={styles.itemInfo}>
-              <Image source={{ uri: item.images[0] }} style={styles.itemImage} />
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.itemName}>{item.name}</Text>
-                <Text style={styles.itemBrand}>{item.manufacturer}</Text>
-                <Text style={styles.itemPrice}>₹{item.price}</Text>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={[styles.mainLayout, isDesktop && styles.desktopLayout]}>
+          
+          {/* Left Column: Medicine List */}
+          <View style={isDesktop ? styles.leftPanel : styles.fullPanel}>
+            {cartItems.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Image 
+                  source={{ uri: 'https://cdn-icons-png.flaticon.com/512/11329/11329073.png' }} 
+                  style={styles.emptyImg} 
+                />
+                <Text style={styles.emptyTitle}>Cart is Empty</Text>
+                <TouchableOpacity 
+                    style={styles.addMedBtn} 
+                    onPress={() => navigation.navigate("MedicineScreen")}
+                >
+                  <Text style={styles.addMedText}>+ Browse Medicines</Text>
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity onPress={() => removeItem(item.id)}>
-                <Ionicons name="trash-outline" size={22} color="#EF4444" />
-              </TouchableOpacity>
-            </View>
+            ) : (
+              cartItems.map((item) => (
+                <View key={item.id} style={styles.medCard}>
+                  <View style={styles.medIconBox}>
+                    {item.images?.[0] ? (
+                      <Image source={{ uri: item.images[0] }} style={styles.medImg} />
+                    ) : (
+                      <MaterialCommunityIcons name="pill" size={30} color="#002E5B" />
+                    )}
+                  </View>
+                  <View style={styles.medInfo}>
+                    <Text style={styles.medName}>{item.name}</Text>
+                    <Text style={styles.medSub}>{item.manufacturer} • {item.category}</Text>
+                    <View style={styles.medMeta}>
+                      <Text style={styles.medPrice}>₹{item.price}</Text>
+                      <View style={styles.qtyBadge}>
+                        <Text style={styles.qtyBadgeText}>Qty: {item.quantity}</Text>
+                      </View>
+                    </View>
+                  </View>
+                  <TouchableOpacity onPress={() => removeItem(item.id)} style={styles.deleteBtn}>
+                    <Ionicons name="trash-bin-outline" size={20} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
+              ))
+            )}
+          </View>
 
-            <View style={styles.quantityRow}>
-              <TouchableOpacity style={styles.qtyBtn} onPress={() => decrementQty(item.id)}>
-                <Text style={styles.qtyText}>−</Text>
-              </TouchableOpacity>
-              <Text style={styles.qtyNumber}>{item.quantity}</Text>
-              <TouchableOpacity style={styles.qtyBtn} onPress={() => incrementQty(item.id)}>
-                <Text style={styles.qtyText}>+</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ))
-      )}
+          {/* Right Column: Checkout Sidebar */}
+          {cartItems.length > 0 && (
+            <View style={isDesktop ? styles.rightPanel : styles.fullPanel}>
+              <View style={styles.invoiceCard}>
+                <Text style={styles.invoiceTitle}>Order Summary</Text>
+                
+                <View style={styles.invoiceRow}>
+                  <Text style={styles.invoiceLabel}>Items Total</Text>
+                  <Text style={styles.invoiceValue}>₹{subtotal}</Text>
+                </View>
+                
+                <View style={styles.invoiceRow}>
+                  <Text style={styles.invoiceLabel}>Delivery Charges</Text>
+                  <Text style={styles.invoiceValue}>₹{deliveryFee}</Text>
+                </View>
 
-      {/* Order Summary */}
-      {cartItems.length > 0 && (
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>Order Summary</Text>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryText}>Subtotal</Text>
-            <Text style={styles.summaryText}>₹{subtotal}</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryText}>Delivery Fee</Text>
-            <Text style={styles.summaryText}>₹{deliveryFee}</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryText}>Tax (5%)</Text>
-            <Text style={styles.summaryText}>₹{tax}</Text>
-          </View>
-          <View style={styles.separator} />
-          <View style={[styles.summaryRow, { marginTop: 8 }]}>
-            <Text style={[styles.summaryText, { fontWeight: "700", fontSize: 16 }]}>Total</Text>
-            <Text style={[styles.summaryText, { fontWeight: "700", fontSize: 16 }]}>₹{total}</Text>
-          </View>
+                <View style={styles.invoiceRow}>
+                  <Text style={styles.invoiceLabel}>Estimated Tax (GST)</Text>
+                  <Text style={styles.invoiceValue}>₹{tax}</Text>
+                </View>
+
+                <View style={styles.dottedDivider} />
+
+                <View style={[styles.invoiceRow, { marginBottom: 25 }]}>
+                  <Text style={styles.totalLabel}>Total Payable</Text>
+                  <Text style={styles.totalValue}>₹{total}</Text>
+                </View>
+
+                <TouchableOpacity 
+                  style={styles.checkoutAction}
+                  onPress={() => navigation.navigate("selectaddress", { cartItems, total })}
+                >
+                  <Text style={styles.checkoutActionText}>Checkout Now</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#fff" />
+                </TouchableOpacity>
+
+                {/* <View style={styles.offerTag}>
+                  <Ionicons name="pricetag-outline" size={14} color="#059669" />
+                  <Text style={styles.offerText}>Free delivery on orders above ₹1000</Text>
+                </View> */}
+              </View>
+            </View>
+          )}
+
         </View>
-      )}
-
-      {/* Red Checkout Button */}
-      {cartItems.length > 0 && (
-        <TouchableOpacity
-          onPress={() => navigation.navigate("selectaddress", { cartItems, total })}
-          style={{ marginBottom: 30 }}
-        >
-         <LinearGradient 
-  colors={["#FFD54F", "#FFC107"]}  // Light yellow to amber
-  style={styles.checkoutBtn}
->
-  <Text style={styles.checkoutText}>Proceed to Checkout</Text>
-</LinearGradient>
-
-        </TouchableOpacity>
-      )}
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F0F4F8", padding: 16 },
+  container: { flex: 1, backgroundColor: "#F1F5F9" },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
-  backBtn: { marginBottom: 12 },
-  titleRow: { flexDirection: "row", alignItems: "center", marginBottom: 16, justifyContent: "space-between" },
-  title: { fontSize: 24, fontWeight: "700", color: "#111827" },
-  cartIconWrapper: { position: "relative" },
-  cartBadge: {
-    position: "absolute",
-    top: -6,
-    right: -10,
-    backgroundColor: "#EF4444",
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+  
+  dashboardHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    padding: 24, 
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0'
   },
-  cartBadgeText: { color: "#fff", fontWeight: "700", fontSize: 12 },
-  emptyText: { textAlign: "center", marginTop: 50, fontSize: 16, color: "#6B7280" },
-  itemCard: {
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 14,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 6,
-    elevation: 3,
+  greetingText: { fontSize: 22, fontWeight: '800', color: '#3B82F6' },
+  subGreeting: { fontSize: 13, color: '#64748B', marginTop: 2 },
+  closeBtn: { padding: 8, backgroundColor: '#F8FAFC', borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' },
+
+  scrollContent: { padding: 20 },
+  mainLayout: { gap: 20 },
+  desktopLayout: { flexDirection: 'row', alignItems: 'flex-start' },
+  leftPanel: { flex: 1.8 },
+  rightPanel: { flex: 1 },
+  fullPanel: { width: '100%' },
+
+  medCard: { 
+    flexDirection: 'row', 
+    backgroundColor: '#fff', 
+    borderRadius: 16, 
+    padding: 16, 
+    marginBottom: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0'
   },
-  itemInfo: { flexDirection: "row", alignItems: "center" },
-  itemImage: { width: 60, height: 60, borderRadius: 10 },
-  itemName: { fontSize: 16, fontWeight: "600", color: "#111827" },
-  itemBrand: { fontSize: 13, color: "#6B7280", marginTop: 2 },
-  itemPrice: { fontSize: 15, fontWeight: "600", color: "#10B981", marginTop: 4 },
-  quantityRow: { flexDirection: "row", alignItems: "center", marginTop: 12, justifyContent: "flex-end" },
-  qtyBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#E5E7EB",
-    justifyContent: "center",
-    alignItems: "center",
+  medIconBox: { width: 60, height: 60, borderRadius: 12, backgroundColor: '#F0F9FF', justifyContent: 'center', alignItems: 'center' },
+  medImg: { width: 45, height: 45, borderRadius: 8 },
+  medInfo: { flex: 1, marginLeft: 16 },
+  medName: { fontSize: 16, fontWeight: '700', color: '#3B82F6' },
+  medSub: { fontSize: 12, color: '#64748B', marginVertical: 4 },
+  medMeta: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  medPrice: { fontSize: 16, fontWeight: '800', color: '#3B82F6' },
+  qtyBadge: { backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  qtyBadgeText: { fontSize: 11, fontWeight: '700', color: '#475569' },
+  deleteBtn: { padding: 10 },
+
+  invoiceCard: { 
+    backgroundColor: '#fff', 
+    borderRadius: 20, 
+    padding: 24, 
+    borderWidth: 1, 
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOpacity: 0.02,
+    elevation: 2
   },
-  qtyText: { fontSize: 18, fontWeight: "600", color: "#374151" },
-  qtyNumber: { marginHorizontal: 14, fontSize: 16, fontWeight: "600", color: "#111827" },
-  summaryCard: {
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    padding: 18,
-    marginBottom: 18,
-    shadowColor: "#000",
-    shadowOpacity: 0.03,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    elevation: 2,
+  invoiceTitle: { fontSize: 18, fontWeight: '800', color: '#1E293B', marginBottom: 20 },
+  invoiceRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
+  invoiceLabel: { fontSize: 14, color: '#64748B' },
+  invoiceValue: { fontSize: 14, color: '#3B82F6', fontWeight: '700' },
+  dottedDivider: { height: 1, borderStyle: 'dashed', borderWidth: 1, borderColor: '#CBD5E1', marginVertical: 15 },
+  totalLabel: { fontSize: 16, fontWeight: '800', color: '#3B82F6' },
+  totalValue: { fontSize: 24, fontWeight: '900', color: '#10B981' }, // Emerald for total
+
+  checkoutAction: { 
+    backgroundColor: '#3B82F6', 
+    height: 56, 
+    borderRadius: 14, 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    gap: 10 
   },
-  summaryTitle: { fontSize: 18, fontWeight: "700", marginBottom: 12, color: "#111827" },
-  summaryRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
-  summaryText: { fontSize: 15, color: "#111827" },
-  separator: { borderBottomWidth: 1, borderBottomColor: "#E5E7EB", marginVertical: 8 },
-  checkoutBtn: {
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  checkoutText: { color: "#FFF", fontSize: 16, fontWeight: "700" },
+  checkoutActionText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  offerTag: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 15, gap: 6 },
+  offerText: { fontSize: 12, color: '#059669', fontWeight: '600' },
+
+  emptyContainer: { alignItems: 'center', paddingVertical: 60, backgroundColor: '#fff', borderRadius: 20, borderWidth: 1, borderColor: '#E2E8F0' },
+  emptyImg: { width: 120, height: 120, opacity: 0.8 },
+  emptyTitle: { marginTop: 20, fontSize: 18, fontWeight: '700', color: '#64748B' },
+  addMedBtn: { marginTop: 15, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: '#E0F2FE', borderRadius: 10 },
+  addMedText: { color: '#3B82F6', fontWeight: '700' }
 });

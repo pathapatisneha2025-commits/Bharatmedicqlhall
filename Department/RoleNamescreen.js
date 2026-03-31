@@ -5,24 +5,53 @@ import {
   TextInput,
   TouchableOpacity,
   FlatList,
+  ScrollView,
   StyleSheet,
   Alert,
   ActivityIndicator,
+  Platform,
+  SafeAreaView,
+  useWindowDimensions,
 } from "react-native";
-import { Ionicons, Feather } from "@expo/vector-icons";
+import { Ionicons, Feather, MaterialIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 
 const BASE_URL = "https://hospitaldatabasemanagement.onrender.com";
 
 const RoleScreen = () => {
   const navigation = useNavigation();
+  const { width } = useWindowDimensions();
+  
+  // Define breakpoint for dual-pane layout (850px is standard for side-by-side)
+  const isLargeScreen = width > 850;
 
   const [roles, setRoles] = useState([]);
   const [roleName, setRoleName] = useState("");
-  const [editRole, setEditRole] = useState(null); // Store role object when editing
+  const [editRole, setEditRole] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingCount, setLoadingCount] = useState(0);
+  const [searchText, setSearchText] = useState("");
 
-  // Fetch all roles
+  const showAlert = (title, message, buttons) => {
+    if (Platform.OS === "web") {
+      const confirmAction = window.confirm(`${title}\n\n${message}`);
+      if (confirmAction && buttons?.[1]?.onPress) {
+        buttons[1].onPress();
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
+  };
+
+  useEffect(() => {
+    let interval;
+    if (loading) {
+      setLoadingCount(0);
+      interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+    } else clearInterval(interval);
+    return () => clearInterval(interval);
+  }, [loading]);
+
   const fetchRoles = async () => {
     setLoading(true);
     try {
@@ -30,20 +59,9 @@ const RoleScreen = () => {
       const data = await response.json();
       setRoles(data);
     } catch (error) {
-      Alert.alert("Error", "Failed to fetch roles");
+      showAlert("Error", "Failed to fetch roles");
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Fetch role by ID (optional usage)
-  const fetchRoleById = async (id) => {
-    try {
-      const response = await fetch(`${BASE_URL}/role/${id}`);
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      Alert.alert("Error", "Failed to fetch role by ID");
     }
   };
 
@@ -51,17 +69,15 @@ const RoleScreen = () => {
     fetchRoles();
   }, []);
 
-  // Add or Update Role
   const handleAddOrUpdate = async () => {
     if (!roleName.trim()) {
-      Alert.alert("Validation", "Please enter a role name");
+      showAlert("Validation", "Please enter a role name");
       return;
     }
 
     setLoading(true);
     try {
       if (editRole) {
-        // Update role
         const response = await fetch(`${BASE_URL}/role/update/${editRole.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -69,14 +85,12 @@ const RoleScreen = () => {
         });
 
         if (response.ok) {
-          Alert.alert("Success", "Role updated successfully");
+          showAlert("Success", "Role updated successfully");
           fetchRoles();
           setEditRole(null);
-        } else {
-          Alert.alert("Error", "Failed to update role");
+          setRoleName("");
         }
       } else {
-        // Add role
         const response = await fetch(`${BASE_URL}/role/add`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -84,181 +98,234 @@ const RoleScreen = () => {
         });
 
         if (response.ok) {
-          Alert.alert("Success", "Role added successfully");
+          showAlert("Success", "Role added successfully");
           fetchRoles();
-        } else {
-          Alert.alert("Error", "Failed to add role");
+          setRoleName("");
         }
       }
-      setRoleName("");
     } catch (error) {
-      Alert.alert("Error", "Something went wrong");
+      showAlert("Error", "Something went wrong");
     } finally {
       setLoading(false);
     }
   };
 
-  // Edit Role
-  const handleEdit = (role) => {
-    setRoleName(role.role_name);
-    setEditRole(role);
-  };
-
-  // Delete Role
   const handleDelete = (id) => {
-    Alert.alert(
-      "Delete Role",
-      "Are you sure you want to delete this role?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            setLoading(true);
-            try {
-              const response = await fetch(`${BASE_URL}/role/delete/${id}`, {
-                method: "DELETE",
-              });
-
-              if (response.ok) {
-                Alert.alert("Success", "Role deleted successfully");
-                fetchRoles();
-              } else {
-                Alert.alert("Error", "Failed to delete role");
-              }
-            } catch (error) {
-              Alert.alert("Error", "Something went wrong");
-            } finally {
-              setLoading(false);
-            }
-          },
+    showAlert("Delete Role", "Permanently remove this role?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        onPress: async () => {
+          setLoading(true);
+          try {
+            const response = await fetch(`${BASE_URL}/role/delete/${id}`, {
+              method: "DELETE",
+            });
+            if (response.ok) fetchRoles();
+          } catch (error) {
+            showAlert("Error", "Something went wrong");
+          } finally {
+            setLoading(false);
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  const renderItem = ({ item }) => (
-    <View style={styles.listItem}>
-      <Text style={styles.listText}>{item.role_name}</Text>
-      <View style={styles.actionIcons}>
-        <TouchableOpacity onPress={() => handleEdit(item)} style={styles.icon}>
-          <Feather name="edit" size={20} color="#007bff" />
+  const filteredRoles = roles.filter((r) =>
+    r.role_name.toLowerCase().includes(searchText.toLowerCase())
+  );
+
+  const renderTableRow = ({ item, index }) => (
+    <View style={styles.tableRow}>
+      <Text style={[styles.tableCell, { width: 50 }]}>{index + 1}</Text>
+      <Text style={[styles.tableCell, { flex: 1, fontWeight: "600" }]}>
+        {item.role_name}
+      </Text>
+      <View style={styles.actionCell}>
+        <TouchableOpacity style={styles.actionIcon} onPress={() => {
+          setRoleName(item.role_name);
+          setEditRole(item);
+        }}>
+          <Feather name="edit-3" size={16} color="#2563eb" />
         </TouchableOpacity>
         <TouchableOpacity
+          style={[styles.actionIcon, { backgroundColor: "#fee2e2" }]}
           onPress={() => handleDelete(item.id)}
-          style={styles.icon}
         >
-          <Ionicons name="trash-outline" size={20} color="red" />
+          <Feather name="trash-2" size={16} color="#ef4444" />
         </TouchableOpacity>
       </View>
     </View>
   );
 
   return (
-    <View style={styles.container}>
-      {/* Header with Back Button */}
-      <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#111" />
-        </TouchableOpacity>
-        <Text style={styles.heading}>Role Management</Text>
-        <View style={{ width: 24 }} /> {/* Placeholder for spacing */}
-      </View>
+    <SafeAreaView style={styles.webWrapper}>
+      <View style={styles.mainContent}>
+        {/* HEADER */}
+        <View style={styles.contentHeader}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 15 }}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.circleBack}>
+              <Ionicons name="arrow-back" size={22} color="#1e293b" />
+            </TouchableOpacity>
+            <View>
+              <Text style={styles.mainTitle}>Access Control</Text>
+              <Text style={styles.subTitle}>Manage system roles and staff designations</Text>
+            </View>
+          </View>
+        </View>
 
-      {/* Input and Add/Update Button */}
+        {/* DUAL PANE CONTAINER */}
+        <View style={[styles.layoutContainer, { flexDirection: isLargeScreen ? "row" : "column" }]}>
+          
+          {/* LEFT PANEL: FORM */}
+          <View style={[styles.formCard, !isLargeScreen && { width: '100%', marginBottom: 24 }]}>
+            <Text style={styles.formHeaderTitle}>
+              {editRole ? "Edit Role" : "Add New Role"}
+            </Text>
+
+            <Text style={styles.fieldLabel}>Designation Name</Text>
+            <View style={styles.activeInput}>
+              <MaterialIcons name="admin-panel-settings" size={20} color="#2563eb" />
+              <TextInput
+                style={styles.inputStyle}
+                placeholder="e.g. Administrator"
+                value={roleName}
+                onChangeText={setRoleName}
+              />
+            </View>
+
+            <TouchableOpacity style={styles.submitBtn} onPress={handleAddOrUpdate}>
+              {loading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.submitBtnText}>
+                  {editRole ? "Update Role" : "Save Role"}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {editRole && (
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => { setEditRole(null); setRoleName(""); }}>
+                <Text style={styles.cancelBtnText}>Discard Changes</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+      {/* RIGHT PANEL: TABLE */}
+<View style={styles.tableCard}>
+  <View style={styles.tableCardHeader}>
+    <View style={styles.searchBar}>
+      <Feather name="search" size={18} color="#94a3b8" />
       <TextInput
-        style={styles.input}
-        placeholder="Enter Role Name"
-        value={roleName}
-        onChangeText={setRoleName}
+        placeholder="Search roles..."
+        style={styles.searchTextInput}
+        value={searchText}
+        onChangeText={setSearchText}
       />
-      <TouchableOpacity style={styles.addButton} onPress={handleAddOrUpdate}>
-        <Text style={styles.addButtonText}>
-          {editRole ? "Update Role" : "Add Role"}
-        </Text>
-      </TouchableOpacity>
-
-      {/* List of Roles */}
-      {loading ? (
-        <ActivityIndicator size="large" color="#007bff" style={{ marginTop: 20 }} />
-      ) : (
-        <FlatList
-          data={roles}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id.toString()}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>No roles added yet</Text>
-          }
-        />
-      )}
     </View>
+  </View>
+
+  <View style={styles.tableHeader}>
+    <Text style={[styles.headerCell, { width: 50 }]}>#</Text>
+    <Text style={[styles.headerCell, { flex: 1 }]}>Role Name</Text>
+    <Text style={[styles.headerCell, { width: 100, textAlign: "center" }]}>Actions</Text>
+  </View>
+
+  {/* Make this container scrollable */}
+  <View style={{ flex: 1, maxHeight: 400 }}> {/* or minHeight */}
+    <FlatList
+      data={filteredRoles}
+      keyExtractor={(item) => item.id.toString()}
+      renderItem={renderTableRow}
+      contentContainerStyle={{ paddingBottom: 20 }}
+      ListEmptyComponent={
+        <Text style={styles.emptyText}>No roles found in the directory.</Text>
+      }
+    />
+  </View>
+</View>
+
+      </View>
+      </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    backgroundColor: "#f9f9f9",
-    marginTop: 20,
+  webWrapper: { flex: 1, backgroundColor: "#F8FAFC" },
+  mainContent: { flex: 1, padding: Platform.OS === 'web' ? 32 : 16 },
+  contentHeader: { marginBottom: 24 },
+  circleBack: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: "#fff",
+    justifyContent: "center", alignItems: "center", elevation: 2,
+    shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 4,
   },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 20,
-    justifyContent: "space-between",
+  mainTitle: { fontSize: 24, fontWeight: "800", color: "#1e293b" },
+  subTitle: { color: "#64748b", fontSize: 14 },
+
+  layoutContainer: { gap: 24, flex: 1, alignItems: 'flex-start' },
+  
+  // Left Panel Fixed Width
+  formCard: {
+    width: 340, 
+    backgroundColor: "#fff", 
+    borderRadius: 16, 
+    padding: 24,
+    borderWidth: 1, 
+    borderColor: "#e2e8f0",
+    shadowColor: "#000",
+    shadowOpacity: 0.03,
+    shadowRadius: 15,
   },
-  heading: {
-    fontSize: 22,
-    fontWeight: "bold",
-    textAlign: "center",
-    flex: 1,
+
+  // Right Panel Expands
+  tableCard: {
+    flex: 1, 
+    backgroundColor: "#fff", 
+    borderRadius: 16,
+    borderWidth: 1, 
+    borderColor: "#e2e8f0", 
+    overflow: "hidden",
+    width: '100%',
   },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 10,
-    backgroundColor: "#fff",
+
+  tableCardHeader: { padding: 16, borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
+  formHeaderTitle: { fontSize: 18, fontWeight: "700", color: "#1e293b", marginBottom: 4 },
+
+  searchBar: {
+    flexDirection: "row", alignItems: "center", backgroundColor: "#f8fafc",
+    borderRadius: 10, paddingHorizontal: 12, height: 44, borderWidth: 1, borderColor: "#e2e8f0",
   },
-  addButton: {
-    backgroundColor: "#007bff",
-    padding: 12,
-    borderRadius: 8,
-    alignItems: "center",
-    marginBottom: 20,
+  searchTextInput: { flex: 1, marginLeft: 10, fontSize: 14, color: "#1e293b" },
+
+  fieldLabel: { fontSize: 12, fontWeight: "700", color: "#64748b", marginBottom: 8, marginTop: 20, textTransform: "uppercase", letterSpacing: 0.5 },
+  activeInput: {
+    flexDirection: "row", alignItems: "center", backgroundColor: "#fff",
+    borderWidth: 1, borderColor: "#2563eb", borderRadius: 10, paddingHorizontal: 12,
   },
-  addButtonText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 16,
+  inputStyle: { flex: 1, height: 48, marginLeft: 10, fontSize: 15, color: "#1e293b" },
+
+  submitBtn: { backgroundColor: "#2563eb", height: 52, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 24 },
+  submitBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  cancelBtn: { marginTop: 16, alignItems: "center" },
+  cancelBtnText: { color: "#ef4444", fontWeight: "600", fontSize: 13 },
+
+  tableHeader: {
+    flexDirection: "row", backgroundColor: "#f8fafc", paddingVertical: 14,
+    paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#e2e8f0",
   },
-  listItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 8,
-    marginBottom: 10,
-    elevation: 1,
+  headerCell: { fontSize: 12, fontWeight: "800", color: "#94a3b8", textTransform: "uppercase" },
+  tableRow: {
+    flexDirection: "row", paddingVertical: 16, paddingHorizontal: 20,
+    borderBottomWidth: 1, borderBottomColor: "#f1f5f9", alignItems: "center",
   },
-  listText: {
-    fontSize: 16,
-  },
-  actionIcons: {
-    flexDirection: "row",
-  },
-  icon: {
-    marginLeft: 15,
-  },
-  emptyText: {
-    textAlign: "center",
-    marginTop: 20,
-    color: "#888",
-  },
+  tableCell: { fontSize: 15, color: "#334155" },
+
+  actionCell: { width: 100, flexDirection: "row", justifyContent: "flex-end", gap: 10 },
+  actionIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: "#f1f5f9", justifyContent: "center", alignItems: "center" },
+
+  emptyText: { textAlign: "center", color: "#94a3b8", marginTop: 40, fontSize: 14 },
 });
 
 export default RoleScreen;

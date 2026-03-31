@@ -1,4 +1,3 @@
-// screens/DoctorResetPasswordScreen.js
 import React, { useState } from "react";
 import {
   View,
@@ -11,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  useWindowDimensions
 } from "react-native";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -23,21 +23,28 @@ export default function DoctorForgotPasswordScreen() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const { width: windowWidth } = useWindowDimensions();
   const navigation = useNavigation();
+
+  // Desktop check
+  const isDesktop = windowWidth > 768;
+
+  const showAlert = (title, message) => {
+    if (Platform.OS === "web") window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
 
   const handleResetPassword = async () => {
     if (!email || !newPassword || !confirmPassword) {
-      Alert.alert("Validation", "Please fill in all fields.");
+      showAlert("Validation", "Please fill in all fields.");
       return;
     }
-
     if (newPassword.length < 6) {
-      Alert.alert("Validation", "Password must be at least 6 characters long.");
+      showAlert("Validation", "Password must be at least 6 characters long.");
       return;
     }
-
     if (newPassword !== confirmPassword) {
-      Alert.alert("Validation", "Passwords do not match.");
+      showAlert("Validation", "Passwords do not match.");
       return;
     }
 
@@ -57,15 +64,14 @@ export default function DoctorForgotPasswordScreen() {
       );
 
       const data = await res.json();
-
       if (res.ok) {
-        Alert.alert("Success", data.message || "Password reset successfully!");
+        showAlert("Success", data.message || "Password reset successfully!");
         navigation.navigate("DoctorLogin");
       } else {
-        Alert.alert("Error", data.error || data.message || "Failed to reset password.");
+        showAlert("Error", data.error || data.message || "Failed to reset password.");
       }
     } catch (error) {
-      Alert.alert("Error", "Something went wrong. Please try again later.");
+      showAlert("Error", "Something went wrong. Please try again later.");
     } finally {
       setLoading(false);
     }
@@ -76,100 +82,104 @@ export default function DoctorForgotPasswordScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.card}>
-          {/* Header */}
-          <View style={styles.headerContainer}>
-            <TouchableOpacity
-              style={styles.backBtn}
+      <View style={styles.mainWrapper}>
+        {/* LEFT SIDE: FORM */}
+        <View style={styles.leftSide}>
+          <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <TouchableOpacity 
+              style={styles.backLink} 
               onPress={() => navigation.goBack()}
             >
-              <MaterialIcons name="arrow-back" size={24} color="#333" />
+              <MaterialIcons name="chevron-left" size={20} color="#718096" />
+              <Text style={styles.backText}>Back to login</Text>
             </TouchableOpacity>
+
+            <View style={styles.brandRow}>
+              <View style={styles.logoBadge}>
+                <Text style={styles.logoBadgeText}>BM</Text>
+              </View>
+              <Text style={styles.brandName}>Bharat Medical Hall</Text>
+            </View>
+
             <Text style={styles.title}>Reset Password</Text>
-          </View>
-          <Text style={styles.subtitle}>
-            Enter your registered email and set a new password.
-          </Text>
+            <Text style={styles.subtitle}>Enter your registered email and set a new password</Text>
 
-          {/* Email */}
-          <View style={styles.inputContainer}>
-            <MaterialIcons name="email" size={20} color="#555" style={styles.icon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your email"
-              placeholderTextColor="#888"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={email}
-              onChangeText={setEmail}
-            />
-          </View>
+            <View style={styles.formContainer}>
+              <Text style={styles.label}>Email Address</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your email"
+                  placeholderTextColor="#A0AEC0"
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                />
+              </View>
 
-          {/* New Password */}
-          <View style={styles.inputContainer}>
-            <MaterialIcons name="lock" size={20} color="#555" style={styles.icon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Enter new password"
-              placeholderTextColor="#888"
-              secureTextEntry={!showNewPassword}
-              value={newPassword}
-              onChangeText={setNewPassword}
-            />
-            <TouchableOpacity onPress={() => setShowNewPassword(!showNewPassword)}>
-              <Ionicons
-                name={showNewPassword ? "eye-off" : "eye"}
-                size={20}
-                color="#888"
-              />
-            </TouchableOpacity>
-          </View>
+              <Text style={styles.label}>New Password</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter new password"
+                  placeholderTextColor="#A0AEC0"
+                  secureTextEntry={!showNewPassword}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                />
+                <TouchableOpacity onPress={() => setShowNewPassword(!showNewPassword)}>
+                  <Ionicons name={showNewPassword ? "eye-outline" : "eye-off-outline"} size={20} color="#718096" />
+                </TouchableOpacity>
+              </View>
 
-          {/* Confirm Password */}
-          <View style={styles.inputContainer}>
-            <MaterialIcons name="lock-outline" size={20} color="#555" style={styles.icon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Confirm new password"
-              placeholderTextColor="#888"
-              secureTextEntry={!showConfirmPassword}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-            />
-            <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
-              <Ionicons
-                name={showConfirmPassword ? "eye-off" : "eye"}
-                size={20}
-                color="#888"
-              />
-            </TouchableOpacity>
-          </View>
+              <Text style={styles.label}>Confirm Password</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Confirm new password"
+                  placeholderTextColor="#A0AEC0"
+                  secureTextEntry={!showConfirmPassword}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                />
+                <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+                  <Ionicons name={showConfirmPassword ? "eye-outline" : "eye-off-outline"} size={20} color="#718096" />
+                </TouchableOpacity>
+              </View>
 
-          {/* Reset Button */}
-          <TouchableOpacity
-            style={styles.submitBtn}
-            onPress={handleResetPassword}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.submitText}>Reset Password</Text>
-            )}
-          </TouchableOpacity>
-
-          {/* Back to Login */}
-          <TouchableOpacity
-            style={styles.backToLogin}
-            onPress={() => navigation.navigate("DoctorLogin")}
-          >
-            <Text style={styles.backToLoginText}>
-              <MaterialIcons name="login" size={16} color="#007bff" /> Back to Login
-            </Text>
-          </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.submitBtn} 
+                onPress={handleResetPassword}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <View style={styles.btnContent}>
+                    <Text style={styles.submitBtnText}>Reset Password </Text>
+                    <MaterialIcons name="arrow-forward" size={18} color="#fff" />
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
         </View>
-      </ScrollView>
+
+        {/* RIGHT SIDE: BLUE PANEL */}
+        {isDesktop && (
+          <View style={styles.rightSide}>
+            <View style={styles.welcomeBox}>
+               <View style={styles.largeLogoBadge}>
+                  <Text style={styles.largeLogoText}>BM</Text>
+               </View>
+               <Text style={styles.welcomeTitle}>Doctor Portal</Text>
+               <Text style={styles.welcomeSubtitle}>
+                 Securely update your credentials to continue providing excellent healthcare management.
+               </Text>
+            </View>
+          </View>
+        )}
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -177,82 +187,147 @@ export default function DoctorForgotPasswordScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f0f4f8",
+    backgroundColor: "#fff",
   },
-  scrollContainer: {
+  mainWrapper: {
+    flex: 1,
+    flexDirection: "row",
+  },
+  leftSide: {
+    flex: 1,
+    backgroundColor: "#fff",
+    paddingHorizontal: Platform.OS === 'web' ? "10%" : 20,
+  },
+  scrollContent: {
     flexGrow: 1,
     justifyContent: "center",
+    paddingVertical: 40,
+  },
+  rightSide: {
+    flex: 1,
+    backgroundColor: "#0066FF",
+    justifyContent: "center",
     alignItems: "center",
-    paddingVertical: 30,
   },
-  card: {
-    backgroundColor: "#fff",
-    width: "92%",
-    borderRadius: 16,
-    padding: 25,
-    elevation: 5,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-  headerContainer: {
+  backLink: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 15,
+    marginBottom: 30,
   },
-  backBtn: {
-    padding: 6,
-    marginRight: 10,
+  backText: {
+    color: "#718096",
+    fontSize: 14,
+    marginLeft: 4,
+  },
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 40,
+  },
+  logoBadge: {
+    backgroundColor: "#0066FF",
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  logoBadgeText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 18,
+  },
+  brandName: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#0066FF",
   },
   title: {
-    fontSize: 24,
+    fontSize: 32,
     fontWeight: "bold",
-    color: "#1E88E5",
+    color: "#1A202C",
+    marginBottom: 8,
   },
   subtitle: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 20,
+    fontSize: 16,
+    color: "#718096",
+    marginBottom: 32,
   },
-  inputContainer: {
+  formContainer: {
+    maxWidth: 450,
+    width: "100%",
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#2D3748",
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f7f9fc",
-    borderRadius: 10,
-    marginBottom: 15,
+    backgroundColor: "#F7FAFC",
     borderWidth: 1,
-    borderColor: "#ddd",
-    paddingHorizontal: 12,
-    paddingVertical: Platform.OS === "ios" ? 14 : 10,
-  },
-  icon: {
-    marginRight: 10,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 52,
   },
   input: {
     flex: 1,
     fontSize: 15,
-    color: "#333",
+    color: "#1A202C",
+          outlineStyle: "none",   // ✅ removes web rectangle
+
   },
   submitBtn: {
-    backgroundColor: "#1E88E5",
-    borderRadius: 12,
-    paddingVertical: 14,
+    backgroundColor: "#00BCC9",
+    height: 52,
+    borderRadius: 30,
+    justifyContent: "center",
     alignItems: "center",
-    marginTop: 10,
-    elevation: 2,
+    marginTop: 40,
+    elevation: 4,
   },
-  submitText: {
+  btnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  submitBtnText: {
     color: "#fff",
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "bold",
   },
-  backToLogin: {
-    marginTop: 20,
+  welcomeBox: {
+    width: "70%",
     alignItems: "center",
   },
-  backToLoginText: {
-    color: "#1E88E5",
-    fontSize: 14,
-    fontWeight: "500",
+  largeLogoBadge: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    width: 100,
+    height: 100,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 40,
+  },
+  largeLogoText: {
+    color: "#fff",
+    fontSize: 40,
+    fontWeight: "bold",
+  },
+  welcomeTitle: {
+    color: "#fff",
+    fontSize: 36,
+    fontWeight: "bold",
+    marginBottom: 16,
+  },
+  welcomeSubtitle: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 18,
+    textAlign: "center",
+    lineHeight: 26,
   },
 });

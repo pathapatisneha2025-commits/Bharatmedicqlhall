@@ -10,6 +10,9 @@ import {
   TextInput,
   RefreshControl,
   Dimensions,
+  Animated, Easing,
+  Platform
+  
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,11 +22,15 @@ import { getEmployeeId, clearStorage } from "../utils/storage";
 
 const BASE_URL = "https://hospitaldatabasemanagement.onrender.com";
 const { width } = Dimensions.get("window");
+const isDesktop = Platform.OS === "web" && width > 900;
+
 
 export default function NurseDashboard() {
   const navigation = useNavigation();
 
   const [loading, setLoading] = useState(true); // Initial load only
+  const [loadingCount, setLoadingCount] = useState(0);
+  
   const [refreshing, setRefreshing] = useState(false); // Pull-to-refresh
   const [assignedDoctors, setAssignedDoctors] = useState([]);
   const [doctorTokens, setDoctorTokens] = useState({});
@@ -31,8 +38,24 @@ export default function NurseDashboard() {
   const [searchText, setSearchText] = useState("");
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showPicker, setShowPicker] = useState(false);
+const [scrollAnim] = useState(new Animated.Value(0));
 
-  const formatDate = (date) => new Date(date).toISOString().split("T")[0];
+
+  useEffect(() => {
+                  let interval;
+                  if (loading) {
+                    setLoadingCount(0);
+                    interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+                  } else clearInterval(interval);
+                  return () => clearInterval(interval);
+                }, [loading]);
+const formatDate = (date) => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
   // ----------------------
   // Fetch assigned doctors
@@ -58,42 +81,51 @@ export default function NurseDashboard() {
   // ----------------------
   // Fetch doctor tokens
   // ----------------------
-  const fetchDoctorWiseTokens = async (doctors, showLoader = false) => {
-    if (showLoader) setLoading(true);
-    try {
-      let grouped = {};
-      await Promise.all(
-        doctors.map(async (doc) => {
+ const fetchDoctorWiseTokens = async (doctors, showLoader = false) => {
+  if (showLoader) setLoading(true);
+
+  try {
+    let grouped = {};
+
+    await Promise.all(
+      doctors.map(async (doc) => {
+        try {
           const [bookRes, bookingRes] = await Promise.all([
             fetch(`${BASE_URL}/book-appointment/doctor/${doc.id}`),
             fetch(`${BASE_URL}/doctorbooking/doctor/${doc.id}`),
           ]);
-          const bookData = await bookRes.json();
-          const bookingData = await bookingRes.json();
+
+          const bookJson = await bookRes.json();
+          const bookingJson = await bookingRes.json();
+
+          // Ensure we always have arrays
+          const bookData = Array.isArray(bookJson) ? bookJson : bookJson.data || [];
+          const bookingData = Array.isArray(bookingJson) ? bookingJson : bookingJson.data || [];
 
           const tokens = [
-            ...(bookData || [])
+            ...bookData
               .map((i) => ({
                 id: `b-${i.id}`,
                 tokenId: i.tokenid,
-                name: i.patient_name || i.name,
-                date: i.date,
-                time: i.timeslot,
-                age: i.patient_age,
-                gender: i.gender,
+                name: i.patient_name || i.name || "Unknown",
+                date: i.date || new Date().toISOString(),
+                time: i.timeslot || "",
+                age: i.patient_age || "-",
+                gender: i.gender || "-",
                 reason: i.reason || "General Checkup",
                 status: i.status || "pending",
               }))
               .filter((t) => t.status === "pending"),
-            ...(bookingData || [])
+
+            ...bookingData
               .map((i) => ({
                 id: `d-${i.id}`,
                 tokenId: i.daily_id,
-                name: i.patient_name,
-                date: i.appointment_date,
-                time: i.appointment_time,
-                age: i.patient_age,
-                gender: i.patient_gender,
+                name: i.patient_name || "Unknown",
+                date: i.appointment_date || new Date().toISOString(),
+                time: i.appointment_time || "",
+                age: i.patient_age || "-",
+                gender: i.patient_gender || "-",
                 reason: i.reason || "Consultation",
                 status: i.status || "pending",
               }))
@@ -101,17 +133,21 @@ export default function NurseDashboard() {
           ].sort((a, b) => Number(a.tokenId) - Number(b.tokenId));
 
           grouped[doc.name] = tokens;
-        })
-      );
+        } catch (err) {
+          console.error(`Error fetching tokens for ${doc.name}:`, err);
+          grouped[doc.name] = []; // fallback empty array
+        }
+      })
+    );
 
-      setDoctorTokens(grouped);
-      applyFilters(grouped, selectedDate, searchText);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      if (showLoader) setLoading(false);
-    }
-  };
+    setDoctorTokens(grouped);
+    applyFilters(grouped, selectedDate, searchText);
+  } catch (err) {
+    console.error("Error fetching doctor-wise tokens:", err);
+  } finally {
+    if (showLoader) setLoading(false);
+  }
+};
 
   // ----------------------
   // Initialize data
@@ -182,19 +218,81 @@ export default function NurseDashboard() {
     await clearStorage();
     navigation.reset({ index: 0, routes: [{ name: "SelectRole" }] });
   };
+  useEffect(() => {
+  if (!Object.keys(filteredDoctorTokens).length) return;
+
+  Object.entries(filteredDoctorTokens).forEach(([doctorName, tokens]) => {
+    if (tokens.length <= 1) return; // no need to scroll
+
+    const totalHeight = tokens.length * 38; // height of each miniCard
+    const duration = totalHeight * 120; // adjust speed
+
+    scrollAnim.setValue(0);
+
+    Animated.loop(
+      Animated.timing(scrollAnim, {
+        toValue: -totalHeight,
+        duration: duration,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    ).start();
+  });
+}, [filteredDoctorTokens]);
+
+
+
 
   // ----------------------
   // Render
   // ----------------------
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.fixedHeader}>
-        <Text style={styles.header}>👩‍⚕️ Nurse Dashboard</Text>
-        <TouchableOpacity onPress={handleLogout} style={styles.logoutSmall}>
-          <Ionicons name="log-out-outline" size={24} color="#e53935" />
-        </TouchableOpacity>
-      </View>
+ return (
+  <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.mainContainer, isDesktop && { flexDirection: "row" }]}>
+{isDesktop && (
+  <View style={styles.sidebar}>
+    <Text style={styles.sidebarTitle}>Hospital Panel</Text>
 
+    <TouchableOpacity style={styles.sidebarItem}>
+      <Ionicons name="grid-outline" size={18} color="#fff" />
+      <Text style={styles.sidebarText}>Dashboard</Text>
+    </TouchableOpacity>
+
+ <TouchableOpacity
+  style={styles.sidebarItem}
+  onPress={() => navigation.navigate("Patientlivetokens")}
+>
+  <Ionicons name="people-outline" size={18} color="#fff" />
+  <Text style={styles.sidebarText}>Patient Live Tokens</Text>
+</TouchableOpacity>
+
+
+
+<TouchableOpacity
+  style={styles.sidebarItem}
+  onPress={() => navigation.navigate("PatientnHistory")}
+>
+  <Ionicons name="people-outline" size={18} color="#fff" />
+  <Text style={styles.sidebarText}>Patient History</Text>
+</TouchableOpacity>
+
+
+    
+    
+
+    <TouchableOpacity
+      style={[styles.sidebarItem, { marginTop: 30 }]}
+      onPress={handleLogout}
+    >
+      <Ionicons name="log-out-outline" size={18} color="#fff" />
+      <Text style={styles.sidebarText}>Logout</Text>
+    </TouchableOpacity>
+  </View>
+)}
+<View style={[styles.contentArea, isDesktop && { flex: 1 }]}>
+
+    
+    
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
@@ -229,11 +327,41 @@ export default function NurseDashboard() {
           </View>
         </View>
 
-        {showPicker && <DateTimePicker value={selectedDate} mode="date" onChange={onDateChange} />}
+{showPicker && Platform.OS !== "web" && (
+  <DateTimePicker
+    value={selectedDate}
+    mode="date"
+    display="default"
+    onChange={onDateChange}
+  />
+)}
+
+{Platform.OS === "web" && showPicker && (
+  <View style={{ marginTop: 10 }}>
+    <input
+      type="date"
+      value={formatDate(selectedDate)}
+      onChange={(e) => {
+        const newDate = new Date(e.target.value);
+        setSelectedDate(newDate);
+        applyFilters(doctorTokens, newDate, searchText);
+        setShowPicker(false);
+      }}
+      style={{
+        padding: 8,
+        borderRadius: 8,
+        border: "1px solid #ccc",
+        fontSize: 14,
+      }}
+    />
+  </View>
+)}
 
         {loading && !refreshing ? (
-          <ActivityIndicator size="large" color="#2196F3" style={{ marginTop: 50 }} />
-        ) : (
+  <View style={styles.loader}>
+        <ActivityIndicator size="large" color="#007bff" />
+        <Text>Loading{loadingCount}s</Text>
+      </View>        ) : (
           <View style={styles.doctorGrid}>
             {Object.keys(filteredDoctorTokens).length === 0 ? (
               <Text style={styles.infoText}>No Active Patients</Text>
@@ -271,29 +399,37 @@ export default function NurseDashboard() {
                       </View>
                     )}
 
-                    {others.length > 0 && (
-                      <>
-                        <Text style={styles.waitingTitle}>Next in Queue</Text>
-                        {others.map((t) => (
-                          <View key={t.id} style={styles.miniCard}>
-                            <View style={styles.miniTokenCircle}>
-                              <Text style={styles.miniTokenText}>{t.tokenId}</Text>
-                            </View>
-                            <View style={{ flex: 1, marginLeft: 6 }}>
-                              <Text style={styles.miniName} numberOfLines={1}>
-                                {t.name}
-                              </Text>
-                              <Text style={styles.miniInfo}>
-                                {t.time} • {t.gender[0]}
-                              </Text>
-                            </View>
-                            <View style={[styles.miniStatus, styles.bgWait]}>
-                              <Text style={styles.miniStatusText}>Wait</Text>
-                            </View>
-                          </View>
-                        ))}
-                      </>
-                    )}
+              {others.length > 0 && (
+  <>
+    <Text style={styles.waitingTitle}>Next in Queue</Text>
+
+    <View
+      style={{ height: 150, overflow: 'hidden' }} // fixed container height
+    >
+      <Animated.ScrollView
+        scrollEnabled={false} // disable manual scroll
+        showsVerticalScrollIndicator={false}
+        style={{ transform: [{ translateY: scrollAnim }] }}
+      >
+        {others.map((t, index) => (
+          <View key={t.id} style={styles.miniCard}>
+            <View style={styles.miniTokenCircle}>
+              <Text style={styles.miniTokenText}>{t.tokenId}</Text>
+            </View>
+            <View style={{ flex: 1, marginLeft: 6 }}>
+              <Text style={styles.miniName} numberOfLines={1}>{t.name}</Text>
+              <Text style={styles.miniInfo}>{t.time} • {t.gender[0]}</Text>
+            </View>
+            <View style={[styles.miniStatus, styles.bgWait]}>
+              <Text style={styles.miniStatusText}>Wait</Text>
+            </View>
+          </View>
+        ))}
+      </Animated.ScrollView>
+    </View>
+  </>
+)}
+
                   </View>
                 );
               })
@@ -301,6 +437,9 @@ export default function NurseDashboard() {
           </View>
         )}
       </ScrollView>
+      </View>
+      </View>
+
     </SafeAreaView>
   );
 }
@@ -315,6 +454,42 @@ const SummaryCard = ({ label, value, color }) => (
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#F4F7FA" },
+  mainContainer: {
+  flex: 1,
+},
+  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
+
+sidebar: {
+  width: 220,
+  backgroundColor: "#1E88E5",
+  paddingTop: 30,
+  paddingHorizontal: 15,
+},
+
+sidebarTitle: {
+  color: "#fff",
+  fontSize: 18,
+  fontWeight: "bold",
+  marginBottom: 30,
+},
+
+sidebarItem: {
+  flexDirection: "row",
+  alignItems: "center",
+  marginBottom: 20,
+},
+
+sidebarText: {
+  color: "#fff",
+  marginLeft: 10,
+  fontSize: 14,
+  fontWeight: "600",
+},
+
+contentArea: {
+  flex: 1,
+},
+
   fixedHeader: {
     flexDirection: "row",
     justifyContent: "space-between",

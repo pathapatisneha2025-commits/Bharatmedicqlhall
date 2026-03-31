@@ -1,4 +1,4 @@
-// screens/ManageCustomerScreen.js
+// screens/AdminManageCustomerScreen.js
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -11,9 +11,13 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  useWindowDimensions,
+  Platform,
 } from "react-native";
-import { Ionicons, Entypo } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 
 const API_BASE = "https://hospitaldatabasemanagement.onrender.com/patient";
 
@@ -22,8 +26,15 @@ const ManageCustomerScreen = () => {
   const [search, setSearch] = useState("");
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingCount, setLoadingCount] = useState(0);
+
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [viewModalVisible, setViewModalVisible] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState(null);
+
   const [formData, setFormData] = useState({
     first_name: "",
     last_name: "",
@@ -34,7 +45,35 @@ const ManageCustomerScreen = () => {
     confirm_password: "",
   });
 
-  // ✅ Fetch Patients
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const isWeb = Platform.OS === "web";
+  const modalWidth = 500;
+
+  const showAlert = (title, message, buttons) => {
+    if (Platform.OS === "web") {
+      if (buttons && buttons.length > 1) {
+        const confirmed = window.confirm(`${title}\n\n${message}`);
+        if (confirmed) {
+          const okBtn = buttons.find(b => b.style !== "cancel");
+          okBtn?.onPress?.();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
+  };
+
+  useEffect(() => {
+    let interval;
+    if (loading) {
+      setLoadingCount(0);
+      interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+    } else clearInterval(interval);
+    return () => clearInterval(interval);
+  }, [loading]);
+
   useEffect(() => {
     fetchPatients();
   }, []);
@@ -46,21 +85,19 @@ const ManageCustomerScreen = () => {
       const data = await response.json();
       setPatients(data.patients || []);
     } catch (error) {
-      Alert.alert("Error", "Failed to fetch patients");
+      showAlert("Error", "Failed to fetch patients");
     } finally {
       setLoading(false);
     }
   };
 
-  // ✅ Search filter
-  const filteredData = patients.filter(
+  const filteredPatients = patients.filter(
     (item) =>
       item.first_name.toLowerCase().includes(search.toLowerCase()) ||
       item.last_name.toLowerCase().includes(search.toLowerCase()) ||
       item.phone_number.includes(search)
   );
 
-  // ✅ Open Edit Modal
   const handleEdit = (patient) => {
     setSelectedPatient(patient);
     setFormData({
@@ -75,16 +112,15 @@ const ManageCustomerScreen = () => {
     setEditModalVisible(true);
   };
 
-  // ✅ Update API
+  const handleView = (patient) => {
+    setSelectedPatient(patient);
+    setViewModalVisible(true);
+  };
+
   const updatePatient = async () => {
-    if (
-      !formData.first_name ||
-      !formData.last_name ||
-      !formData.gender ||
-      !formData.phone_number ||
-      !formData.email
-    ) {
-      Alert.alert("Validation", "All fields are required");
+    const { first_name, last_name, gender, phone_number, email } = formData;
+    if (!first_name || !last_name || !gender || !phone_number || !email) {
+      showAlert("Validation", "All fields are required");
       return;
     }
 
@@ -94,153 +130,258 @@ const ManageCustomerScreen = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      const data = await response.json();
 
+      const data = await response.json();
       if (response.ok) {
-        Alert.alert("Success", data.message);
+        showAlert("Success", data.message);
         setEditModalVisible(false);
         fetchPatients();
       } else {
-        Alert.alert("Error", data.message || "Failed to update");
+        showAlert("Error", data.message || "Failed to update patient");
       }
     } catch (error) {
-      Alert.alert("Error", "Something went wrong");
+      showAlert("Error", "Something went wrong while updating");
     }
   };
 
-  // ✅ Delete API
   const deletePatient = async (id) => {
-    Alert.alert("Confirm Delete", "Are you sure you want to delete?", [
+    showAlert("Confirm Delete", "Are you sure you want to delete this patient?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
           try {
-            const response = await fetch(`${API_BASE}/delete/${id}`, {
-              method: "DELETE",
-            });
+            const response = await fetch(`${API_BASE}/delete/${id}`, { method: "DELETE" });
             const data = await response.json();
             if (response.ok) {
-              Alert.alert("Deleted", data.message);
+              showAlert("Deleted", data.message);
               fetchPatients();
             } else {
-              Alert.alert("Error", data.message || "Delete failed");
+              showAlert("Error", data.message || "Failed to delete patient");
             }
           } catch (error) {
-            Alert.alert("Error", "Something went wrong");
+            showAlert("Error", "Something went wrong");
           }
         },
       },
     ]);
   };
 
-  // ✅ Render Each Row
+  const formatPhone = (phone) => {
+    if (!phone) return '';
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length === 10) {
+      return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+    }
+    return phone;
+  };
+
+  const downloadCSV = async () => {
+    if (!patients.length) {
+      alert('No patient data to download');
+      return;
+    }
+    const header = ['First Name', 'Last Name', 'Gender', 'Phone', 'Email'];
+    const rows = patients.map(p => [p.first_name, p.last_name, p.gender, formatPhone(p.phone_number), p.email]);
+    const csvContent = [header, ...rows].map(e => e.join(',')).join('\n');
+
+    if (Platform.OS === 'web') {
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'patients.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      const fileUri = FileSystem.cacheDirectory + 'patients.csv';
+      await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
+      await Sharing.shareAsync(fileUri);
+    }
+  };
+
+ 
+
   const renderRow = ({ item, index }) => (
-    <View style={styles.tableRow}>
-      <Text style={[styles.cell, styles.colSNo]}>{index + 1}</Text>
-      <Text style={[styles.cell, styles.colName]}>{item.first_name}</Text>
-      <Text style={[styles.cell, styles.colName]}>{item.last_name}</Text>
-      <Text style={[styles.cell, styles.colGender]}>{item.gender}</Text>
-      <Text style={[styles.cell, styles.colPhone]}>{item.phone_number}</Text>
-      <Text style={[styles.cell, styles.colEmail]}>{item.email}</Text>
-      <View style={[styles.cell, styles.colAction]}>
-        <TouchableOpacity onPress={() => handleEdit(item)}>
-          <Ionicons name="create-outline" size={20} color="green" />
+    <View style={styles.tableBodyRow}>
+      <Text style={[styles.bodyCell, { width: 60 }]}>#{index + 1}</Text>
+      <Text style={[styles.bodyCell, { width: 140, fontWeight: "600" }]}>{item.first_name}</Text>
+      <Text style={[styles.bodyCell, { width: 140, fontWeight: "600" }]}>{item.last_name}</Text>
+      <Text style={[styles.bodyCell, { width: 100 }]}>{item.gender}</Text>
+      <Text style={[styles.bodyCell, { width: 140 }]}>{item.phone_number}</Text>
+      <Text style={[styles.bodyCell, { width: 220 }]} numberOfLines={1}>{item.email}</Text>
+      <View style={[styles.actionCellWeb, { width: 160 }]}>
+        <TouchableOpacity style={styles.iconCircle} onPress={() => handleView(item)}>
+          <Feather name="eye" size={16} color="#0ea5e9" />
         </TouchableOpacity>
-        <TouchableOpacity
-          style={{ marginLeft: 16 }}
-          onPress={() => deletePatient(item.id)}
-        >
-          <Ionicons name="trash-outline" size={20} color="red" />
+        <TouchableOpacity style={[styles.iconCircle, { backgroundColor: "#eff6ff" }]} onPress={() => handleEdit(item)}>
+          <Feather name="edit-2" size={16} color="#2563eb" />
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.iconCircle, { backgroundColor: "#fee2e2" }]} onPress={() => deletePatient(item.id)}>
+          <Feather name="trash-2" size={16} color="#ef4444" />
         </TouchableOpacity>
       </View>
     </View>
   );
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Manage Patients</Text>
-      </View>
+    <View style={styles.webWrapper}>
+    
 
-      {/* Search */}
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchBox}
-          placeholder="Search by name or phone..."
-          value={search}
-          onChangeText={setSearch}
-        />
-        {search.length > 0 && (
-          <TouchableOpacity style={styles.clearBtn} onPress={() => setSearch("")}>
-            <Text style={styles.clearText}>Clear</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      {/* MAIN CONTENT */}
+      <View style={styles.mainContent}>
+   <View style={styles.contentHeader}>
+  {/* LEFT: Back + Title */}
+  <View style={styles.headerLeft}>
+    <TouchableOpacity
+      onPress={() => navigation.goBack()}
+      style={styles.backBtn}
+      activeOpacity={0.7}
+    >
+      <Ionicons name="arrow-back" size={22} color="#1e293b" />
+    </TouchableOpacity>
 
-      {/* Table */}
-      {loading ? (
-        <ActivityIndicator size="large" color="black" style={{ marginTop: 20 }} />
-      ) : (
-        <ScrollView horizontal>
-          <View>
-            {/* Table Header */}
-            <View style={[styles.tableRow, styles.tableHeader]}>
-              <Text style={[styles.cell, styles.colSNo, styles.headerText]}>S.No</Text>
-              <Text style={[styles.cell, styles.colName, styles.headerText]}>First Name</Text>
-              <Text style={[styles.cell, styles.colName, styles.headerText]}>Last Name</Text>
-              <Text style={[styles.cell, styles.colGender, styles.headerText]}>Gender</Text>
-              <Text style={[styles.cell, styles.colPhone, styles.headerText]}>Phone</Text>
-              <Text style={[styles.cell, styles.colEmail, styles.headerText]}>Email</Text>
-              <Text style={[styles.cell, styles.colAction, styles.headerText]}>Action</Text>
-            </View>
+    <View>
+      <Text style={styles.mainTitle}>Patient Management</Text>
+      <Text style={styles.subTitle}>
+        View and manage all registered patient records
+      </Text>
+    </View>
+  </View>
 
-            {/* Table Rows */}
-            <FlatList
-              data={filteredData}
-              renderItem={renderRow}
-              keyExtractor={(item) => item.id.toString()}
-            />
-          </View>
-        </ScrollView>
-      )}
+  {/* RIGHT: Export */}
+  {/* <TouchableOpacity onPress={downloadCSV} style={styles.exportBtn}>
+    <Feather name="download" size={20} color="#fff" />
+    <Text style={styles.exportBtnText}>Export CSV</Text>
+  </TouchableOpacity> */}
+</View>
 
-      {/* ✅ Edit Modal */}
-      <Modal visible={editModalVisible} animationType="slide" transparent>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Edit Patient</Text>
 
-            {Object.keys(formData).map((key) => (
+
+        <View style={styles.tableCard}>
+          <View style={styles.cardTop}>
+            <View style={styles.searchBox}>
+              <Feather name="search" size={18} color="#94a3b8" />
               <TextInput
-                key={key}
-                style={styles.input}
-                placeholder={key.replace("_", " ").toUpperCase()}
-                value={formData[key]}
-                secureTextEntry={key.includes("password")}
-                onChangeText={(text) =>
-                  setFormData((prev) => ({ ...prev, [key]: text }))
-                }
+                style={styles.searchInputWeb}
+                placeholder="Search by name or phone..."
+                value={search}
+                onChangeText={setSearch}
               />
-            ))}
+            </View>
+          </View>
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalBtn, { backgroundColor: "green" }]}
-                onPress={updatePatient}
-              >
-                <Text style={styles.btnText}>Update</Text>
+          {loading ? (
+            <View style={styles.loaderContainer}>
+              <ActivityIndicator size="large" color="#2563EB" />
+              <Text style={styles.loaderText}>Loading ({loadingCount}s)...</Text>
+            </View>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+              <View>
+                <View style={styles.tableHeaderRow}>
+                  <Text style={[styles.headerCell, { width: 60 }]}>S.No</Text>
+                  <Text style={[styles.headerCell, { width: 140 }]}>First Name</Text>
+                  <Text style={[styles.headerCell, { width: 140 }]}>Last Name</Text>
+                  <Text style={[styles.headerCell, { width: 100 }]}>Gender</Text>
+                  <Text style={[styles.headerCell, { width: 140 }]}>Phone</Text>
+                  <Text style={[styles.headerCell, { width: 220 }]}>Email</Text>
+                  <Text style={[styles.headerCell, { width: 160, textAlign: 'center' }]}>Actions</Text>
+                </View>
+                <FlatList
+                  data={filteredPatients}
+                  renderItem={renderRow}
+                  keyExtractor={(item) => item.id.toString()}
+                  contentContainerStyle={{ paddingBottom: 20 }}
+                />
+              </View>
+            </ScrollView>
+          )}
+        </View>
+      </View>
+
+      {/* VIEW MODAL */}
+      <Modal visible={viewModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { maxWidth: modalWidth }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Patient Record</Text>
+              <TouchableOpacity onPress={() => setViewModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#64748b" />
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalBtn, { backgroundColor: "red" }]}
-                onPress={() => setEditModalVisible(false)}
-              >
-                <Text style={styles.btnText}>Cancel</Text>
+            </View>
+            {selectedPatient && (
+              <ScrollView style={styles.modalScroll}>
+                {[
+                  { label: "First Name", value: selectedPatient.first_name, icon: "user" },
+                  { label: "Last Name", value: selectedPatient.last_name, icon: "user" },
+                  { label: "Gender", value: selectedPatient.gender, icon: "users" },
+                  { label: "Phone", value: selectedPatient.phone_number, icon: "phone" },
+                  { label: "Email", value: selectedPatient.email, icon: "mail" },
+                ].map((item, idx) => (
+                  <View key={idx} style={styles.detailRow}>
+                    <Feather name={item.icon} size={16} color="#2563eb" style={{ marginRight: 12 }} />
+                    <View>
+                      <Text style={styles.detailLabel}>{item.label}</Text>
+                      <Text style={styles.detailValue}>{item.value}</Text>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+            <TouchableOpacity style={styles.closeBtn} onPress={() => setViewModalVisible(false)}>
+              <Text style={styles.closeBtnText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* EDIT MODAL */}
+      <Modal visible={editModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { maxWidth: modalWidth }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Update Patient</Text>
+              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalScroll}>
+              <View style={styles.inputGroup}>
+                <Feather name="user" size={18} color="#2563eb" />
+                <TextInput style={styles.inputWeb} placeholder="First Name" value={formData.first_name} onChangeText={(t)=>setFormData({...formData, first_name:t})} />
+              </View>
+              <View style={styles.inputGroup}>
+                <Feather name="user" size={18} color="#2563eb" />
+                <TextInput style={styles.inputWeb} placeholder="Last Name" value={formData.last_name} onChangeText={(t)=>setFormData({...formData, last_name:t})} />
+              </View>
+              <View style={styles.inputGroup}>
+                <Feather name="users" size={18} color="#2563eb" />
+                <TextInput style={styles.inputWeb} placeholder="Gender" value={formData.gender} onChangeText={(t)=>setFormData({...formData, gender:t})} />
+              </View>
+              <View style={styles.inputGroup}>
+                <Feather name="phone" size={18} color="#2563eb" />
+                <TextInput style={styles.inputWeb} placeholder="Phone" value={formData.phone_number} onChangeText={(t)=>setFormData({...formData, phone_number:t})} />
+              </View>
+              <View style={styles.inputGroup}>
+                <Feather name="mail" size={18} color="#2563eb" />
+                <TextInput style={styles.inputWeb} placeholder="Email" value={formData.email} onChangeText={(t)=>setFormData({...formData, email:t})} />
+              </View>
+              <View style={styles.inputGroup}>
+                <Feather name="lock" size={18} color="#2563eb" />
+                <TextInput style={styles.inputWeb} placeholder="New Password" secureTextEntry={!showPassword} value={formData.password} onChangeText={(t)=>setFormData({...formData, password:t})} />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                  <Feather name={showPassword ? "eye" : "eye-off"} size={18} color="#64748b" />
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.saveBtn} onPress={updatePatient}>
+                <Text style={styles.saveBtnText}>Save Changes</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.cancelBtnWeb} onPress={() => setEditModalVisible(false)}>
+                <Text style={styles.cancelBtnText}>Discard</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -250,76 +391,79 @@ const ManageCustomerScreen = () => {
   );
 };
 
-export default ManageCustomerScreen;
-
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: "#fff",marginTop:30 },
-  header: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
-  headerTitle: { fontSize: 22, fontWeight: "bold", marginLeft: 16 },
-  searchContainer: { marginBottom: 10 },
-  searchBox: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  clearBtn: {
-    backgroundColor: "#000",
-    padding: 8,
-    borderRadius: 8,
-    marginTop: 8,
-    alignItems: "center",
-    alignSelf: "flex-start",
-  },
-  clearText: { color: "#fff", fontSize: 14, fontWeight: "bold" },
+  webWrapper: { flex: 1, flexDirection: "row", backgroundColor: "#F8FAFC" },
+  sidebar: { width: 260, backgroundColor: "#fff", borderRightWidth: 1, borderRightColor: "#e2e8f0", padding: 24 },
+  sidebarBrand: { flexDirection: "row", alignItems: "center", marginBottom: 40 },
+  headerLeft: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 14,
+},
 
-  // Table
-  tableHeader: { backgroundColor: "#f1f1f1" },
-  tableRow: {
-    flexDirection: "row",
-    borderBottomWidth: 1,
-    borderColor: "#ddd",
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  cell: { textAlign: "center", fontSize: 14, paddingHorizontal: 6 },
-  colSNo: { width: 50 },
-  colName: { width: 140 },
-  colGender: { width: 100 },
-  colPhone: { width: 140 },
-  colEmail: { width: 220 },
-  colAction: { width: 120, flexDirection: "row", justifyContent: "center" },
-  headerText: { fontWeight: "bold", fontSize: 15 },
+backBtn: {
+  width: 40,
+  height: 40,
+  borderRadius: 20,
+  backgroundColor: "#f1f5f9",
+  justifyContent: "center",
+  alignItems: "center",
+},
 
-  // Modal
-  modalContainer: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContent: {
-    backgroundColor: "#fff",
-    width: "90%",
-    padding: 20,
-    borderRadius: 10,
-  },
-  modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 12 },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 6,
-    padding: 10,
-    marginBottom: 10,
-  },
-  modalButtons: { flexDirection: "row", justifyContent: "space-between" },
-  modalBtn: {
-    flex: 1,
-    padding: 12,
-    marginHorizontal: 4,
-    borderRadius: 6,
-    alignItems: "center",
-  },
-  btnText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+  brandIcon: { width: 38, height: 38, backgroundColor: "#2563EB", borderRadius: 8, justifyContent: "center", alignItems: "center", marginRight: 12 },
+  brandLetter: { color: "#fff", fontWeight: "bold", fontSize: 20 },
+  brandTitle: { fontSize: 18, fontWeight: "800", color: "#1e293b" },
+  brandSub: { fontSize: 12, color: "#64748b", marginTop: -4 },
+  sidebarMenu: { flex: 1 },
+  sidebarItem: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 10, marginBottom: 6 },
+  sidebarItemActive: { backgroundColor: "#2563EB" },
+  sidebarLabel: { marginLeft: 12, fontSize: 15, color: "#64748b", fontWeight: "600" },
+  sidebarLabelActive: { color: "#fff" },
+  logoutBtn: { flexDirection: "row", alignItems: "center", padding: 12 },
+  logoutText: { marginLeft: 12, color: "#ef4444", fontWeight: "700" },
+
+  mainContent: { flex: 1, padding: 32 },
+  contentHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 32 },
+  mainTitle: { fontSize: 28, fontWeight: "800", color: "#1e293b" },
+  subTitle: { color: "#64748b", marginTop: 4 },
+  exportBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#10b981", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 },
+  exportBtnText: { color: "#fff", fontWeight: "600", marginLeft: 8 },
+
+  tableCard: { backgroundColor: "#fff", borderRadius: 16, borderWidth: 1, borderColor: "#e2e8f0", flex: 1, overflow: "hidden" },
+  cardTop: { padding: 20, borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
+  searchBox: { flexDirection: "row", alignItems: "center", backgroundColor: "#f8fafc", borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 10, paddingHorizontal: 16, width: 350 },
+  searchInputWeb: { paddingVertical: 10, marginLeft: 10, flex: 1, outlineStyle: 'none' },
+  
+  tableHeaderRow: { flexDirection: "row", backgroundColor: "#f8fafc", paddingVertical: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#e2e8f0" },
+  headerCell: { fontSize: 13, fontWeight: "700", color: "#64748b", textTransform: "uppercase" },
+  tableBodyRow: { flexDirection: "row", paddingVertical: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#f1f5f9", alignItems: "center" },
+  bodyCell: { fontSize: 14, color: "#334155" },
+  actionCellWeb: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  iconCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#f0f9ff", justifyContent: "center", alignItems: "center" },
+
+  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loaderText: { marginTop: 12, color: "#64748b" },
+
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
+  modalBox: { backgroundColor: "#fff", width: "90%", borderRadius: 16, padding: 24, maxHeight: "90%" },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1e293b" },
+  modalScroll: { marginBottom: 20 },
+  
+  detailRow: { flexDirection: "row", alignItems: "center", marginBottom: 16, backgroundColor: "#f8fafc", padding: 12, borderRadius: 8 },
+  detailLabel: { fontSize: 12, color: "#64748b", fontWeight: "600" },
+  detailValue: { fontSize: 15, color: "#1e293b", fontWeight: "600" },
+  
+  inputGroup: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 10, paddingHorizontal: 14, marginBottom: 12, backgroundColor: "#f8fafc" },
+  inputWeb: { flex: 1, height: 45, marginLeft: 10, outlineStyle: 'none' },
+  
+  modalActions: { flexDirection: "row", gap: 12 },
+  saveBtn: { flex: 2, backgroundColor: "#2563eb", padding: 14, borderRadius: 10, alignItems: "center" },
+  saveBtnText: { color: "#fff", fontWeight: "700" },
+  cancelBtnWeb: { flex: 1, backgroundColor: "#f1f5f9", padding: 14, borderRadius: 10, alignItems: "center" },
+  cancelBtnText: { color: "#475569", fontWeight: "700" },
+  closeBtn: { backgroundColor: "#2563eb", padding: 14, borderRadius: 10, alignItems: "center" },
+  closeBtnText: { color: "#fff", fontWeight: "700" }
 });
+
+export default ManageCustomerScreen;

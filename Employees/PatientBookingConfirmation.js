@@ -1,258 +1,221 @@
-import React, {  useEffect } from "react";
+import React, { useEffect } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-   BackHandler,
+  BackHandler,
   Alert,
+  useWindowDimensions,
+  StatusBar,
+  Platform
 } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 
 export default function PatientBookingConfirmationScreen() {
   const navigation = useNavigation();
   const route = useRoute();
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  
+  const isDesktop = SCREEN_WIDTH > 768;
+  const containerWidth = isDesktop ? 800 : SCREEN_WIDTH - 30;
 
-useEffect(() => {
-  const backAction = () => {
-    // Instead of going back step by step, reset navigation to Sidebar/Home
-    navigation.reset({
-      index: 0,
-      routes: [{ name: "EmpSideBar" }], // <-- replace with your sidebar/home screen name
-    });
-    return true; // prevents default back behavior
-  };
+  useEffect(() => {
+    const backAction = () => {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "EmpSideBar" }],
+      });
+      return true;
+    };
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", backAction);
+    return () => backHandler.remove();
+  }, []);
 
-  const backHandler = BackHandler.addEventListener(
-    "hardwareBackPress",
-    backAction
-  );
-
-  return () => backHandler.remove(); // clean up on unmount
-}, []);
-
-  // ✅ The appointment object from the API
   const appointmentData = route.params?.appointmentData;
 
   if (!appointmentData) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>❌ Appointment could not be created.</Text>
-        <TouchableOpacity
-          style={styles.homeButton}
-          onPress={() => navigation.navigate("DoctorAppointment")}
-        >
-          <Text style={styles.homeButtonText}>🏥 Back to Doctors List</Text>
+      <View style={styles.loaderContainer}>
+        <Ionicons name="alert-circle" size={60} color="#ff4444" />
+        <Text style={styles.errorText}>Appointment data missing.</Text>
+        <TouchableOpacity style={styles.mainBtn} onPress={() => navigation.navigate("DoctorAppointment")}>
+          <Text style={styles.mainBtnText}>Back to Doctors</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  // ✅ Format date (remove time part)
   const formattedDate = appointmentData.appointment_date
     ? new Date(appointmentData.appointment_date).toISOString().split("T")[0]
     : "N/A";
 
-  // 📄 Generate and share PDF
   const generatePDF = async () => {
     try {
       const html = `
         <html>
-          <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-            <style>
-              body { font-family: Arial, sans-serif; padding: 20px; }
-              h1 { text-align: center; color: #00796b; font-size: 40px; margin-bottom: 10px; }
-              h2 { text-align: center; color: #ff5722; font-size: 28px; margin-bottom: 20px; }
-              table {
-                width: 100%;
-                border-collapse: collapse;
-                margin-top: 20px;
-              }
-              td {
-                padding: 8px 12px;
-                border-bottom: 1px solid #ccc;
-              }
-              th {
-                text-align: left;
-                color: #333;
-                font-size: 16px;
-              }
-              p {
-                text-align: center;
-                margin-top: 30px;
-                font-size: 16px;
-              }
-            </style>
-          </head>
-          
-          <body>
-            <h1>🏥 Bharat Medical Hall</h1>
-            <h2>Appointment ID: ${appointmentData.daily_id || "N/A"}</h2>
-
-            <table>
-              <tr><th>Patient Name:</th><td>${appointmentData.patient_name || "N/A"}</td></tr>
-              <tr><th>Patient Phone:</th><td>${appointmentData.patient_phone || "N/A"}</td></tr>
-              <tr><th>Doctor Name:</th><td>${appointmentData.doctor_name || "N/A"}</td></tr>
-              <tr><th>Specialization:</th><td>${appointmentData.specialization || "N/A"}</td></tr>
-              <tr><th>Appointment Date & Time:</th><td>${formattedDate} at ${
-        appointmentData.appointment_time || "N/A"
-      }</td></tr>
-              <tr><th>Payment Mode:</th><td>${appointmentData.payment_type || "N/A"}</td></tr>
-              <tr><th>Fee:</th><td>₹${appointmentData.doctor_consultant_fee || "0"}</td></tr>
-              <tr><th>Status:</th><td>${appointmentData.status || "PENDING"}</td></tr>
-              <tr><th>Doctor Description:</th><td>${appointmentData.doctor_description || "N/A"}</td></tr>
-            </table>
-
-            <p>✅ Thank you for booking with Bharat Medical Hall. Please bring this confirmation on the day of your appointment.</p>
+          <body style="font-family: Arial; padding: 40px; color: #333;">
+            <h1 style="color: #0D6EFD; text-align: center;">Bharat Medical Hall</h1>
+            <h3 style="text-align: center; color: #666;">Booking Confirmation Receipt</h3>
+            <hr/>
+            <div style="margin-top: 20px; font-size: 18px;">
+              <p><b>Appointment ID:</b> ${appointmentData.daily_id}</p>
+              <p><b>Patient:</b> ${appointmentData.patient_name}</p>
+              <p><b>Doctor:</b> ${appointmentData.doctor_name}</p>
+              <p><b>Date:</b> ${formattedDate}</p>
+              <p><b>Time:</b> ${appointmentData.appointment_time}</p>
+              <p><b>Fee Paid:</b> ₹${appointmentData.doctor_consultant_fee}</p>
+            </div>
+            <p style="margin-top: 40px; text-align: center; color: #888;">Thank you for choosing Bharat Medical Hall.</p>
           </body>
         </html>
       `;
-
-      // 📄 Generate the PDF
       const { uri } = await Print.printToFileAsync({ html });
-
-      // 📤 Share the PDF
       await Sharing.shareAsync(uri);
     } catch (error) {
-      Alert.alert("Error", "Failed to generate PDF: " + error.message);
+      Alert.alert("Error", "Could not generate PDF.");
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {/* 🏥 Bharat Medical Hall Header */}
-      <Text style={styles.headerTitle}>🏥 Bharat Medical Hall</Text>
-
-      <Text style={styles.successTitle}>✅ Appointment Confirmed!</Text>
-
-      <View style={styles.detailCard}>
-        <Text style={styles.detailLabel}>📌 Appointment ID</Text>
-        <Text style={[styles.detailValue, styles.bigId]}>
-          {appointmentData.daily_id  || "N/A"}
-        </Text>
-
-        <Text style={styles.detailLabel}>👤 Patient Name</Text>
-        <Text style={styles.detailValue}>{appointmentData.patient_name || "N/A"}</Text>
-
-        <Text style={styles.detailLabel}>📞 Patient Phone</Text>
-        <Text style={styles.detailValue}>{appointmentData.patient_phone || "N/A"}</Text>
-
-        <Text style={styles.detailLabel}>🩺 Doctor Name</Text>
-        <Text style={styles.detailValue}>{appointmentData.doctor_name || "N/A"}</Text>
-
-        <Text style={styles.detailLabel}>🏥 Specialization</Text>
-        <Text style={styles.detailValue}>{appointmentData.specialization || "N/A"}</Text>
-
-        <Text style={styles.detailLabel}>📅 Appointment Date & Time</Text>
-        <Text style={styles.detailValue}>
-          {formattedDate} at {appointmentData.appointment_time || "N/A"}
-        </Text>
-
-        <Text style={styles.detailLabel}>💳 Payment Mode</Text>
-        <Text style={styles.detailValue}>{appointmentData.payment_type || "N/A"}</Text>
-
-        <Text style={styles.detailLabel}>💰 Fee</Text>
-        <Text style={styles.detailValue}>₹{appointmentData.doctor_consultant_fee || "0"}</Text>
-
-        <Text style={styles.detailLabel}>📌 Status</Text>
-        <Text style={[styles.detailValue, { color: "#00796b", fontWeight: "bold" }]}>
-          {appointmentData.status || "PENDING"}
-        </Text>
-
-        <Text style={styles.detailLabel}>📄 Doctor Description</Text>
-        <Text style={styles.detailValue}>{appointmentData.doctor_description || "N/A"}</Text>
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      
+      {/* HEADER */}
+      <View style={styles.topNav}>
+        <View>
+          <Text style={styles.pageTitle}>Confirmation</Text>
+          <Text style={styles.pageSubtitle}>Booking successfully processed</Text>
+        </View>
+        <TouchableOpacity onPress={() => navigation.navigate("Dashboard")} style={styles.iconBtn}>
+          <Ionicons name="home-outline" size={22} color="#666" />
+        </TouchableOpacity>
       </View>
 
-      {/* ✅ Generate PDF Button */}
-      <TouchableOpacity
-        style={[styles.homeButton, { backgroundColor: "#ff5722" }]}
-        onPress={generatePDF}
-      >
-        <Text style={styles.homeButtonText}>📄 Download PDF</Text>
-      </TouchableOpacity>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={[styles.mainWrapper, { width: containerWidth }]}>
+          
+          {/* SUCCESS ICON & ID CARD */}
+          <View style={styles.successHeader}>
+             <View style={styles.checkCircle}>
+                <Ionicons name="checkmark-sharp" size={40} color="#fff" />
+             </View>
+             <Text style={styles.successText}>Appointment Booked!</Text>
+             
+             <View style={styles.idCard}>
+                <Text style={styles.idLabel}>APPOINTMENT ID</Text>
+                <Text style={styles.idValue}>{appointmentData.daily_id}</Text>
+             </View>
+          </View>
 
-      <TouchableOpacity
-        style={styles.homeButton}
-        onPress={() => navigation.navigate("DoctorAppointment")}
-      >
-        <Text style={styles.homeButtonText}>🏥 Back to Doctors List</Text>
-      </TouchableOpacity>
+          {/* DETAILS GRID */}
+          <View style={styles.infoSection}>
+             <Text style={styles.sectionTitle}>Patient & Visit Details</Text>
+             
+             <View style={styles.detailGrid}>
+                <DetailItem icon="person-outline" label="Patient" value={appointmentData.patient_name} />
+                <DetailItem icon="call-outline" label="Phone" value={appointmentData.patient_phone} />
+                <DetailItem icon="medkit-outline" label="Doctor" value={appointmentData.doctor_name} />
+                <DetailItem icon="calendar-outline" label="Date" value={formattedDate} />
+                <DetailItem icon="time-outline" label="Time" value={appointmentData.appointment_time} />
+                <DetailItem icon="card-outline" label="Payment" value={appointmentData.payment_type} />
+             </View>
 
-      <TouchableOpacity
-        style={[styles.homeButton, { backgroundColor: "#004d40", marginTop: 10 }]}
-        onPress={() => navigation.navigate("DoctorAppointment")}
-      >
-        <Text style={styles.homeButtonText}>📋 Book Another Appointment</Text>
-      </TouchableOpacity>
-    </ScrollView>
+             <View style={styles.feeFooter}>
+                <Text style={styles.feeLabel}>Total Consultation Fee</Text>
+                <Text style={styles.feeValue}>₹{appointmentData.doctor_consultant_fee}</Text>
+             </View>
+          </View>
+
+          {/* ACTIONS */}
+          <View style={styles.actionContainer}>
+            <TouchableOpacity style={styles.pdfBtn} onPress={generatePDF}>
+              <Ionicons name="document-text-outline" size={20} color="#fff" />
+              <Text style={styles.pdfBtnText}>Download Receipt (PDF)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.bookMoreBtn} onPress={() => navigation.navigate("DoctorAppointment")}>
+              <Text style={styles.bookMoreText}>Book Another Appointment</Text>
+            </TouchableOpacity>
+          </View>
+
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
+// Sub-component for clean detail rows
+const DetailItem = ({ icon, label, value }) => (
+  <View style={styles.detailItem}>
+    <Ionicons name={icon} size={18} color="#0D6EFD" style={styles.detailIcon} />
+    <View>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailValue}>{value || "N/A"}</Text>
+    </View>
+  </View>
+);
+
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    padding: 20,
-    backgroundColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
+  container: { flex: 1, backgroundColor: "#F8F9FA" },
+  topNav: { 
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center", 
+    paddingHorizontal: 24, paddingTop: Platform.OS === 'ios' ? 50 : 20, paddingBottom: 20, backgroundColor: '#fff' 
   },
-  headerTitle: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#00796b",
-    textAlign: "center",
-    marginBottom: 10,
-    textTransform: "uppercase",
+  pageTitle: { fontSize: 22, fontWeight: "700", color: "#1A1A1A" },
+  pageSubtitle: { fontSize: 13, color: "#666", marginTop: 2 },
+  iconBtn: { padding: 8, borderRadius: 8, backgroundColor: '#f0f0f0' },
+
+  scrollContent: { paddingVertical: 20, alignItems: 'center' },
+  mainWrapper: { alignSelf: 'center' },
+
+  successHeader: { alignItems: 'center', marginBottom: 30 },
+  checkCircle: { 
+    width: 80, height: 80, borderRadius: 40, backgroundColor: '#28A745', 
+    justifyContent: 'center', alignItems: 'center', marginBottom: 15,
+    elevation: 4, shadowColor: '#28A745', shadowOpacity: 0.3, shadowRadius: 10
   },
-  successTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 20,
-    color: "#00796b",
-    textAlign: "center",
+  successText: { fontSize: 22, fontWeight: '700', color: '#1A1A1A' },
+  
+  idCard: { 
+    backgroundColor: '#fff', paddingVertical: 12, paddingHorizontal: 30, 
+    borderRadius: 12, marginTop: 20, borderWidth: 1, borderColor: '#E0E0E0', alignItems: 'center'
   },
-  detailCard: {
-    width: "100%",
-    backgroundColor: "#e0f7fa",
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 30,
+  idLabel: { fontSize: 10, fontWeight: '800', color: '#999', letterSpacing: 1 },
+  idValue: { fontSize: 24, fontWeight: '800', color: '#0D6EFD', marginTop: 4 },
+
+  infoSection: { backgroundColor: '#fff', borderRadius: 20, padding: 25, borderWidth: 1, borderColor: '#F0F0F0' },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#333', marginBottom: 20 },
+  
+  detailGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  detailItem: { width: '48%', flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  detailIcon: { marginRight: 10 },
+  detailLabel: { fontSize: 11, color: '#999', fontWeight: '600', textTransform: 'uppercase' },
+  detailValue: { fontSize: 15, color: '#333', fontWeight: '600', marginTop: 2 },
+
+  feeFooter: { 
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', 
+    marginTop: 10, paddingTop: 20, borderTopWidth: 1, borderTopColor: '#F5F5F5' 
   },
-  detailLabel: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginTop: 10,
+  feeLabel: { fontSize: 14, color: '#666', fontWeight: '500' },
+  feeValue: { fontSize: 22, fontWeight: '800', color: '#28A745' },
+
+  actionContainer: { marginTop: 30 },
+  pdfBtn: { 
+    backgroundColor: '#0D6EFD', borderRadius: 14, padding: 18, 
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 15
   },
-  detailValue: {
-    fontSize: 16,
-    marginTop: 3,
-  },
-  bigId: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#ff5722",
-  },
-  homeButton: {
-    backgroundColor: "#00796b",
-    padding: 14,
-    borderRadius: 10,
-    alignItems: "center",
-    width: "80%",
-    marginBottom: 20,
-  },
-  homeButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    textAlign: "center",
-  },
-  errorText: {
-    fontSize: 18,
-    color: "red",
-    textAlign: "center",
-    marginBottom: 20,
-  },
+  pdfBtnText: { color: '#fff', fontSize: 16, fontWeight: '700', marginLeft: 10 },
+  
+  bookMoreBtn: { padding: 15, alignItems: 'center' },
+  bookMoreText: { color: '#0D6EFD', fontWeight: '700', fontSize: 15 },
+
+  loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' },
+  errorText: { fontSize: 16, color: '#666', marginTop: 15, marginBottom: 20 },
+  mainBtn: { backgroundColor: '#0D6EFD', paddingHorizontal: 30, paddingVertical: 12, borderRadius: 10 },
+  mainBtnText: { color: '#fff', fontWeight: '700' }
 });

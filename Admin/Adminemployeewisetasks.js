@@ -11,6 +11,7 @@ import {
   Platform,
   ScrollView,
   Alert,
+  useWindowDimensions,
 } from "react-native";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { useNavigation } from "@react-navigation/native";
@@ -49,6 +50,34 @@ const AdminEmployeeTasksScreen = () => {
   const [tasksData, setTasksData] = useState([]);
   const [expanded, setExpanded] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingCount, setLoadingCount] = useState(0);
+  const { width } = useWindowDimensions();
+  const isDesktop = width > 768;
+
+  const showAlert = (title, message, buttons) => {
+    if (Platform.OS === "web") {
+      if (buttons && buttons.length > 1) {
+        const confirmed = window.confirm(`${title}\n\n${message}`);
+        if (confirmed) {
+          const okBtn = buttons.find((b) => b.style !== "cancel");
+          okBtn?.onPress?.();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
+  };
+
+  useEffect(() => {
+    let interval;
+    if (loading) {
+      setLoadingCount(0);
+      interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+    } else clearInterval(interval);
+    return () => clearInterval(interval);
+  }, [loading]);
 
   const fetchTasks = async () => {
     try {
@@ -74,7 +103,7 @@ const AdminEmployeeTasksScreen = () => {
         );
       }
     } catch (e) {
-      Alert.alert("Error", "Failed to load tasks");
+      showAlert("Error", "Failed to load tasks");
     } finally {
       setLoading(false);
     }
@@ -85,191 +114,180 @@ const AdminEmployeeTasksScreen = () => {
   }, []);
 
   const toggleExpand = (name) => {
-    LayoutAnimation.easeInEaseOut();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded(expanded === name ? null : name);
   };
 
   const getStatusColor = (status) => {
     switch ((status || "Pending").toLowerCase()) {
       case "completed":
-        return "#16a34a"; // green
+        return "#10B981"; // green-500
       case "pending":
-        return "#f59e0b"; // amber
+        return "#F59E0B"; // amber-500
       case "overdue":
-        return "#dc2626"; // red
+        return "#EF4444"; // red-500
       default:
-        return "#6b7280"; // gray
+        return "#6B7280"; // gray-500
     }
   };
 
   if (loading) {
     return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" />
-        <Text>Loading...</Text>
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color="#2563eb" />
+        <Text style={styles.loadingText}>Loading... {loadingCount}s</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={{ alignItems: "center", paddingBottom: 40 }}>
       {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Icon name="arrow-back" size={24} />
+      <View style={[styles.header, { width: isDesktop ? "80%" : "90%" }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Icon name="arrow-back" size={24} color="#1f2937" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Employee Tasks</Text>
+        <Text style={styles.headerTitle}>Task Overview</Text>
+        <TouchableOpacity onPress={fetchTasks} style={styles.backBtn}>
+          <Icon name="refresh" size={24} color="#1f2937" />
+        </TouchableOpacity>
       </View>
 
       {/* SUMMARY CARDS */}
-      <View style={{ width: "100%", alignItems: "center" }}>
-        <View style={styles.contentWrapper}>
-          <View style={styles.summaryRow}>
-            <SummaryCard title="Completed" value="1" bg="#d1fae5" />
-            <SummaryCard title="Pending" value="16" bg="#fef3c7" />
-            <SummaryCard title="Overdue" value="0" bg="#fee2e2" />
-          </View>
+      <View style={[styles.contentWrapper, { width: isDesktop ? "80%" : "90%" }]}>
+        <View style={styles.summaryRow}>
+          <SummaryCard title="Completed" value="1" color="#059669" bg="#ECFDF5" flex={isDesktop ? 1 : 0.48} />
+          <SummaryCard title="Pending" value="16" color="#D97706" bg="#FFFBEB" flex={isDesktop ? 1 : 0.48} />
+          <SummaryCard title="Overdue" value="0" color="#DC2626" bg="#FEF2F2" flex={isDesktop ? 1 : 1} />
         </View>
       </View>
 
       {/* EMPLOYEE LIST */}
-      <FlatList
-        data={tasksData}
-        keyExtractor={(item) => item.employee_name}
-        contentContainerStyle={{ paddingBottom: 20 }}
-        renderItem={({ item }) => (
-          <View style={{ width: "100%", alignItems: "center" }}>
-            {/* MOBILE-LIKE CARD */}
-            <View style={[styles.contentWrapper, styles.employeeCard]}>
-              <TouchableOpacity
-                style={styles.employeeRow}
-                onPress={() => toggleExpand(item.employee_name)}
-              >
+      <View style={{ width: isDesktop ? "80%" : "90%" }}>
+        {tasksData.map((item) => (
+          <View key={item.employee_name} style={styles.employeeCard}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={styles.employeeRow}
+              onPress={() => toggleExpand(item.employee_name)}
+            >
+              <View style={styles.employeeMainInfo}>
                 <Icon
-                  name={expanded === item.employee_name ? "expand-more" : "chevron-right"}
-                  size={22}
+                  name={expanded === item.employee_name ? "keyboard-arrow-down" : "keyboard-arrow-right"}
+                  size={24}
+                  color="#6b7280"
                 />
                 <Text style={styles.employeeName}>{item.employee_name}</Text>
-                <TouchableOpacity style={styles.summaryBtn}>
-                  <Text style={styles.summaryBtnText}>Summarise</Text>
-                </TouchableOpacity>
+              </View>
+              <TouchableOpacity style={styles.summaryBtn}>
+                <Text style={styles.summaryBtnText}>Report</Text>
               </TouchableOpacity>
+            </TouchableOpacity>
 
-{/* TASK TABLE */}
-{expanded === item.employee_name && (
-  <ScrollView horizontal style={{ marginTop: 12 }}>
-    <View style={styles.taskTable}>
-      {/* TABLE HEADER */}
-      <View style={[styles.taskRow, styles.taskHeader]}>
-        <Text style={[styles.taskCell, styles.taskTitle]}>Task</Text>
-        <Text style={[styles.taskCell, styles.taskStatus]}>Status</Text>
-        <Text style={[styles.taskCell, styles.taskTime]}>Time Taken</Text>
+            {expanded === item.employee_name && (
+              <ScrollView horizontal={!isDesktop} style={{ marginTop: 15 }}>
+                <View style={[styles.taskTable, { width: isDesktop ? "100%" : 650 }]}>
+                  <View style={[styles.taskRow, styles.taskHeader]}>
+                    <Text style={[styles.taskCell, styles.taskTitle, { fontWeight: "700" }]}>TASK DESCRIPTION</Text>
+                    <Text style={[styles.taskCell, styles.taskStatus, { fontWeight: "700" }]}>STATUS</Text>
+                    <Text style={[styles.taskCell, styles.taskTime, { fontWeight: "700" }]}>DURATION</Text>
+                  </View>
+
+                  {item.tasks.map((t) => (
+                    <View key={t.id} style={styles.taskRow}>
+                      <Text style={[styles.taskCell, styles.taskTitle]}>{t.title}</Text>
+                      <View style={styles.statusCellWrapper}>
+                        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(t.status) }]}>
+                          <Text style={styles.statusText}>{t.status || "Pending"}</Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.taskCell, styles.taskTime]}>
+                        {t.completed_time ? formatDuration(t.created_at, t.completed_time) : "--"}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
+            )}
+          </View>
+        ))}
       </View>
-
-      {/* TABLE ROWS */}
-      {item.tasks.map((t) => (
-        <View key={t.id} style={styles.taskRow}>
-          <Text style={[styles.taskCell, styles.taskTitle]}>{t.title}</Text>
-
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(t.status) }]}>
-            <Text style={styles.statusText}>{t.status || "Pending"}</Text>
-          </View>
-
-          <Text style={[styles.taskCell, styles.taskTime]}>
-            {t.completed_time ? formatDuration(t.created_at, t.completed_time) : "-"}
-          </Text>
-        </View>
-      ))}
-    </View>
-  </ScrollView>
-)}
-
-            </View>
-          </View>
-        )}
-      />
     </ScrollView>
   );
 };
 
-export default AdminEmployeeTasksScreen;
-
-const SummaryCard = ({ title, value, bg }) => (
-  <View style={[styles.summaryCard, { backgroundColor: bg }]}>
-    <Text style={styles.summaryTitle}>{title}</Text>
+const SummaryCard = ({ title, value, color, bg, flex }) => (
+  <View style={[styles.summaryCard, { backgroundColor: bg, flex: flex, marginHorizontal: 4 }]}>
+    <Text style={[styles.summaryTitle, { color: color }]}>{title}</Text>
     <Text style={styles.summaryValue}>{value}</Text>
   </View>
 );
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc", padding: 12 },
-  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
-  headerTitle: { fontSize: 20, fontWeight: "bold", marginLeft: 10 },
+  container: { flex: 1, backgroundColor: "#F9FAFB", paddingTop: Platform.OS === "web" ? 20 : 50 },
 
-  // MOBILE-LIKE WRAPPER
-  contentWrapper: {
-    width: "100%",
-    maxWidth: 500,
-  },
-
-  // SUMMARY CARDS
-  summaryRow: {
+  // Header
+  header: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
-  summaryCard: {
-    flexBasis: "48%",
-    minWidth: 140,
-    padding: 16,
-    borderRadius: 10,
     alignItems: "center",
-    marginBottom: 10,
+    justifyContent: "space-between",
+    marginBottom: 25,
   },
-  summaryTitle: { fontWeight: "600", marginBottom: 6, fontSize: 14 },
-  summaryValue: { fontSize: 18, fontWeight: "bold" },
+  backBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: 20, backgroundColor: "#fff", elevation: 2 },
+  headerTitle: { fontSize: 24, fontWeight: "800", color: "#111827" },
 
-  // EMPLOYEE LIST
-  employeeCard: { backgroundColor: "#fff", borderRadius: 10, padding: 12, marginVertical: 6 },
-  employeeRow: { flexDirection: "row", alignItems: "center" },
-  employeeName: { flex: 1, fontWeight: "600", marginLeft: 8 },
-  summaryBtn: { backgroundColor: "#2563eb", paddingVertical: 6, paddingHorizontal: 14, borderRadius: 8 },
-  summaryBtnText: { color: "#fff", fontWeight: "600", fontSize: 12 },
+  // Loader
+  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#fff" },
+  loadingText: { marginTop: 12, fontSize: 16, color: "#6b7280", fontWeight: "500" },
 
-  // TASK TABLE
- // TASK TABLE
-taskTable: { borderWidth: 1, borderColor: "#d1d5db", borderRadius: 8, overflow: "hidden" },
+  // Summary Cards
+  contentWrapper: { marginBottom: 15 },
+  summaryRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  summaryCard: {
+    paddingVertical: 20,
+    borderRadius: 16,
+    alignItems: "center",
+    marginBottom: 12,
+    minWidth: 110,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.05)",
+  },
+  summaryTitle: { fontWeight: "700", marginBottom: 4, fontSize: 13, textTransform: "uppercase", letterSpacing: 0.5 },
+  summaryValue: { fontSize: 24, fontWeight: "800", color: "#111827" },
 
-taskRow: {
-  flexDirection: "row",
-  alignItems: "center",
-  paddingVertical: 10,
-  paddingHorizontal: 12,
-  borderBottomWidth: 1,
-  borderBottomColor: "#e5e7eb",
-},
+  // Employee Card
+  employeeCard: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  employeeRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  employeeMainInfo: { flexDirection: "row", alignItems: "center", flex: 1 },
+  employeeName: { fontWeight: "700", marginLeft: 8, fontSize: 17, color: "#1f2937" },
+  summaryBtn: { backgroundColor: "#eff6ff", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1, borderColor: "#dbeafe" },
+  summaryBtnText: { color: "#2563eb", fontWeight: "700", fontSize: 13 },
 
-taskHeader: { backgroundColor: "#f3f4f6" },
+  // Task Table
+  taskTable: { borderRadius: 12, overflow: "hidden", backgroundColor: "#fff", borderWidth: 1, borderColor: "#f3f4f6" },
+  taskRow: { flexDirection: "row", alignItems: "center", paddingVertical: 14, paddingHorizontal: 15, borderBottomWidth: 1, borderBottomColor: "#f3f4f6" },
+  taskHeader: { backgroundColor: "#F9FAFB" },
+  taskCell: { fontSize: 14, color: "#4b5563" },
+  taskTitle: { flex: 2.5 },
+  taskStatus: { flex: 1, textAlign: "center" },
+  taskTime: { flex: 1, textAlign: "center" },
 
-taskCell: { fontSize: 14, fontWeight: "500" },
-
-// Column flex
-taskTitle: { flex: 3 },
-taskStatus: { flex: 1, textAlign: "center" },
-taskTime: { flex: 1, textAlign: "center" },
-
-statusBadge: {
-  flex: 1,
-  paddingVertical: 4,
-  paddingHorizontal: 6,
-  borderRadius: 6,
-  alignItems: "center",
-  justifyContent: "center",
-  marginHorizontal: 4,
-},
-
-statusText: { color: "#fff", fontWeight: "600", fontSize: 12 },
-
+  // Status Badge
+  statusCellWrapper: { flex: 1, alignItems: "center" },
+  statusBadge: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 20, minWidth: 85, alignItems: "center" },
+  statusText: { color: "#fff", fontWeight: "700", fontSize: 11, textTransform: "uppercase" },
 });
+
+export default AdminEmployeeTasksScreen;

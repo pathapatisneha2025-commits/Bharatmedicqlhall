@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, Image, ActivityIndicator, Alert
+  ScrollView, Image, ActivityIndicator, Alert, Platform,
+  useWindowDimensions,KeyboardAvoidingView, Keyboard, SafeAreaView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -41,7 +42,7 @@ const [breakIn, setBreakIn] = useState(null);
 const [breakOut, setBreakOut] = useState(null);
 
   const [showDobPicker, setShowDobPicker] = useState(false);
-  const [showDOJPicker, setShowDOJPicker] = useState(false);
+  const [showDojPicker, setShowDojPicker] = useState(false);
   
 const [showScheduleInPicker, setShowScheduleInPicker] = useState(false);
 const [showScheduleOutPicker, setShowScheduleOutPicker] = useState(false);
@@ -115,7 +116,26 @@ const handleTimeChange = (setter, setterVisible) => (event, selectedTime) => {
   const bloodGroups = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
 
   const [validationErrors, setValidationErrors] = useState({});
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
+  const MAX_WIDTH = 420;
+  const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
+const isLargeScreen = SCREEN_WIDTH > 800; // <-- add this
 
+   const showAlert = (title, message, buttons) => {
+      if (Platform.OS === "web") {
+        if (buttons && buttons.length > 1) {
+          const confirmed = window.confirm(`${title}\n\n${message}`);
+          if (confirmed) {
+            const okBtn = buttons.find(b => b.style !== "cancel");
+            okBtn?.onPress?.();
+          }
+        } else {
+          window.alert(`${title}\n\n${message}`);
+        }
+      } else {
+        Alert.alert(title, message, buttons);
+      }
+      };
   // -------------------- Validation --------------------
  const validateFields = () => {
   const errors = {};
@@ -180,7 +200,7 @@ else if (esiNumber.length < 5) errors.esiNumber = 'Invalid ESI number';
   if (!accountNumber.trim() || !/^\d{9,18}$/.test(accountNumber)) errors.accountNumber = 'Invalid account number';
 
   // Other
-  if (!agree) errors.agree = 'Accept terms';
+  
   if (!image) errors.image = 'Profile image required';
 
   setValidationErrors(errors);
@@ -215,320 +235,537 @@ else if (esiNumber.length < 5) errors.esiNumber = 'Invalid ESI number';
   };
 
   // -------------------- Register --------------------
-  const handleRegister = async () => {
-    if (!validateFields()) return;
-    try {
-      setLoading(true);
-      const body = {
-        fullName, email, password, confirmPassword, mobile, familyNumber, age, experience,
-        bloodGroup, aadhar, pan, esiNumber, reportingManager, department, role,
-        dob: dob.toISOString().split('T')[0],
-        scheduleIn: formatTime(scheduleIn),
-        scheduleOut: formatTime(scheduleOut),
-        breakIn: formatTime(breakIn),
-        breakOut: formatTime(breakOut),
-        monthlySalary, jobDescription, employmentType, category, ifsc,
-        branchName, bankName, accountNumber,
-        temporaryAddresses: [{ street: tempStreet, city: tempCity, state: tempState, pincode: tempPincode }],
-        permanentAddresses: [{ street: permStreet, city: permCity, state: permState, pincode: permPincode }],
-        dateOfJoining: dateOfJoining.toISOString().split('T')[0]
-      };
-
-      const formData = new FormData();
-      Object.entries(body).forEach(([key, value]) => {
-        if (Array.isArray(value)) formData.append(key, JSON.stringify(value));
-        else formData.append(key, value);
-      });
-      formData.append('image', { uri: image, name: 'profile.jpg', type: 'image/jpeg' });
-
-      const res = await fetch('https://hospitaldatabasemanagement.onrender.com/employee/register', {
-        method: 'POST', headers: { Accept: 'application/json' }, body: formData
-      });
-      const data = await res.json();
-      setLoading(false);
-      if (res.ok && data.success) {
-        Alert.alert('Success', '✅ Registration Successful!');
-        navigation.navigate('EmpLogin');
-      } else Alert.alert('Error', data.message || 'Failed');
-    } catch (err) {
-      setLoading(false);
-      Alert.alert('Error', err.message);
-    }
-  };
-if (loading) {
-    return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text style={{ marginTop: 10 }}>Loading employee...</Text>
-      </View>
-    );
+ const handleRegister = async () => {
+  // 1️⃣ Validate fields first
+  if (!validateFields()) {
+    console.log("Validation failed:", validationErrors);
+    showAlert('Error', 'Please fix the highlighted errors.');
+    return;
   }
-  // -------------------- UI --------------------
+
+  try {
+    setLoading(true);
+
+    // 2️⃣ Prepare body
+    const body = {
+      fullName, email, password, confirmPassword, mobile, familyNumber, age, experience,
+      bloodGroup, aadhar, pan, esiNumber, reportingManager, department, role,
+      dob: dob.toISOString().split('T')[0],
+      scheduleIn: scheduleIn ? formatTime(scheduleIn) : '',
+      scheduleOut: scheduleOut ? formatTime(scheduleOut) : '',
+      breakIn: breakIn ? formatTime(breakIn) : '',
+      breakOut: breakOut ? formatTime(breakOut) : '',
+      monthlySalary, jobDescription, employmentType, category, ifsc,
+      branchName, bankName, accountNumber,
+      temporaryAddresses: [{ street: tempStreet, city: tempCity, state: tempState, pincode: tempPincode }],
+      permanentAddresses: [{ street: permStreet, city: permCity, state: permState, pincode: permPincode }],
+      dateOfJoining: dateOfJoining.toISOString().split('T')[0],
+    };
+
+    // 3️⃣ Prepare FormData
+    const formData = new FormData();
+    Object.entries(body).forEach(([key, value]) => {
+      if (Array.isArray(value)) formData.append(key, JSON.stringify(value));
+      else formData.append(key, value);
+    });
+
+    // 4️⃣ Handle image correctly for Web and Native
+    if (image) {
+      let fileObj;
+      if (Platform.OS === 'web') {
+        // fetch blob for web
+        const res = await fetch(image);
+        const blob = await res.blob();
+        fileObj = new File([blob], "profile.jpg", { type: "image/jpeg" });
+      } else {
+        fileObj = { uri: image, name: 'profile.jpg', type: 'image/jpeg' };
+      }
+      formData.append('image', fileObj);
+    }
+
+    // 5️⃣ Send POST request
+    const res = await fetch('https://hospitaldatabasemanagement.onrender.com/employee/register', {
+      method: 'POST',
+      headers: { Accept: 'application/json' }, // Do NOT set Content-Type for FormData
+      body: formData,
+    });
+
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      data = {};
+    }
+
+    setLoading(false);
+
+    if (res.ok && data.success) {
+      showAlert('Success', '✅ Registration Successful!');
+      navigation.navigate('EmpLogin');
+    } else {
+      console.log('Server response:', data);
+      showAlert('Error', data.message || 'Registration failed');
+    }
+
+  } catch (err) {
+    setLoading(false);
+    console.error('Registration error:', err);
+    showAlert('Error', err.message || 'Something went wrong');
+  }
+};
+  // Reusable Component for Input Pairs
+  const GridInput = ({ label, children, error }) => (
+    <View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+      <Text style={styles.label}>{label}</Text>
+      {children}
+      {error && <Text style={styles.errorText}>{error}</Text>}
+    </View>
+  );
+
+  if (loading) return (
+    <View style={styles.loader}><ActivityIndicator size="large" color="#007AFF" /><Text>Processing Registration...</Text></View>
+  );
+
   return (
-   <ScrollView contentContainerStyle={styles.container}>
-  <TouchableOpacity onPress={() => navigation.goBack()}>
-    <Ionicons name="arrow-back" size={24} color="#333" />
-  </TouchableOpacity>
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={[styles.mainWrapper, { flexDirection: isLargeScreen ? 'row' : 'column' }]}>
+          
+          {/* LEFT SECTION: FORM */}
+          <View style={[styles.leftSection, { width: isLargeScreen ? '65%' : '100%' }]}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+              
+              <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+                <Ionicons name="chevron-back" size={20} color="#007AFF" />
+                <Text style={styles.backText}>Back</Text>
+              </TouchableOpacity>
 
-  <Text style={styles.heading}>Employee Registration</Text>
+              <Text style={styles.title}>Staff Registration</Text>
+              <Text style={styles.subtitle}>Please fill in the professional details to create your profile.</Text>
 
-  <TouchableOpacity onPress={takePhoto} style={styles.imagePicker}>
-    {image ? (
-      <Image source={{ uri: image }} style={styles.profileImage} />
-    ) : (
-      <Ionicons name="camera-outline" size={80} color="#1E88E5" />
-    )}
-  </TouchableOpacity>
-  {validationErrors.image && <Text style={styles.error}>{validationErrors.image}</Text>}
+              {/* Profile Photo */}
+              <TouchableOpacity onPress={takePhoto} style={styles.photoContainer}>
+                {image ? <Image source={{ uri: image }} style={styles.profileImage} /> : <Ionicons name="camera" size={30} color="#007AFF" />}
+                <Text style={styles.photoLabel}>Upload Photo</Text>
+              </TouchableOpacity>
+              {validationErrors.image && <Text style={styles.errorText}>{validationErrors.image}</Text>}
 
-  <TextInput style={styles.input} placeholder="Full Name" value={fullName} onChangeText={setFullName} />
-  {validationErrors.fullName && <Text style={styles.error}>{validationErrors.fullName}</Text>}
+              <View style={styles.formGrid}>
+                {/* Personal Information */}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+                  <TextInput style={styles.input} placeholder="John Doe" value={fullName} onChangeText={setFullName} />
+</View>
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+                  <TextInput style={styles.input} placeholder="john@example.com" value={email} onChangeText={setEmail} keyboardType="email-address" />
+                </View>
 
-  <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} keyboardType="email-address" />
-  {validationErrors.email && <Text style={styles.error}>{validationErrors.email}</Text>}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+                  <TextInput style={styles.input} placeholder="10-digit number" value={mobile} onChangeText={setMobile} keyboardType="phone-pad" maxLength={10} />
+                </View>
 
-  <TextInput style={styles.input} placeholder="Mobile" value={mobile} onChangeText={setMobile} keyboardType="phone-pad" />
-  {validationErrors.mobile && <Text style={styles.error}>{validationErrors.mobile}</Text>}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+                  <TextInput style={styles.input} placeholder="Emergency contact" value={familyNumber} onChangeText={setFamilyNumber} keyboardType="phone-pad" />
+                </View>
+{/* Experience */}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+  <TextInput style={styles.input} placeholder="e.g. 5 years" value={experience} onChangeText={setExperience} />
+</View>
 
-  <TextInput style={styles.input} placeholder="Family Contact" value={familyNumber} onChangeText={setFamilyNumber} keyboardType="phone-pad" />
-  {validationErrors.familyNumber && <Text style={styles.error}>{validationErrors.familyNumber}</Text>}
-
+{/* Age */}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
   <TextInput style={styles.input} placeholder="Age" value={age} onChangeText={setAge} keyboardType="numeric" />
-  {validationErrors.age && <Text style={styles.error}>{validationErrors.age}</Text>}
+</View>
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+                  <View style={styles.passWrapper}>
+                    <TextInput style={styles.passInput} secureTextEntry={!showPassword} value={password} onChangeText={setPassword} />
+                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)}><Ionicons name={showPassword ? "eye-off" : "eye"} size={20} color="#999" /></TouchableOpacity>
+                  </View>
+                </View>
 
-  <TextInput style={styles.input} placeholder="Experience" value={experience} onChangeText={setExperience} />
-  {validationErrors.experience && <Text style={styles.error}>{validationErrors.experience}</Text>}
-
-  <View style={styles.passwordContainer}>
-    <TextInput style={styles.passwordInput} placeholder="Password" secureTextEntry={!showPassword} value={password} onChangeText={setPassword} />
-    <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-      <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={22} color="#888" />
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+                   <View style={styles.passWrapper}>
+                    <TextInput style={styles.passInput} secureTextEntry={!showConfirmPassword} value={confirmPassword} onChangeText={setConfirmPassword} />
+                    <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}><Ionicons name={showConfirmPassword ? "eye-off" : "eye"} size={20} color="#999" /></TouchableOpacity>
+                  </View>
+                </View>
+{/* Date of Birth */}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+  {Platform.OS === 'web' ? (
+    <input
+      type="date"
+      value={dob.toISOString().split('T')[0]}
+      onChange={(e) => setDob(new Date(e.target.value))}
+      style={{ padding: 12, borderRadius: 10, border: '1px solid #E9ECEF' }}
+    />
+  ) : (
+    <TouchableOpacity style={styles.input} onPress={() => setShowDobPicker(true)}>
+      <Text>{dob.toDateString()}</Text>
     </TouchableOpacity>
-  </View>
-  {validationErrors.password && <Text style={styles.error}>{validationErrors.password}</Text>}
+  )}
+  {showDobPicker && Platform.OS !== 'web' && (
+    <DateTimePicker
+      value={dob}
+      mode="date"
+      display="calendar"
+      onChange={handleDateChange(setDob, setShowDobPicker)}
+      maximumDate={new Date()}
+    />
+  )}
+</View>
 
-  <View style={styles.passwordContainer}>
-    <TextInput style={styles.passwordInput} placeholder="Confirm Password" secureTextEntry={!showConfirmPassword} value={confirmPassword} onChangeText={setConfirmPassword} />
-    <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
-      <Ionicons name={showConfirmPassword ? 'eye-off' : 'eye'} size={22} color="#888" />
-    </TouchableOpacity>
-  </View>
-  {validationErrors.confirmPassword && <Text style={styles.error}>{validationErrors.confirmPassword}</Text>}
 
-  <TouchableOpacity style={styles.input} onPress={() => setShowDobPicker(true)}>
-    <Text>{dob.toDateString()}</Text>
-  </TouchableOpacity>
-  {showDobPicker && <DateTimePicker value={dob} mode="date" display="calendar" onChange={handleDateChange(setDob, setShowDobPicker)} maximumDate={new Date()} />}
-  {validationErrors.dob && <Text style={styles.error}>{validationErrors.dob}</Text>}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+                  <View style={styles.dropdown}><Picker selectedValue={bloodGroup} onValueChange={setBloodGroup}><Picker.Item label="Select" value="" />{bloodGroups.map(bg => <Picker.Item key={bg} label={bg} value={bg} />)}</Picker></View>
+                </View>
 
-  <View style={styles.dropdown}>
-    <Picker selectedValue={bloodGroup} onValueChange={setBloodGroup}>
-      <Picker.Item label="Select Blood Group" value="" />
-      {bloodGroups.map(bg => <Picker.Item key={bg} label={bg} value={bg} />)}
-    </Picker>
-  </View>
-  {validationErrors.bloodGroup && <Text style={styles.error}>{validationErrors.bloodGroup}</Text>}
+                {/* Professional Information */}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+                  <TextInput style={styles.input} placeholder="12-digit number" value={aadhar} onChangeText={setAadhar} keyboardType="numeric" maxLength={12}/>
+                </View>
 
-  <TextInput style={styles.input} placeholder="Aadhar Number" value={aadhar} onChangeText={setAadhar} keyboardType="numeric" />
-  {validationErrors.aadhar && <Text style={styles.error}>{validationErrors.aadhar}</Text>}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+                  <TextInput style={styles.input} placeholder="Pan Number" value={pan} onChangeText={setPan} autoCapitalize="characters" />
+                </View>
 
-  <TextInput style={styles.input} placeholder="PAN Number" value={pan} onChangeText={setPan} />
-  {validationErrors.pan && <Text style={styles.error}>{validationErrors.pan}</Text>}
-
+                
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
   <TextInput style={styles.input} placeholder="ESI Number" value={esiNumber} onChangeText={setEsiNumber} />
-  {validationErrors.esiNumber && <Text style={styles.error}>{validationErrors.esiNumber}</Text>}
+</View>
 
-  <TextInput style={styles.input} placeholder="Reporting Manager" value={reportingManager} onChangeText={setReportingManager} />
-  {validationErrors.reportingManager && <Text style={styles.error}>{validationErrors.reportingManager}</Text>}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+  <TextInput style={styles.input} placeholder="Manager Name" value={reportingManager} onChangeText={setReportingManager} />
+</View>
 
-  <Text style={styles.subheading}>Temporary Address</Text>
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
   <TextInput style={styles.input} placeholder="Street" value={tempStreet} onChangeText={setTempStreet} />
-  {validationErrors.tempStreet && <Text style={styles.error}>{validationErrors.tempStreet}</Text>}
-
   <TextInput style={styles.input} placeholder="City" value={tempCity} onChangeText={setTempCity} />
-  {validationErrors.tempCity && <Text style={styles.error}>{validationErrors.tempCity}</Text>}
-
   <TextInput style={styles.input} placeholder="State" value={tempState} onChangeText={setTempState} />
-  {validationErrors.tempState && <Text style={styles.error}>{validationErrors.tempState}</Text>}
-
   <TextInput style={styles.input} placeholder="Pincode" value={tempPincode} onChangeText={setTempPincode} keyboardType="numeric" />
-  {validationErrors.tempPincode && <Text style={styles.error}>{validationErrors.tempPincode}</Text>}
+</View>
 
-  <Text style={styles.subheading}>Permanent Address</Text>
+
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
   <TextInput style={styles.input} placeholder="Street" value={permStreet} onChangeText={setPermStreet} />
-  {validationErrors.permStreet && <Text style={styles.error}>{validationErrors.permStreet}</Text>}
-
   <TextInput style={styles.input} placeholder="City" value={permCity} onChangeText={setPermCity} />
-  {validationErrors.permCity && <Text style={styles.error}>{validationErrors.permCity}</Text>}
-
   <TextInput style={styles.input} placeholder="State" value={permState} onChangeText={setPermState} />
-  {validationErrors.permState && <Text style={styles.error}>{validationErrors.permState}</Text>}
-
   <TextInput style={styles.input} placeholder="Pincode" value={permPincode} onChangeText={setPermPincode} keyboardType="numeric" />
-  {validationErrors.permPincode && <Text style={styles.error}>{validationErrors.permPincode}</Text>}
+</View>
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+                  <View style={styles.dropdown}><Picker selectedValue={department} onValueChange={setDepartment}><Picker.Item label="Select" value="" />{departmentList.map(d => <Picker.Item key={d.id} label={d.department_name} value={d.department_name} />)}</Picker></View>
+                </View>
 
-  <View style={styles.dropdown}>
-    <Picker selectedValue={department} onValueChange={setDepartment}>
-      <Picker.Item label={loadingDeps ? 'Loading departments...' : 'Select Department'} value="" />
-      {departmentList.map(d => (
-        <Picker.Item key={d.id} label={d.department_name} value={d.department_name} />
-      ))}
-    </Picker>
-  </View>
-  {validationErrors.department && <Text style={styles.error}>{validationErrors.department}</Text>}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+                  <View style={styles.dropdown}><Picker selectedValue={role} onValueChange={setRole}><Picker.Item label="Select" value="" />{roleList.map(r => <Picker.Item key={r.id} label={r.role_name} value={r.role_name} />)}</Picker></View>
+                </View>
 
-  <View style={styles.dropdown}>
-    <Picker selectedValue={role} onValueChange={setRole}>
-      <Picker.Item label={loadingRoles ? 'Loading roles...' : 'Select Role'} value="" />
-      {roleList.map(r => (
-        <Picker.Item key={r.id} label={r.role_name} value={r.role_name} />
-      ))}
-    </Picker>
-  </View>
-  {validationErrors.role && <Text style={styles.error}>{validationErrors.role}</Text>}
+                {/* Monthly Salary */}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+  <TextInput
+    style={styles.input}
+    placeholder="Monthly Salary"
+    value={monthlySalary}
+    onChangeText={setMonthlySalary}
+    keyboardType="numeric"
+  />
+</View>
 
-  <TextInput style={styles.input} placeholder="Monthly Salary" value={monthlySalary} onChangeText={setMonthlySalary} keyboardType="numeric" />
-  {validationErrors.monthlySalary && <Text style={styles.error}>{validationErrors.monthlySalary}</Text>}
-
+{/* Employment Type */}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
   <View style={styles.dropdown}>
     <Picker selectedValue={employmentType} onValueChange={setEmploymentType}>
       <Picker.Item label="Select Employment Type" value="" />
-      {employmentTypes.map(e => <Picker.Item key={e} label={e} value={e} />)}
+      {employmentTypes.map(e => (
+        <Picker.Item key={e} label={e} value={e} />
+      ))}
     </Picker>
   </View>
-  {validationErrors.employmentType && <Text style={styles.error}>{validationErrors.employmentType}</Text>}
+</View>
 
+{/* Category */}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
   <View style={styles.dropdown}>
     <Picker selectedValue={category} onValueChange={setCategory}>
       <Picker.Item label="Select Category" value="" />
-      {categoryTypes.map(c => <Picker.Item key={c} label={c} value={c} />)}
+      {categoryTypes.map(c => (
+        <Picker.Item key={c} label={c} value={c} />
+      ))}
     </Picker>
   </View>
-  {validationErrors.category && <Text style={styles.error}>{validationErrors.category}</Text>}
-  {/* Job Description */}
-<TextInput
-  style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
-  placeholder="Job Description"
-  value={jobDescription}
-  onChangeText={setJobDescription}
-  multiline
-  numberOfLines={4}
-/>
-{validationErrors.jobDescription && <Text style={styles.error}>{validationErrors.jobDescription}</Text>}
-  {/* Date of Joining */}
-<TouchableOpacity style={styles.input} onPress={() => setShowDOJPicker(true)}>
-  <Text>{dateOfJoining ? dateOfJoining.toDateString() : 'Select Date of Joining'}</Text>
-</TouchableOpacity>
-{showDOJPicker && (
-  <DateTimePicker
-    value={dateOfJoining}
-    mode="date"
-    display="calendar"
-    onChange={handleDateChange(setDateOfJoining, setShowDOJPicker)}
-    maximumDate={new Date()}
-  />
-)}
-{validationErrors.dateOfJoining && <Text style={styles.error}>{validationErrors.dateOfJoining}</Text>}
+</View>
 
- {/* Schedule In */}
-<TouchableOpacity style={styles.input} onPress={() => setShowScheduleInPicker(true)}>
-  <Text>{scheduleIn ? formatTime(scheduleIn) : 'Select Schedule In'}</Text>
-</TouchableOpacity>
-{showScheduleInPicker && (
-  <DateTimePicker
-    value={scheduleIn || new Date()}
-    mode="time"
-    display="spinner"
-    onChange={handleTimeChange(setScheduleIn, setShowScheduleInPicker)}
+{/* Job Description */}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+  <TextInput
+    style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+    placeholder="Job Description"
+    value={jobDescription}
+    onChangeText={setJobDescription}
+    multiline
+    numberOfLines={4}
   />
-)}
-{validationErrors.scheduleIn && <Text style={styles.error}>{validationErrors.scheduleIn}</Text>}
+</View>
 
-{/* Schedule Out */}
-<TouchableOpacity style={styles.input} onPress={() => setShowScheduleOutPicker(true)}>
-  <Text>{scheduleOut ? formatTime(scheduleOut) : 'Select Schedule Out'}</Text>
-</TouchableOpacity>
-{showScheduleOutPicker && (
-  <DateTimePicker
-    value={scheduleOut || new Date()}
-    mode="time"
-    display="spinner"
-    onChange={handleTimeChange(setScheduleOut, setShowScheduleOutPicker)}
-  />
-)}
-{validationErrors.scheduleOut && <Text style={styles.error}>{validationErrors.scheduleOut}</Text>}
+
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+  {Platform.OS === 'web' ? (
+    <input
+      type="date"
+      value={dateOfJoining.toISOString().split('T')[0]}
+      onChange={(e) => setDateOfJoining(new Date(e.target.value))}
+      style={{
+        padding: 12,
+        borderRadius: 10,
+        border: '1px solid #E9ECEF',
+      }}
+    />
+  ) : (
+    <>
+      <TouchableOpacity style={styles.input} onPress={() => setShowDojPicker(true)}>
+        <Text>{dateOfJoining ? dateOfJoining.toDateString() : 'Select Date'}</Text>
+      </TouchableOpacity>
+      {showDojPicker && (
+        <DateTimePicker
+          value={dateOfJoining || new Date()}
+          mode="date"
+          display="calendar"
+          onChange={handleDateChange(setDateOfJoining, setShowDojPicker)}
+          maximumDate={new Date()} // Optional: prevent future dates
+        />
+      )}
+    </>
+  )}
+</View>
+
+
+                {/* Work Schedule */}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+
+    <Text style={styles.label}>Schedule In Time</Text>
+
+  {Platform.OS === 'web' ? (
+    <input
+      type="time"
+      value={scheduleIn ? formatTime(scheduleIn) : ''}
+      onChange={(e) => {
+        const [hh, mm] = e.target.value.split(':');
+        const d = new Date();
+        d.setHours(parseInt(hh));
+        d.setMinutes(parseInt(mm));
+        setScheduleIn(d);
+      }}
+      style={{ padding: 12, borderRadius: 10, border: '1px solid #E9ECEF' }}
+    />
+  ) : (
+    <>
+      <TouchableOpacity style={styles.input} onPress={() => setShowScheduleInPicker(true)}>
+        <Text>{scheduleIn ? formatTime(scheduleIn) : 'Set Time'}</Text>
+      </TouchableOpacity>
+      {showScheduleInPicker && <DateTimePicker value={scheduleIn || new Date()} mode="time" onChange={handleTimeChange(setScheduleIn, setShowScheduleInPicker)} />}
+    </>
+  )}
+</View>
+
+
+                {/* Schedule Out */}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+    <Text style={styles.label}>Schedule Out</Text>
+
+  {Platform.OS === 'web' ? (
+    <input
+      type="time"
+      value={scheduleOut ? formatTime(scheduleOut) : ''}
+      onChange={(e) => {
+        const [hh, mm] = e.target.value.split(':');
+        const d = new Date();
+        d.setHours(parseInt(hh));
+        d.setMinutes(parseInt(mm));
+        setScheduleOut(d);
+      }}
+      style={{ padding: 12, borderRadius: 10, border: '1px solid #E9ECEF' }}
+    />
+  ) : (
+    <>
+      <TouchableOpacity style={styles.input} onPress={() => setShowScheduleOutPicker(true)}>
+        <Text>{scheduleOut ? formatTime(scheduleOut) : 'Set Time'}</Text>
+      </TouchableOpacity>
+      {showScheduleOutPicker && (
+        <DateTimePicker
+          value={scheduleOut || new Date()}
+          mode="time"
+          onChange={handleTimeChange(setScheduleOut, setShowScheduleOutPicker)}
+        />
+      )}
+    </>
+  )}
+</View>
 
 {/* Break In */}
-<TouchableOpacity style={styles.input} onPress={() => setShowBreakInPicker(true)}>
-  <Text>{breakIn ? formatTime(breakIn) : 'Select Break In'}</Text>
-</TouchableOpacity>
-{showBreakInPicker && (
-  <DateTimePicker
-    value={breakIn || new Date()}
-    mode="time"
-    display="spinner"
-    onChange={handleTimeChange(setBreakIn, setShowBreakInPicker)}
-  />
-)}
-{validationErrors.breakIn && <Text style={styles.error}>{validationErrors.breakIn}</Text>}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+    <Text style={styles.label}>Break In</Text>
+
+  {Platform.OS === 'web' ? (
+    <input
+      type="time"
+      value={breakIn ? formatTime(breakIn) : ''}
+      onChange={(e) => {
+        const [hh, mm] = e.target.value.split(':');
+        const d = new Date();
+        d.setHours(parseInt(hh));
+        d.setMinutes(parseInt(mm));
+        setBreakIn(d);
+      }}
+      style={{ padding: 12, borderRadius: 10, border: '1px solid #E9ECEF' }}
+    />
+  ) : (
+    <>
+      <TouchableOpacity style={styles.input} onPress={() => setShowBreakInPicker(true)}>
+        <Text>{breakIn ? formatTime(breakIn) : 'Set Time'}</Text>
+      </TouchableOpacity>
+      {showBreakInPicker && (
+        <DateTimePicker
+          value={breakIn || new Date()}
+          mode="time"
+          onChange={handleTimeChange(setBreakIn, setShowBreakInPicker)}
+        />
+      )}
+    </>
+  )}
+</View>
 
 {/* Break Out */}
-<TouchableOpacity style={styles.input} onPress={() => setShowBreakOutPicker(true)}>
-  <Text>{breakOut ? formatTime(breakOut) : 'Select Break Out'}</Text>
-</TouchableOpacity>
-{showBreakOutPicker && (
-  <DateTimePicker
-    value={breakOut || new Date()}
-    mode="time"
-    display="spinner"
-    onChange={handleTimeChange(setBreakOut, setShowBreakOutPicker)}
-  />
-)}
-{validationErrors.breakOut && <Text style={styles.error}>{validationErrors.breakOut}</Text>}
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+    <Text style={styles.label}>Break Out</Text>
+
+  {Platform.OS === 'web' ? (
+    <input
+      type="time"
+      value={breakOut ? formatTime(breakOut) : ''}
+      onChange={(e) => {
+        const [hh, mm] = e.target.value.split(':');
+        const d = new Date();
+        d.setHours(parseInt(hh));
+        d.setMinutes(parseInt(mm));
+        setBreakOut(d);
+      }}
+      style={{ padding: 12, borderRadius: 10, border: '1px solid #E9ECEF'}}
+    />
+  ) : (
+    <>
+      <TouchableOpacity style={styles.input} onPress={() => setShowBreakOutPicker(true)}>
+        <Text>{breakOut ? formatTime(breakOut) : 'Set Time'}</Text>
+      </TouchableOpacity>
+      {showBreakOutPicker && (
+        <DateTimePicker
+          value={breakOut || new Date()}
+          mode="time"
+          onChange={handleTimeChange(setBreakOut, setShowBreakOutPicker)}
+        />
+      )}
+    </>
+  )}
+</View>
+
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="SBIN0001234" 
+                    value={ifsc} 
+                    onChangeText={setIfsc} 
+                    autoCapitalize="characters"
+                  />
+                </View>
+
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="e.g. State Bank of India" 
+                    value={bankName} 
+                    onChangeText={setBankName} 
+                  />
+                </View>
+
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="e.g. Downtown Branch" 
+                    value={branchName} 
+                    onChangeText={setBranchName} 
+                  />
+                </View>
+
+<View style={[styles.inputWrapper, { width: isLargeScreen ? '48%' : '100%' }]}>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="Enter account number" 
+                    value={accountNumber} 
+                    onChangeText={setAccountNumber} 
+                    keyboardType="numeric" 
+                  />
+                </View>
+              </View>
+
+             
+              <TouchableOpacity style={styles.submitBtn} onPress={handleRegister}>
+                <Text style={styles.submitBtnText}>Add employee</Text>
+              </TouchableOpacity>
 
 
+            </ScrollView>
+          </View>
 
-  <TextInput style={styles.input} placeholder="IFSC" value={ifsc} onChangeText={setIfsc} />
-  {validationErrors.ifsc && <Text style={styles.error}>{validationErrors.ifsc}</Text>}
+          {/* RIGHT SECTION: BRANDING */}
+          {isLargeScreen && (
+            <View style={styles.rightSection}>
+              <View style={styles.logoBadge}><Text style={styles.logoBadgeText}>BM</Text></View>
+              <Text style={styles.welcomeText}>Staff Portal</Text>
+              <Text style={styles.welcomeSub}>Manage your profile, shift timings, and payroll securely.</Text>
+            </View>
+          )}
 
-  <TextInput style={styles.input} placeholder="Branch Name" value={branchName} onChangeText={setBranchName} />
-  {validationErrors.branchName && <Text style={styles.error}>{validationErrors.branchName}</Text>}
-
-  <TextInput style={styles.input} placeholder="Bank Name" value={bankName} onChangeText={setBankName} />
-  {validationErrors.bankName && <Text style={styles.error}>{validationErrors.bankName}</Text>}
-
-  <TextInput style={styles.input} placeholder="Account Number" value={accountNumber} onChangeText={setAccountNumber} keyboardType="numeric" />
-  {validationErrors.accountNumber && <Text style={styles.error}>{validationErrors.accountNumber}</Text>}
-
-  <View style={styles.agreeContainer}>
-    <CheckBox value={agree} onValueChange={setAgree} />
-    <Text style={styles.agreeText}>I agree to the terms & conditions</Text>
-  </View>
-  {validationErrors.agree && <Text style={styles.error}>{validationErrors.agree}</Text>}
- <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
-  {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>ADD</Text>}
-</TouchableOpacity>
-
-</ScrollView>
-
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, backgroundColor: '#fff', marginTop: 30 },
-  heading: { fontSize: 24, fontWeight: 'bold', marginVertical: 15, textAlign: 'center' },
-  subheading: { fontSize: 18, fontWeight: '600', marginTop: 20 },
-  input: { borderWidth: 1, borderColor: '#ccc', padding: 10, borderRadius: 8, marginTop: 5 },
-  dropdown: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, marginTop: 5 },
-  imagePicker: { alignSelf: 'center', marginVertical: 10 },
-  profileImage: { width: 100, height: 100, borderRadius: 50 },
-  passwordContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ccc', borderRadius: 8, paddingHorizontal: 10, marginTop: 5 },
-  passwordInput: { flex: 1, padding: 10 },
-  agreeContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 15 },
-  agreeText: { marginLeft: 10 },
-  button: { backgroundColor: '#1E88E5', padding: 15, borderRadius: 8, alignItems: 'center', marginBottom: 30 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
- 
-    error: { color: 'red', fontSize: 13, marginTop: 2, marginBottom: 4 },
+  container: { flex: 1, backgroundColor: '#fff' },
+  mainWrapper: { flex: 1 },
+  leftSection: { paddingHorizontal: '5%', paddingVertical: 40 },
+  scrollContent: { maxWidth: 900, alignSelf: 'center', width: '100%' },
+  loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  
+  backButton: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  backText: { color: '#007AFF', marginLeft: 5, fontWeight: '600' },
+  
+  title: { fontSize: 32, fontWeight: 'bold', color: '#111' },
+  subtitle: { fontSize: 16, color: '#666', marginBottom: 30 },
 
+  photoContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#F8F9FA', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E9ECEF', marginBottom: 20, overflow: 'hidden' },
+  profileImage: { width: '100%', height: '100%' },
+  photoLabel: { position: 'absolute', bottom: -25, fontSize: 10, color: '#007AFF', fontWeight: 'bold' },
+
+  formGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  inputWrapper: { marginBottom: 20 },
+  label: { fontSize: 13, fontWeight: '700', color: '#444', marginBottom: 8 },
+  input: { backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#E9ECEF', borderRadius: 10, padding: 12, fontSize: 15 },
+  dropdown: { backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#E9ECEF', borderRadius: 10, overflow: 'hidden' },
+  
+  passWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8F9FA', borderWidth: 1, borderColor: '#E9ECEF', borderRadius: 10, paddingHorizontal: 12 },
+  passInput: { flex: 1, paddingVertical: 12, fontSize: 15 },
+
+  agreeRow: { flexDirection: 'row', alignItems: 'center', marginTop: 20 },
+  agreeText: { marginLeft: 10, color: '#666' },
+  errorText: { color: 'red', fontSize: 11, marginTop: 4 },
+
+  submitBtn: { backgroundColor: '#007AFF', padding: 18, borderRadius: 30, alignItems: 'center', marginTop: 30, elevation: 2 },
+  submitBtnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  loginLink: { marginTop: 20, alignItems: 'center' },
+  loginLinkText: { color: '#666' },
+
+  rightSection: { width: '35%', backgroundColor: '#007AFF', justifyContent: 'center', alignItems: 'center', padding: 40 },
+  logoBadge: { backgroundColor: 'rgba(255,255,255,0.2)', width: 80, height: 80, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 30 },
+  logoBadgeText: { color: '#fff', fontSize: 32, fontWeight: 'bold' },
+  welcomeText: { color: '#fff', fontSize: 28, fontWeight: 'bold', marginBottom: 10 },
+  welcomeSub: { color: 'rgba(255,255,255,0.8)', textAlign: 'center', lineHeight: 22 }
 });

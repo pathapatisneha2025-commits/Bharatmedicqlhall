@@ -113,7 +113,7 @@ const ReminderListScreen = ({ navigation }) => {
 export default ReminderListScreen;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: '#fff' },
+  container: { flex: 1, padding: 20, backgroundColor: '#fff',marginTop:30 },
   title: { fontSize: 22, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
   empty: { textAlign: 'center', fontSize: 16, marginTop: 20, color: '#777' },
   card: {

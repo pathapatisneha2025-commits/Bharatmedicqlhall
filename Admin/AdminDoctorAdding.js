@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   FlatList,
+   useWindowDimensions,
 } from "react-native";
 import { MaterialIcons, Ionicons, FontAwesome } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -28,6 +29,33 @@ export default function AdminDoctorFeeScreen() {
   const [email, setEmail] = useState("");
   const [doctors, setDoctors] = useState([]);
   const [loading, setLoading] = useState(false);
+     const [loadingCount, setLoadingCount] = useState(0);
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+    const MAX_WIDTH = 420;
+    const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
+    const showAlert = (title, message, buttons) => {
+       if (Platform.OS === "web") {
+         if (buttons && buttons.length > 1) {
+           const confirmed = window.confirm(`${title}\n\n${message}`);
+           if (confirmed) {
+             const okBtn = buttons.find(b => b.style !== "cancel");
+             okBtn?.onPress?.();
+           }
+         } else {
+           window.alert(`${title}\n\n${message}`);
+         }
+       } else {
+         Alert.alert(title, message, buttons);
+       }
+     };  
+    useEffect(() => {
+              let interval;
+              if (loading) {
+                setLoadingCount(0);
+                interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+              } else clearInterval(interval);
+              return () => clearInterval(interval);
+            }, [loading]);
   const [editingDoctorId, setEditingDoctorId] = useState(null); // <-- track edit mode
 
   const fetchDoctors = async () => {
@@ -40,7 +68,7 @@ export default function AdminDoctorFeeScreen() {
       setDoctors(data);
     } catch (error) {
       console.log(error);
-      Alert.alert("Error", "Failed to fetch doctors");
+       showAlert("Error", "Failed to fetch doctors");
     } finally {
       setLoading(false);
     }
@@ -62,7 +90,7 @@ export default function AdminDoctorFeeScreen() {
       !consultanceFee ||
       !email
     ) {
-      Alert.alert("Error", "Please fill all fields");
+       showAlert("Error", "Please fill all fields");
       return;
     }
 
@@ -104,7 +132,7 @@ export default function AdminDoctorFeeScreen() {
       const data = await response.json();
 
       if (response.ok) {
-        Alert.alert(
+        showAlert(
           "Success",
           editingDoctorId ? "Doctor updated successfully" : "Doctor added successfully"
         );
@@ -120,11 +148,11 @@ export default function AdminDoctorFeeScreen() {
         setEditingDoctorId(null); // reset edit mode
         fetchDoctors();
       } else {
-        Alert.alert("Error", data.message || "Something went wrong");
+         showAlert("Error", data.message || "Something went wrong");
       }
     } catch (error) {
       console.log(error);
-      Alert.alert("Error", "Failed to save doctor");
+       showAlert("Error", "Failed to save doctor");
     }
   };
 
@@ -147,14 +175,14 @@ export default function AdminDoctorFeeScreen() {
         { method: "DELETE" }
       );
       if (response.ok) {
-        Alert.alert("Deleted", "Doctor removed successfully");
+        showAlert("Deleted", "Doctor removed successfully");
         fetchDoctors();
       } else {
-        Alert.alert("Error", "Failed to delete doctor");
+         showAlert("Error", "Failed to delete doctor");
       }
     } catch (error) {
       console.log(error);
-      Alert.alert("Error", "Failed to delete doctor");
+      showAlert("Error", "Failed to delete doctor");
     }
   };
    
@@ -202,6 +230,11 @@ export default function AdminDoctorFeeScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
+        <View
+         style={{
+        width: containerWidth,
+       alignSelf: "center", flex: 1, }}
+                                         >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={26} color="#fff" />
@@ -242,12 +275,13 @@ export default function AdminDoctorFeeScreen() {
           />
         )}
       </ScrollView>
+      </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#e3f2fd" , marginTop: 30},
+  container: { flex: 1, backgroundColor: "#fff" , marginTop: 30},
   header: {
     backgroundColor: "#2196F3",
     flexDirection: "row",

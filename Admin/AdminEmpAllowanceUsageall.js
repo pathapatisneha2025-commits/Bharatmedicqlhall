@@ -1,22 +1,21 @@
-// AllowanceUsageLogsScreen.js
 import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   ActivityIndicator,
-  Alert,
   ScrollView,
   TouchableOpacity,
   Modal,
+  useWindowDimensions,
   Platform,
-  Dimensions,
+  Alert,
+  Linking,
+  FlatList
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons,Feather } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
-import { Linking } from "react-native";
 
 const API_BASE = "https://hospitaldatabasemanagement.onrender.com/allowanceuseage";
 
@@ -24,23 +23,38 @@ export default function AllowanceUsageLogsScreen({ navigation }) {
   const [usageList, setUsageList] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // Filters
-  const [timeFilter, setTimeFilter] = useState(null); // daily | weekly | monthly
+  const [loadingCount, setLoadingCount] = useState(0);
+  const [timeFilter, setTimeFilter] = useState(null);
   const [filterDate, setFilterDate] = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
-
-  // Modal
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
 
-  useEffect(() => {
-    fetchUsage();
-  }, []);
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const MAX_TABLE_WIDTH = 1500;
+  const containerWidth = SCREEN_WIDTH > MAX_TABLE_WIDTH ? MAX_TABLE_WIDTH : SCREEN_WIDTH - 20;
+  const isWeb = Platform.OS === "web";
+
+  const columnWidths = [50, 150, 150, 300, 100, 100, 120, 60]; // proper widths for premium alignment
+
+  const showAlert = (title, message) => {
+    if (Platform.OS === "web") window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
+
+  const formatDateForInput = (date) => (date ? date.toISOString().split("T")[0] : "");
 
   useEffect(() => {
-    applyFilters();
-  }, [timeFilter, filterDate, usageList]);
+    let interval;
+    if (loading) {
+      setLoadingCount(0);
+      interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+    } else clearInterval(interval);
+    return () => clearInterval(interval);
+  }, [loading]);
+
+  useEffect(() => { fetchUsage(); }, []);
+  useEffect(() => { applyFilters(); }, [timeFilter, filterDate, usageList]);
 
   const fetchUsage = async () => {
     try {
@@ -51,7 +65,7 @@ export default function AllowanceUsageLogsScreen({ navigation }) {
       setUsageList(rows);
       setFilteredData(rows);
     } catch (err) {
-      Alert.alert("Error", "Failed to fetch usage data");
+      showAlert("Error", "Failed to fetch usage data");
     } finally {
       setLoading(false);
     }
@@ -61,44 +75,20 @@ export default function AllowanceUsageLogsScreen({ navigation }) {
     let data = [...usageList];
     const now = new Date();
 
-    // 🔹 Exact Date (highest priority)
     if (filterDate) {
       const selected = filterDate.toDateString();
-      data = data.filter(
-        (item) =>
-          item.created_at &&
-          new Date(item.created_at).toDateString() === selected
-      );
-    }
-
-    // 🔹 Dropdown filter
-    else if (timeFilter) {
-      data = data.filter((item) => {
+      data = data.filter(item => item.created_at && new Date(item.created_at).toDateString() === selected);
+    } else if (timeFilter) {
+      data = data.filter(item => {
         if (!item.created_at) return false;
         const itemDate = new Date(item.created_at);
-
-        if (timeFilter === "daily") {
-          return itemDate.toDateString() === now.toDateString();
-        }
-
+        if (timeFilter === "daily") return itemDate.toDateString() === now.toDateString();
         if (timeFilter === "weekly") {
-          const start = new Date(now);
-          start.setDate(now.getDate() - now.getDay());
-          start.setHours(0, 0, 0, 0);
-
-          const end = new Date(start);
-          end.setDate(start.getDate() + 7);
-
+          const start = new Date(now); start.setDate(now.getDate() - now.getDay()); start.setHours(0,0,0,0);
+          const end = new Date(start); end.setDate(start.getDate() + 7);
           return itemDate >= start && itemDate < end;
         }
-
-        if (timeFilter === "monthly") {
-          return (
-            itemDate.getMonth() === now.getMonth() &&
-            itemDate.getFullYear() === now.getFullYear()
-          );
-        }
-
+        if (timeFilter === "monthly") return itemDate.getMonth() === now.getMonth() && itemDate.getFullYear() === now.getFullYear();
         return true;
       });
     }
@@ -110,13 +100,13 @@ export default function AllowanceUsageLogsScreen({ navigation }) {
     setShowDatePicker(false);
     if (selectedDate) {
       setFilterDate(selectedDate);
-      setTimeFilter(null); // disable dropdown
+      setTimeFilter(null);
     }
   };
 
   const resetFilter = () => {
-    setTimeFilter(null);
     setFilterDate(null);
+    setTimeFilter(null);
     setFilteredData(usageList);
   };
 
@@ -128,242 +118,231 @@ export default function AllowanceUsageLogsScreen({ navigation }) {
     return (
       <View style={styles.loader}>
         <ActivityIndicator size="large" color="#1e90ff" />
-        <Text>Loading allowance usage...</Text>
+        <Text style={{ marginTop: 10 }}>Loading allowance usage {loadingCount}s</Text>
       </View>
     );
   }
 
-  return (
-    <View style={styles.page}>
-      <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} />
-          </TouchableOpacity>
-          <Text style={styles.title}>Allowance Usage</Text>
-        </View>
+ return (
+    <View style={styles.webWrapper}>
+    
 
-        {/* Filters */}
-        <View style={styles.filterRow}>
-          {/* Date Picker */}
-          <TouchableOpacity
-            style={styles.filterBtn}
-            onPress={() => setShowDatePicker(true)}
-          >
-            <Ionicons name="calendar-outline" size={18} />
-            <Text style={{ marginLeft: 6 }}>
-              {filterDate ? filterDate.toLocaleDateString() : "Pick Date"}
-            </Text>
-          </TouchableOpacity>
+      {/* MAIN CONTENT */}
+      <View style={styles.mainContent}>
+        {/* Header Section */}
+     {/* Header Section */}
+<View style={styles.contentHeader}>
+  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+    
+    {/* BACK ARROW */}
+    <TouchableOpacity
+      onPress={() => navigation.goBack()}
+      style={styles.backBtn}
+      activeOpacity={0.7}
+    >
+      <Ionicons name="arrow-back" size={22} color="#1e293b" />
+    </TouchableOpacity>
 
-          {showDatePicker && (
-            <DateTimePicker
-              value={filterDate || new Date()}
-              mode="date"
-              display={Platform.OS === "ios" ? "inline" : "default"}
-              onChange={handleDateChange}
-            />
-          )}
+    {/* TITLE */}
+    <View>
+      <Text style={styles.mainTitle}>Allowance Usage Logs</Text>
+      <Text style={styles.subTitle}>
+        History of all allowance transactions and claims
+      </Text>
+    </View>
 
-          {/* 🔽 Dropdown */}
-          <View style={styles.dropdown}>
-            <Ionicons name="time-outline" size={18} />
-            <Picker
-              selectedValue={timeFilter}
-              onValueChange={(val) => {
-                setTimeFilter(val);
-                setFilterDate(null);
-              }}
-              style={styles.picker}
-            >
-              <Picker.Item label="Select Range" value={null} />
-              <Picker.Item label="Today" value="daily" />
-              <Picker.Item label="This Week" value="weekly" />
-              <Picker.Item label="This Month" value="monthly" />
-            </Picker>
-          </View>
+  </View>
 
-          <TouchableOpacity style={styles.resetBtn} onPress={resetFilter}>
-            <Ionicons name="refresh" size={16} color="#fff" />
-            <Text style={styles.resetText}>Reset</Text>
-          </TouchableOpacity>
+  {/* RIGHT ACTION */}
+  <View style={styles.headerActions}>
+    <TouchableOpacity
+      style={styles.exportBtn}
+      onPress={() => Linking.openURL(`${API_BASE}/export`)}
+    >
+      <Feather name="download" size={18} color="#fff" />
+      <Text style={styles.btnText}>Export Data</Text>
+    </TouchableOpacity>
+  </View>
+</View>
 
-          <TouchableOpacity style={styles.exportBtn} onPress={exportToExcel}>
-            <Ionicons name="download-outline" size={16} color="#fff" />
-            <Text style={styles.resetText}>Export</Text>
-          </TouchableOpacity>
-        </View>
 
-        {/* Table */}
-        <ScrollView horizontal>
-          <View>
-            <View style={[styles.tableRow, styles.tableHeader]}>
-              {["S.No", "Name", "Department", "Description", "Amount", "Used", "Date", "Action"].map(
-                (h, i) => (
-                  <Text key={i} style={[styles.cell, styles.headerCell]}>
-                    {h}
-                  </Text>
-                )
-              )}
+        {/* Filters Bar */}
+        <View style={styles.filterCard}>
+          <View style={styles.filterGroup}>
+            <Feather name="filter" size={18} color="#64748b" style={{ marginRight: 10 }} />
+            
+            <View style={styles.datePickerContainer}>
+               {isWeb ? (
+                 <input
+                   type="date"
+                   value={formatDateForInput(filterDate)}
+                   onChange={(e) => { setFilterDate(e.target.value ? new Date(e.target.value) : null); setTimeFilter(null); }}
+                   style={styles.webDateInput}
+                 />
+               ) : (
+                 <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.mobileDateBtn}>
+                    <Text>{filterDate ? filterDate.toLocaleDateString() : "Select Date"}</Text>
+                 </TouchableOpacity>
+               )}
             </View>
 
-            <FlatList
-              data={filteredData}
-              keyExtractor={(item, index) => String(item.id || index)}
-              renderItem={({ item, index }) => (
-                <View style={styles.tableRow}>
-                  <Text style={styles.cell}>{index + 1}</Text>
-                  <Text style={styles.cell}>{item.emp_name}</Text>
-                  <Text style={styles.cell}>{item.department}</Text>
-                  <Text style={[styles.cell, { maxWidth: 250 }]} numberOfLines={2}>
-                    {item.description}
-                  </Text>
-                  <Text style={styles.cell}>₹{item.amount}</Text>
-                  <Text style={styles.cell}>
-                    {item.amount_used ? `₹${item.amount_used}` : "-"}
-                  </Text>
-                  <Text style={styles.cell}>
-                    {new Date(item.created_at).toLocaleDateString()}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setSelectedRecord(item);
-                      setModalVisible(true);
-                    }}
-                  >
-                    <Ionicons name="eye-outline" size={20} color="#1e90ff" />
-                  </TouchableOpacity>
-                </View>
-              )}
-            />
-          </View>
-        </ScrollView>
-
-        {/* Modal */}
-        <Modal visible={modalVisible} transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalBox}>
-              {selectedRecord && (
-                <>
-                  <Text style={styles.modalTitle}>{selectedRecord.emp_name}</Text>
-                  <Text>Department: {selectedRecord.department}</Text>
-                  <Text>Email: {selectedRecord.emp_email}</Text>
-                  <Text>Description: {selectedRecord.description}</Text>
-                  <Text>Amount: ₹{selectedRecord.amount}</Text>
-                  <Text>
-                    Used: {selectedRecord.amount_used ? `₹${selectedRecord.amount_used}` : "-"}
-                  </Text>
-                  <Text>
-                    Date: {new Date(selectedRecord.created_at).toLocaleDateString()}
-                  </Text>
-
-                  <TouchableOpacity
-                    style={styles.closeBtn}
-                    onPress={() => setModalVisible(false)}
-                  >
-                    <Text style={styles.closeBtnText}>Close</Text>
-                  </TouchableOpacity>
-                </>
-              )}
+            <View style={styles.pickerWrapper}>
+              <Picker 
+                selectedValue={timeFilter} 
+                onValueChange={(val) => { setTimeFilter(val); setFilterDate(null); }}
+                style={styles.nativePicker}
+              >
+                <Picker.Item label="All Time" value={null} />
+                <Picker.Item label="Today" value="daily" />
+                <Picker.Item label="This Week" value="weekly" />
+                <Picker.Item label="This Month" value="monthly" />
+              </Picker>
             </View>
+
+            <TouchableOpacity style={styles.resetBtn} onPress={resetFilter}>
+              <Text style={styles.resetText}>Clear Filters</Text>
+            </TouchableOpacity>
           </View>
-        </Modal>
+        </View>
+
+        {/* Table Section */}
+        <View style={styles.tableCard}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+            <View>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.hCell, { width: 60 }]}>S.No</Text>
+                <Text style={[styles.hCell, { width: 180 }]}>Employee</Text>
+                <Text style={[styles.hCell, { width: 150 }]}>Department</Text>
+                <Text style={[styles.hCell, { width: 250 }]}>Description</Text>
+                <Text style={[styles.hCell, { width: 120 }]}>Total Amt</Text>
+                <Text style={[styles.hCell, { width: 120 }]}>Claimed</Text>
+                <Text style={[styles.hCell, { width: 120 }]}>Date</Text>
+                <Text style={[styles.hCell, { width: 80, textAlign: 'center' }]}>View</Text>
+              </View>
+
+              <FlatList
+                data={filteredData}
+                keyExtractor={(item, index) => index.toString()}
+                renderItem={({ item, index }) => (
+                  <View style={[styles.tableRow, index % 2 === 0 && { backgroundColor: '#fcfcfc' }]}>
+                    <Text style={[styles.rCell, { width: 60 }]}>#{index + 1}</Text>
+                    <Text style={[styles.rCell, { width: 180, fontWeight: '600' }]}>{item.emp_name}</Text>
+                    <Text style={[styles.rCell, { width: 150 }]}>{item.department}</Text>
+                    <Text style={[styles.rCell, { width: 250 }]} numberOfLines={1}>{item.description}</Text>
+                    <Text style={[styles.rCell, { width: 120, color: '#64748b' }]}>₹{item.amount}</Text>
+                    <Text style={[styles.rCell, { width: 120, color: '#10b981', fontWeight: '700' }]}>₹{item.amount_used || 0}</Text>
+                    <Text style={[styles.rCell, { width: 120 }]}>{new Date(item.created_at).toLocaleDateString()}</Text>
+                    <TouchableOpacity 
+                      style={[styles.rCell, { width: 80, alignItems: 'center' }]} 
+                      onPress={() => { setSelectedRecord(item); setModalVisible(true); }}
+                    >
+                      <View style={styles.viewIcon}><Feather name="eye" size={16} color="#2563eb" /></View>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              />
+            </View>
+          </ScrollView>
+        </View>
       </View>
+
+      {/* Modal for Detail View */}
+      <Modal visible={modalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Transaction Details</Text>
+                <TouchableOpacity onPress={() => setModalVisible(false)}><Feather name="x" size={24} color="#64748b" /></TouchableOpacity>
+            </View>
+            {selectedRecord && (
+              <View style={styles.modalBody}>
+                <DetailRow label="Employee" value={selectedRecord.emp_name} />
+                <DetailRow label="Department" value={selectedRecord.department} />
+                <DetailRow label="Email" value={selectedRecord.emp_email} />
+                <DetailRow label="Total Amount" value={`₹${selectedRecord.amount}`} />
+                <DetailRow label="Used Amount" value={`₹${selectedRecord.amount_used || 0}`} />
+                <DetailRow label="Date" value={new Date(selectedRecord.created_at).toLocaleString()} />
+                <Text style={styles.detailLabel}>Description:</Text>
+                <Text style={styles.detailTextDesc}>{selectedRecord.description}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-/* ---------------- Styles ---------------- */
+const DetailRow = ({ label, value }) => (
+  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', paddingBottom: 8 }}>
+    <Text style={styles.detailLabel}>{label}</Text>
+    <Text style={styles.detailValue}>{value}</Text>
+  </View>
+);
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: "#f4f6f8", alignItems: "center" },
-  container: { flex: 1, width: "100%", maxWidth: 1200, padding: 16 },
+  webWrapper: { flex: 1, flexDirection: "row", backgroundColor: "#F8FAFC" },
+  sidebar: { width: 260, backgroundColor: "#fff", borderRightWidth: 1, borderRightColor: "#e2e8f0", padding: 24 },
+  sidebarBrand: { flexDirection: "row", alignItems: "center", marginBottom: 40 },
+  brandIcon: { width: 38, height: 38, backgroundColor: "#2563EB", borderRadius: 8, justifyContent: "center", alignItems: "center", marginRight: 12 },
+  brandLetter: { color: "#fff", fontWeight: "bold", fontSize: 20 },
+  brandTitle: { fontSize: 18, fontWeight: "800", color: "#1e293b" },
+  brandSub: { fontSize: 12, color: "#64748b", marginTop: -4 },
+  backBtn: {
+  width: 40,
+  height: 40,
+  borderRadius: 20,
+  backgroundColor: "#f1f5f9",
+  justifyContent: "center",
+  alignItems: "center",
+  borderWidth: 1,
+  borderColor: "#e2e8f0",
+},
 
-  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
+  sidebarMenu: { flex: 1 },
+  sidebarItem: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 10, marginBottom: 6 },
+  sidebarItemActive: { backgroundColor: "#2563EB" },
+  sidebarLabel: { marginLeft: 12, fontSize: 15, color: "#64748b", fontWeight: "600" },
+  sidebarLabelActive: { color: "#fff" },
+  logoutBtn: { flexDirection: "row", alignItems: "center", padding: 12, marginTop: 20 },
+  logoutText: { marginLeft: 12, color: "#ef4444", fontWeight: "700" },
 
-  headerRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
-  title: { fontSize: 22, fontWeight: "bold", marginLeft: 12 },
+  mainContent: { flex: 1, padding: 32 },
+  contentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+  mainTitle: { fontSize: 28, fontWeight: "800", color: "#1e293b" },
+  subTitle: { color: "#64748b", marginTop: 4 },
+  exportBtn: { backgroundColor: '#2563eb', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 },
+  btnText: { color: '#fff', fontWeight: '600', marginLeft: 8 },
 
-  filterRow: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 12 },
+  filterCard: { backgroundColor: '#fff', padding: 16, borderRadius: 12, marginBottom: 24, borderWidth: 1, borderColor: '#e2e8f0' },
+  filterGroup: { flexDirection: 'row', alignItems: 'center' },
+webDateInput: {
+  padding: 8,
+  borderRadius: 6,
+  borderWidth: 1,
+  borderColor: "#e2e8f0",
+  color: "#1e293b",
+  marginRight: 15,
+  outlineStyle: "none",
+},
+  pickerWrapper: { width: 180, height: 40, backgroundColor: '#f8fafc', borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#e2e8f0', marginRight: 15 },
+  nativePicker: { height: 40, width: '100%' },
+  resetBtn: { paddingHorizontal: 15 },
+  resetText: { color: '#ef4444', fontWeight: '600' },
 
-  filterBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#ccc",
-  },
+  tableCard: { backgroundColor: "#fff", borderRadius: 16, borderWidth: 1, borderColor: "#e2e8f0", overflow: 'hidden', flex: 1 },
+  tableHeader: { flexDirection: "row", backgroundColor: "#f8fafc", paddingVertical: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#e2e8f0" },
+  hCell: { fontSize: 13, fontWeight: "700", color: "#64748b", textTransform: "uppercase" },
+  tableRow: { flexDirection: "row", paddingVertical: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#f1f5f9", alignItems: "center" },
+  rCell: { fontSize: 14, color: "#334155" },
+  viewIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#eff6ff', justifyContent: 'center', alignItems: 'center' },
 
-  dropdown: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    paddingHorizontal: 8,
-    height: 42,
-  },
-
-  picker: {
-    width: 160,
-    height: 80,
-  },
-
-  resetBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#6c757d",
-    paddingHorizontal: 12,
-    borderRadius: 20,
-  },
-
-  exportBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#1e90ff",
-    paddingHorizontal: 12,
-    borderRadius: 20,
-  },
-
-  resetText: { color: "#fff", marginLeft: 6 },
-
-  tableHeader: { backgroundColor: "#e9ecef" },
-  tableRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#ddd",
-  },
-  cell: { padding: 10, minWidth: 120, fontSize: 13 },
-  headerCell: { fontWeight: "bold" },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalBox: {
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 12,
-    width: "90%",
-    maxWidth: 400,
-  },
-  modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 10 },
-
-  closeBtn: {
-    marginTop: 16,
-    backgroundColor: "#1e90ff",
-    padding: 10,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  closeBtnText: { color: "#fff", fontWeight: "bold" },
+  loader: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: '#fff' },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(15, 23, 42, 0.5)", justifyContent: "center", alignItems: "center" },
+  modalBox: { backgroundColor: "#fff", width: 500, borderRadius: 16, padding: 24, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: '#1e293b' },
+  detailLabel: { color: '#64748b', fontWeight: '600', fontSize: 13 },
+  detailValue: { color: '#1e293b', fontWeight: '700', fontSize: 14 },
+  detailTextDesc: { color: '#334155', marginTop: 8, lineHeight: 20 }
 });

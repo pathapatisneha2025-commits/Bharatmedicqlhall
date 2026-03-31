@@ -9,8 +9,10 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+   useWindowDimensions,
+  Platform,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons,MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 
 const DepartmentChartScreen = () => {
@@ -19,6 +21,7 @@ const DepartmentChartScreen = () => {
   const [expandedDept, setExpandedDept] = useState({});
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
+          const [loadingCount, setLoadingCount] = useState(0);
 
   const [summary, setSummary] = useState({
     total: 0,
@@ -37,6 +40,34 @@ const DepartmentChartScreen = () => {
     rejected: "#c0392b",
     pending: "#f39c12",
   };
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+      const MAX_WIDTH = 420;
+      const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
+      const showAlert = (title, message, buttons) => {
+        if (Platform.OS === "web") {
+          if (buttons && buttons.length > 1) {
+            const confirmed = window.confirm(`${title}\n\n${message}`);
+            if (confirmed) {
+              const okBtn = buttons.find(b => b.style !== "cancel");
+              okBtn?.onPress?.();
+            }
+          } else {
+            window.alert(`${title}\n\n${message}`);
+          }
+        } else {
+          Alert.alert(title, message, buttons);
+        }
+      };  
+    
+      useEffect(() => {
+                let interval;
+                if (loading) {
+                  setLoadingCount(0);
+                  interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+                } else clearInterval(interval);
+                return () => clearInterval(interval);
+              }, [loading]);
+  
 
 const fetchTodayAdminDepartmentData = async () => {
     try {
@@ -161,37 +192,37 @@ const fetchTodayAdminDepartmentData = async () => {
     }));
   };
 
-  const renderEmployee = ({ item }) => (
-    <View
-      style={[
-        styles.employeeCard,
-        { backgroundColor: statusColors[item.status] || "#95a5a6" },
-      ]}
-    >
-      <Ionicons name="person" size={22} color="#fff" />
-      <View style={{ marginLeft: 12, flex: 1 }}>
-        <Text style={styles.empName}>{item.name}</Text>
+ const renderEmployee = ({ item }) => (
+    <View style={styles.employeeCard}>
+      <View style={[styles.statusIndicator, { backgroundColor: statusColors[item.status] || "#95a5a6" }]} />
+      <View style={styles.empInfo}>
+        <View style={styles.empHeaderRow}>
+          <Text style={styles.empName}>{item.name}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: (statusColors[item.status] || "#95a5a6") + "20" }]}>
+            <Text style={[styles.statusBadgeText, { color: statusColors[item.status] || "#95a5a6" }]}>{item.status}</Text>
+          </View>
+        </View>
+        <Text style={styles.empRole}>{item.role || "Staff Member"}</Text>
         <Text style={styles.empEmail}>{item.email}</Text>
-        <Text style={styles.empRole}>Role: {item.role || "N/A"}</Text>
-        <Text style={styles.empStatus}>{item.status}</Text>
       </View>
     </View>
   );
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+      {/* Header */}
+      <View style={styles.headerArea}>
+        <TouchableOpacity style={styles.circleBack} onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={22} color="#1e293b" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Department Chart</Text>
+        <View>
+          <Text style={styles.headerTitle}>Staff Directory</Text>
+          <Text style={styles.headerSub}>Departmental Attendance Chart</Text>
+        </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollView}>
-        {/* Tabs */}
+      <ScrollView contentContainerStyle={styles.scrollView} showsVerticalScrollIndicator={false}>
+        {/* Modern Segmented Control */}
         <View style={styles.tabContainer}>
           {["Admin View", "Department View"].map((tab) => (
             <TouchableOpacity
@@ -199,194 +230,175 @@ const fetchTodayAdminDepartmentData = async () => {
               style={[styles.tab, activeTab === tab && styles.activeTab]}
               onPress={() => setActiveTab(tab)}
             >
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === tab && styles.activeTabText,
-                ]}
-              >
-                {tab}
-              </Text>
+              <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>{tab}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
         {activeTab === "Department View" ? (
-          <>
+          <View style={styles.summaryWrapper}>
             {loading ? (
-              <ActivityIndicator
-                size="large"
-                color="#1E88E5"
-                style={{ marginTop: 30 }}
-              />
+              <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 40 }} />
             ) : (
-              <View style={styles.summaryContainer}>
-                {Object.entries(summary).map(([key, value]) => {
-                  let color = "#2980b9";
-                  if (key === "present") color = "#27ae60";
-                  else if (key === "onLeave") color = "#f1c40f";
-                  else if (key === "onBreak") color = "#3498db";
-                  else if (key === "absent") color = "#c0392b";
-
-                  return (
-                    <View key={key} style={styles.summaryCard}>
-                      <Text style={[styles.summaryTitle, { color }]}>
-                        {key.charAt(0).toUpperCase() + key.slice(1)}
-                      </Text>
-                      <Text style={styles.summaryValue}>{value}</Text>
-                    </View>
-                  );
-                })}
+              <View style={styles.summaryGrid}>
+                {Object.entries(summary).map(([key, value]) => (
+                  <View key={key} style={styles.summaryCard}>
+                    <Text style={styles.summaryValue}>{value}</Text>
+                    <Text style={styles.summaryLabel}>{key.toUpperCase()}</Text>
+                  </View>
+                ))}
               </View>
             )}
-          </>
+          </View>
         ) : (
-          <>
-            <View style={styles.legendContainer}>
-              {Object.keys(statusColors).map((status) => (
+          <View style={styles.adminWrapper}>
+            {/* Status Legend */}
+            <View style={styles.legendCard}>
+              {Object.keys(statusColors).slice(0, 4).map((status) => (
                 <View key={status} style={styles.legendItem}>
-                  <View
-                    style={[styles.legendDot, { backgroundColor: statusColors[status] }]}
-                  />
+                  <View style={[styles.legendDot, { backgroundColor: statusColors[status] }]} />
                   <Text style={styles.legendText}>{status}</Text>
                 </View>
               ))}
             </View>
 
-            <View style={styles.deptContainer}>
-              <Text style={styles.deptHeader}>All Departments</Text>
+            <Text style={styles.sectionTitle}>All Departments</Text>
 
-              {loading ? (
-                <ActivityIndicator
-                  size="large"
-                  color="#1E88E5"
-                  style={{ marginTop: 30 }}
-                />
-              ) : departments.length === 0 ? (
-                <Text style={styles.noDeptText}>No departments found.</Text>
-              ) : (
-                departments.map((dept) => (
-                  <View key={dept.name} style={styles.deptSection}>
-                    <TouchableOpacity
-                      style={styles.deptRow}
-                      onPress={() => toggleExpand(dept.name)}
-                    >
-                      <Ionicons
-                        name={
-                          expandedDept[dept.name]
-                            ? "chevron-down"
-                            : "chevron-forward"
-                        }
-                        size={18}
-                        color="#333"
-                      />
-                      <Text style={styles.deptName}>
-                        {dept.name} ({dept.employees.length})
-                      </Text>
-                    </TouchableOpacity>
+            {loading ? (
+              <View style={styles.loaderCenter}>
+                <ActivityIndicator size="large" color="#2563eb" />
+                <Text style={styles.loaderText}>Syncing Depts... {loadingCount}s</Text>
+              </View>
+            ) : departments.length === 0 ? (
+              <Text style={styles.emptyText}>No department data available.</Text>
+            ) : (
+              departments.map((dept) => (
+                <View key={dept.name} style={styles.deptCard}>
+                  <TouchableOpacity style={styles.deptHeader} onPress={() => toggleExpand(dept.name)}>
+                    <View style={styles.deptTitleLeft}>
+                      <MaterialCommunityIcons name="office-building" size={20} color="#64748b" />
+                      <Text style={styles.deptNameText}>{dept.name}</Text>
+                      <View style={styles.countBadge}><Text style={styles.countText}>{dept.employees.length}</Text></View>
+                    </View>
+                    <Ionicons
+                      name={expandedDept[dept.name] ? "chevron-up" : "chevron-down"}
+                      size={20}
+                      color="#94a3b8"
+                    />
+                  </TouchableOpacity>
 
-                    {expandedDept[dept.name] && dept.employees.length > 0 && (
-                      <FlatList
-                        data={dept.employees}
-                        renderItem={renderEmployee}
-                        keyExtractor={(item, idx) => idx.toString()}
-                      />
-                    )}
-                  </View>
-                ))
-              )}
-            </View>
-          </>
+                  {expandedDept[dept.name] && (
+                    <View style={styles.deptContent}>
+                      {dept.employees.map((emp, idx) => (
+                        <View key={idx}>{renderEmployee({ item: emp })}</View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              ))
+            )}
+          </View>
         )}
       </ScrollView>
     </SafeAreaView>
   );
 };
 
-export default DepartmentChartScreen;
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f0f3f7" },
-  header: {
+  container: { flex: 1, backgroundColor: "#F8FAFC" },
+  headerArea: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1E88E5",
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    borderRadius: 10,
-    margin: 10,
-    elevation: 5,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "ios" ? 10 : 40,
+    paddingBottom: 20,
+    gap: 15,
   },
-  backButton: {
-    padding: 6,
-    borderRadius: 50,
-    backgroundColor: "#1565C0",
-    marginRight: 10,
+  circleBack: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
   },
-  headerTitle: { fontSize: 20, fontWeight: "700", color: "#fff" },
-  scrollView: { paddingBottom: 40 },
+  headerTitle: { fontSize: 24, fontWeight: "800", color: "#1e293b" },
+  headerSub: { fontSize: 13, color: "#64748b", fontWeight: "500" },
+  scrollView: { paddingHorizontal: 20, paddingBottom: 40 },
 
   tabContainer: {
     flexDirection: "row",
-    marginHorizontal: 15,
-    backgroundColor: "#dfe6e9",
+    backgroundColor: "#e2e8f0",
     borderRadius: 12,
-    overflow: "hidden",
+    padding: 4,
+    marginBottom: 20,
+  },
+  tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 10 },
+  activeTab: { backgroundColor: "#fff", elevation: 2 },
+  tabText: { fontSize: 14, color: "#64748b", fontWeight: "600" },
+  activeTabText: { color: "#1e293b", fontWeight: "700" },
+
+  summaryGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  summaryCard: {
+    width: "48%",
+    backgroundColor: "#fff",
+    padding: 20,
+    borderRadius: 16,
     marginBottom: 15,
     elevation: 2,
+    borderWidth: 1,
+    borderColor: "#f1f5f9",
+    alignItems: "center",
   },
-  tab: { flex: 1, padding: 12, alignItems: "center" },
-  activeTab: { backgroundColor: "#1E88E5" },
-  tabText: { fontSize: 14, color: "#2d3436" },
-  activeTabText: { color: "#fff", fontWeight: "700" },
+  summaryValue: { fontSize: 24, fontWeight: "800", color: "#1e293b" },
+  summaryLabel: { fontSize: 10, color: "#94a3b8", fontWeight: "700", marginTop: 5, letterSpacing: 1 },
 
-  summaryContainer: { marginTop: 20, marginHorizontal: 15 },
-  summaryCard: {
+  legendCard: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     backgroundColor: "#fff",
-    paddingVertical: 20,
-    borderRadius: 14,
-    marginVertical: 6,
-    alignItems: "center",
-    elevation: 3,
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#f1f5f9",
   },
-  summaryTitle: { fontSize: 16, fontWeight: "600" },
-  summaryValue: { fontSize: 22, fontWeight: "700", color: "#2d3436", marginTop: 4 },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { fontSize: 11, color: "#64748b", fontWeight: "600" },
 
-  legendContainer: {
-    flexDirection: "row",
-    margin: 15,
-    flexWrap: "wrap",
-  },
-  legendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginRight: 15,
-    marginBottom: 6,
-  },
-  legendDot: { width: 14, height: 14, borderRadius: 7, marginRight: 6 },
-  legendText: { fontSize: 13, color: "#333", fontWeight: "500" },
+  sectionTitle: { fontSize: 18, fontWeight: "700", color: "#1e293b", marginBottom: 15 },
+  deptCard: { backgroundColor: "#fff", borderRadius: 16, marginBottom: 12, overflow: "hidden", borderWidth: 1, borderColor: "#f1f5f9" },
+  deptHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16 },
+  deptTitleLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
+  deptNameText: { fontSize: 16, fontWeight: "700", color: "#334155" },
+  countBadge: { backgroundColor: "#f1f5f9", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  countText: { fontSize: 12, fontWeight: "700", color: "#64748b" },
 
-  deptContainer: { marginHorizontal: 15, marginBottom: 40 },
-  deptHeader: { fontSize: 18, fontWeight: "700", marginVertical: 10, color: "#2d3436" },
-  deptSection: { marginBottom: 10, backgroundColor: "#fff", borderRadius: 12, padding: 8, elevation: 2 },
-  deptRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 6,
-  },
-  deptName: { fontSize: 16, marginLeft: 8, color: "#2d3436", fontWeight: "600" },
-  noDeptText: { textAlign: "center", color: "#777", marginTop: 20, fontSize: 15 },
-
+  deptContent: { paddingHorizontal: 16, paddingBottom: 16, borderTopWidth: 1, borderTopColor: "#f8fafc" },
   employeeCard: {
     flexDirection: "row",
-    alignItems: "center",
-    padding: 14,
-    borderRadius: 12,
-    marginVertical: 5,
-    elevation: 2,
+    backgroundColor: "#fff",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
   },
-  empName: { fontSize: 15, color: "#fff", fontWeight: "700" },
-  empEmail: { fontSize: 13, color: "#f0f0f0", marginTop: 2 },
-  empRole: { fontSize: 13, color: "#f0f0f0", marginTop: 2 },
-  empStatus: { fontSize: 13, color: "#fff", marginTop: 2, fontStyle: "italic" },
+  statusIndicator: { width: 4, height: "100%", borderRadius: 2, marginRight: 12 },
+  empInfo: { flex: 1 },
+  empHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  empName: { fontSize: 15, fontWeight: "700", color: "#1e293b" },
+  empRole: { fontSize: 12, color: "#64748b", fontWeight: "500", marginTop: 2 },
+  empEmail: { fontSize: 11, color: "#94a3b8", marginTop: 1 },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  statusBadgeText: { fontSize: 10, fontWeight: "800", textTransform: "uppercase" },
+
+  loaderCenter: { alignItems: "center", padding: 40 },
+  loaderText: { marginTop: 10, color: "#64748b", fontSize: 13 },
+  emptyText: { textAlign: "center", color: "#94a3b8", marginTop: 20 },
 });
+
+export default DepartmentChartScreen;

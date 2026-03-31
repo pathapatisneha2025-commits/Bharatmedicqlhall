@@ -7,12 +7,13 @@ import {
   SafeAreaView,
   ScrollView,
   ActivityIndicator,
+  Platform,
   Alert,
+  useWindowDimensions,
+  Image,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import ProductCard from "../components/ProductCard";
+import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from "@expo/vector-icons";
 import { getMedicineId, getPatientId } from "../utils/storage";
-import { LinearGradient } from "expo-linear-gradient";
 
 const MedicineDetailsScreen = ({ route, navigation }) => {
   const [medicine, setMedicine] = useState(null);
@@ -20,199 +21,178 @@ const MedicineDetailsScreen = ({ route, navigation }) => {
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
-  const [buyNowLoading, setBuyNowLoading] = useState(false);
   const [medicineId, setMedicineId] = useState(null);
+  
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const isDesktop = SCREEN_WIDTH > 1024;
+
+  const showAlert = (title, message) => {
+    if (Platform.OS === "web") window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
 
   useEffect(() => {
-    const fetchPatientId = async () => {
-      try {
-        const storedPatientId = await getPatientId();
-        setPatientId(route?.params?.patientId || storedPatientId || 1);
-      } catch {
-        setPatientId(route?.params?.patientId || 1);
-      }
+    const initData = async () => {
+      const sPatientId = await getPatientId();
+      const sMedId = await getMedicineId();
+      setPatientId(route?.params?.patientId || sPatientId || 1);
+      setMedicineId(route?.params?.medicineId || sMedId);
     };
-    fetchPatientId();
-  }, [route?.params?.patientId]);
+    initData();
+  }, [route?.params]);
 
   useEffect(() => {
-    const fetchMedicineId = async () => {
-      try {
-        const storedId = await getMedicineId();
-        setMedicineId(route?.params?.medicineId || storedId || null);
-      } catch {
-        setMedicineId(route?.params?.medicineId || null);
-      }
-    };
-    fetchMedicineId();
-  }, [route?.params?.medicineId]);
+    if (medicineId) fetchMedicineById();
+  }, [medicineId]);
 
   const fetchMedicineById = async () => {
-    if (!medicineId) return;
     try {
       setLoading(true);
       const res = await fetch(`https://hospitaldatabasemanagement.onrender.com/medicine/${medicineId}`);
       const data = await res.json();
       setMedicine(data);
     } catch (error) {
-      console.log(error);
-      Alert.alert("Error", "Failed to fetch medicine details");
+      showAlert("Error", "Failed to load product details");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchMedicineById();
-  }, [medicineId]);
-
-  const increaseQuantity = () => setQuantity(quantity + 1);
-  const decreaseQuantity = () => quantity > 1 && setQuantity(quantity - 1);
-
-  const addToCart = async () => {
+  const handleAction = async (type) => {
     if (!medicine) return;
+    setAddingToCart(true);
     try {
-      setAddingToCart(true);
-const cartData = {
-        patient_id: patientId,
-        name: medicine.name,
-        category: medicine.category,
-        manufacturer: medicine.manufacturer,
-        batch_number: medicine.batch_number,
-        pack_size: medicine.pack_size,
-        description: medicine.description,
-        price: medicine.price,
-        stock: medicine.stock,
-        quantity: quantity,
-        images: medicine.images,
-      };
-
       const res = await fetch("https://hospitaldatabasemanagement.onrender.com/cart/add", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(cartData),
+        body: JSON.stringify({
+          patient_id: patientId,
+          ...medicine,
+          quantity: quantity,
+        }),
       });
-      const result = await res.json();
       if (res.ok) {
-        Alert.alert("Success", result.message);
-        navigation.navigate("shoppingcart", { patientId });
-      } else {
-        Alert.alert("Error", result.message || "Failed to add to cart");
+        if (type === 'buy') navigation.navigate("shoppingcart", { patientId });
+        else showAlert("Success", "Added to your pharmacy cart");
       }
     } catch (error) {
-      console.log(error);
-      Alert.alert("Error", "Something went wrong while adding to cart");
+      showAlert("Error", "Server connection failed");
     } finally {
       setAddingToCart(false);
-    }
-  };
-
-  const handleBuyNow = async () => {
-    if (!medicine) return;
-    try {
-      setBuyNowLoading(true);
-const cartData = {
-        patient_id: patientId,
-        name: medicine.name,
-        category: medicine.category,
-        manufacturer: medicine.manufacturer,
-        batch_number: medicine.batch_number,
-        pack_size: medicine.pack_size,
-        description: medicine.description,
-        price: medicine.price,
-        stock: medicine.stock,
-        quantity: quantity,
-        images: medicine.images,
-      };
-
-      const res = await fetch("https://hospitaldatabasemanagement.onrender.com/cart/add", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(cartData),
-      });
-      const result = await res.json();
-      if (res.ok) navigation.navigate("shoppingcart", { patientId });
-      else Alert.alert("Error", result.message || "Failed to process Buy Now");
-    } catch (error) {
-      console.log(error);
-      Alert.alert("Error", "Something went wrong while buying");
-    } finally {
-      setBuyNowLoading(false);
     }
   };
 
   if (loading || !medicine) {
     return (
       <View style={styles.loader}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#002E5B" />
+        <Text style={{marginTop: 10, color: '#64748B'}}>Loading Product Specifications...</Text>
       </View>
     );
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
-        {/* Back Button */}
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={28} color="#007AFF" />
+      {/* Top Breadcrumb Nav */}
+      <View style={styles.breadcrumb}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backLink}>
+          <Ionicons name="chevron-back" size={18} color="#64748B" />
+          <Text style={styles.breadcrumbText}>Medicine Store</Text>
         </TouchableOpacity>
+        <Text style={styles.breadcrumbCurrent}> / {medicine.name}</Text>
+      </View>
 
-        {/* Medicine Carousel */}
-        <ProductCard medicine={medicine} />
-
-        {/* Medicine Name */}
-        <Text style={styles.medicineName}>{medicine.name}</Text>
-
-        {/* Info Section */}
-        <View style={styles.infoBox}>
-          {[
-            { label: "Category", value: medicine.category },
-            { label: "Manufacturer", value: medicine.manufacturer },
-            { label: "Batch Number", value: medicine.batch_number },
-            { label: "Pack Size", value: medicine.pack_size },
-            { label: "Description", value: medicine.description },
-            { label: "Stock", value: medicine.stock },
-          ].map((item, idx) => (
-            <Text key={idx} style={styles.infoText}>
-              <Text style={styles.label}>{item.label}: </Text>
-              {item.value}
-            </Text>
-          ))}
-        </View>
-
-        {/* Price & Quantity */}
-        <View style={styles.row}>
-          <Text style={styles.mrp}>₹{medicine.price}</Text>
-          <View style={styles.quantityBox}>
-            <TouchableOpacity style={styles.qtyBtn} onPress={decreaseQuantity}>
-              <Text style={styles.qtyText}>−</Text>
-            </TouchableOpacity>
-            <Text style={styles.qtyNumber}>{quantity}</Text>
-            <TouchableOpacity style={styles.qtyBtn} onPress={increaseQuantity}>
-              <Text style={styles.qtyText}>+</Text>
-            </TouchableOpacity>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <View style={[styles.mainWrapper, isDesktop && styles.desktopRow]}>
+          
+          {/* LEFT COLUMN: Visuals */}
+          <View style={isDesktop ? styles.leftCol : styles.mobileCol}>
+            <View style={styles.imageCard}>
+              {medicine.images?.[0] ? (
+                <Image source={{ uri: medicine.images[0] }} style={styles.mainImage} resizeMode="contain" />
+              ) : (
+                <MaterialCommunityIcons name="pill" size={120} color="#E2E8F0" />
+              )}
+            </View>
+            
+            <View style={styles.specGrid}>
+              <View style={styles.specItem}>
+                <Text style={styles.specLabel}>BATCH NO.</Text>
+                <Text style={styles.specValue}>{medicine.batch_number || 'N/A'}</Text>
+              </View>
+              <View style={styles.specItem}>
+                <Text style={styles.specLabel}>PACK SIZE</Text>
+                <Text style={styles.specValue}>{medicine.pack_size || 'N/A'}</Text>
+              </View>
+            </View>
           </View>
-        </View>
 
-        {/* Buttons */}
-        <View style={styles.btnRow}>
-          <TouchableOpacity disabled={addingToCart} onPress={addToCart} style={{ flex: 1 }}>
-            <LinearGradient
-              colors={["#4facfe", "#00f2fe"]}
-              style={styles.gradientBtn}
-            >
-              <Text style={styles.btnText}>{addingToCart ? "Adding..." : "Add to Cart"}</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+          {/* RIGHT COLUMN: Data & Actions */}
+          <View style={isDesktop ? styles.rightCol : styles.mobileCol}>
+            <View style={styles.headerInfo}>
+              <Text style={styles.brandName}>{medicine.manufacturer}</Text>
+              <Text style={styles.medTitle}>{medicine.name}</Text>
+              <View style={styles.tagRow}>
+                <View style={styles.categoryBadge}>
+                  <Text style={styles.categoryText}>{medicine.category}</Text>
+                </View>
+                {/* <View style={styles.stockBadge}>
+                  <View style={styles.dot} />
+                  <Text style={styles.stockText}>{medicine.stock} Units Available</Text>
+                </View> */}
+              </View>
+            </View>
 
-          <TouchableOpacity disabled={buyNowLoading} onPress={handleBuyNow} style={{ flex: 1 }}>
-            <LinearGradient
-              colors={["#43e97b", "#38f9d7"]}
-              style={styles.gradientBtn}
-            >
-              <Text style={styles.btnText}>{buyNowLoading ? "Processing..." : "Buy Now"}</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+            <View style={styles.descriptionBox}>
+              <Text style={styles.sectionTitle}>Description</Text>
+              <Text style={styles.descContent}>{medicine.description || "No clinical description provided for this product."}</Text>
+            </View>
+
+            {/* Price & Cart Workspace */}
+            <View style={styles.actionPanel}>
+              <View style={styles.priceSection}>
+                <Text style={styles.priceLabel}>Unit Price</Text>
+                <View style={styles.priceRow}>
+                  <Text style={styles.currency}>₹</Text>
+                  <Text style={styles.priceAmount}>{medicine.price}</Text>
+                  <Text style={styles.taxNote}>+ GST (Incl.)</Text>
+                </View>
+              </View>
+
+              <View style={styles.quantitySection}>
+                <Text style={styles.priceLabel}>Adjust Quantity</Text>
+                <View style={styles.qtyControl}>
+                  <TouchableOpacity onPress={() => quantity > 1 && setQuantity(q => q - 1)} style={styles.qtyBtn}>
+                    <Ionicons name="remove" size={20} color="#1E293B" />
+                  </TouchableOpacity>
+                  <Text style={styles.qtyInput}>{quantity}</Text>
+                  <TouchableOpacity onPress={() => setQuantity(q => q + 1)} style={styles.qtyBtn}>
+                    <Ionicons name="add" size={20} color="#1E293B" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.buttonStack}>
+                <TouchableOpacity 
+                  style={styles.cartBtn} 
+                  onPress={() => handleAction('cart')}
+                  disabled={addingToCart}
+                >
+                  <Ionicons name="cart-outline" size={20} color="#002E5B" />
+                  <Text style={styles.cartBtnText}>Add to Pharmacy Cart</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.buyBtn}
+                  onPress={() => handleAction('buy')}
+                  disabled={addingToCart}
+                >
+                  <Text style={styles.buyBtnText}>Buy Now</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -222,42 +202,103 @@ const cartData = {
 export default MedicineDetailsScreen;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f0f6ff", padding: 10 },
+  container: { flex: 1, backgroundColor: "#F8FAFC" },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
-  backBtn: { alignSelf: "flex-start", marginBottom: 10 },
-  medicineName: { fontSize: 22, fontWeight: "700", textAlign: "center", marginBottom: 15 },
-  infoBox: {
-    backgroundColor: "#fff",
-    padding: 15,
+  
+  breadcrumb: { flexDirection: 'row', alignItems: 'center', padding: 20, backgroundColor: '#fff' },
+  backLink: { flexDirection: 'row', alignItems: 'center' },
+  breadcrumbText: { color: '#64748B', fontSize: 14 },
+  breadcrumbCurrent: { color: '#1E293B', fontSize: 14, fontWeight: '600' },
+
+  mainWrapper: { padding: 20, gap: 30 },
+  desktopRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  leftCol: { flex: 1, maxWidth: 450 },
+  rightCol: { flex: 1.5 },
+  mobileCol: { width: '100%' },
+
+  imageCard: { 
+    backgroundColor: '#fff', 
+    borderRadius: 20, 
+    height: 350, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOpacity: 0.02,
+    elevation: 2
+  },
+  mainImage: { width: '80%', height: '80%' },
+
+  specGrid: { flexDirection: 'row', gap: 15, marginTop: 20 },
+  specItem: { flex: 1, backgroundColor: '#fff', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0' },
+  specLabel: { fontSize: 10, color: '#94A3B8', fontWeight: '800', marginBottom: 5 },
+  specValue: { fontSize: 14, color: '#1E293B', fontWeight: '700' },
+
+  headerInfo: { marginBottom: 25 },
+  brandName: { color: '#3B82F6', fontWeight: '700', fontSize: 14, textTransform: 'uppercase', marginBottom: 5 },
+  medTitle: { fontSize: 32, fontWeight: '800', color: '#002E5B', marginBottom: 15 },
+  tagRow: { flexDirection: 'row', gap: 10 },
+  categoryBadge: { backgroundColor: '#E0F2FE', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  categoryText: { color: '#0369A1', fontWeight: '700', fontSize: 12 },
+  stockBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0FDF4', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#22C55E', marginRight: 8 },
+  stockText: { color: '#166534', fontWeight: '700', fontSize: 12 },
+
+  descriptionBox: { marginBottom: 30 },
+  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#1E293B', marginBottom: 10 },
+  descContent: { fontSize: 15, color: '#64748B', lineHeight: 24 },
+
+  actionPanel: { 
+    backgroundColor: '#fff', 
+    padding: 25, 
+    borderRadius: 20, 
+    borderWidth: 1, 
+    borderColor: '#E2E8F0',
+    shadowColor: '#002E5B',
+    shadowOpacity: 0.05,
+    elevation: 4
+  },
+  priceSection: { marginBottom: 20 },
+  priceLabel: { fontSize: 13, fontWeight: '600', color: '#64748B', marginBottom: 8 },
+  priceRow: { flexDirection: 'row', alignItems: 'center' },
+  currency: { fontSize: 20, fontWeight: '700', color: '#1E293B', marginRight: 4 },
+  priceAmount: { fontSize: 32, fontWeight: '800', color: '#1E293B' },
+  taxNote: { fontSize: 12, color: '#94A3B8', marginLeft: 10, fontWeight: '500' },
+
+  quantitySection: { marginBottom: 25 },
+  qtyControl: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#F8FAFC', 
+    width: 140, 
+    justifyContent: 'space-between',
     borderRadius: 12,
-    marginBottom: 15,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 6,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 5
   },
-  infoText: { fontSize: 15, marginVertical: 3, color: "#333" },
-  label: { fontWeight: "600", color: "#007AFF" },
-  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 },
-  mrp: { fontSize: 20, fontWeight: "bold", color: "#28a745" },
-  quantityBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    elevation: 2,
+  qtyBtn: { width: 35, height: 35, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff', borderRadius: 8 },
+  qtyInput: { fontSize: 16, fontWeight: '700', color: '#1E293B' },
+
+  buttonStack: { gap: 12 },
+  cartBtn: { 
+    flexDirection: 'row', 
+    height: 55, 
+    borderRadius: 12, 
+    borderWidth: 2, 
+    borderColor: '#002E5B', 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    gap: 10
   },
-  qtyBtn: { backgroundColor: "#e0e0e0", borderRadius: 6, paddingHorizontal: 12, paddingVertical: 6 },
-  qtyText: { fontSize: 20, fontWeight: "bold", color: "#555" },
-  qtyNumber: { fontSize: 16, marginHorizontal: 10, fontWeight: "600", color: "#007AFF" },
-  btnRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 10, gap: 10 },
-  gradientBtn: { borderRadius: 10, paddingVertical: 14, alignItems: "center" },
-  btnText: { color: "#000", fontSize: 16, fontWeight: "600" },
+  cartBtnText: { color: '#002E5B', fontWeight: '700', fontSize: 16 },
+  buyBtn: { 
+    height: 55, 
+    borderRadius: 12, 
+    backgroundColor: '#002E5B', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  buyBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 }
 });

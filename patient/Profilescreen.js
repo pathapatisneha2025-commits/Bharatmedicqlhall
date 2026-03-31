@@ -1,10 +1,10 @@
-// ProfileScreen.js
 import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  Image,
   TouchableOpacity,
   TextInput,
   Modal,
@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Icon from "react-native-vector-icons/Ionicons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const BASE_URL = "https://hospitaldatabasemanagement.onrender.com/patient";
@@ -22,6 +22,9 @@ const ProfileScreen = ({ navigation }) => {
   const [patient, setPatient] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  
   const [editData, setEditData] = useState({
     first_name: "",
     last_name: "",
@@ -31,58 +34,43 @@ const ProfileScreen = ({ navigation }) => {
     password: "",
     confirm_password: "",
   });
-const [showPassword, setShowPassword] = useState(false);
-const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // 🔑 Get patientId from AsyncStorage
-  const getPatientId = async () => {
-    return await AsyncStorage.getItem("patientId");
+  const showAlert = (title, message) => {
+    if (Platform.OS === "web") window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
   };
 
-  // 📡 Fetch patient profile by ID
+  const getPatientId = async () => await AsyncStorage.getItem("patientId");
+
   const fetchPatientProfile = async () => {
     try {
       setLoading(true);
       const patientId = await getPatientId();
-
       if (!patientId) {
-        Alert.alert("Error", "No patient ID found.");
-        setLoading(false);
+        showAlert("Error", "No patient ID found.");
         return;
       }
-
       const response = await fetch(`${BASE_URL}/${patientId}`);
       const data = await response.json();
-
-      if (response.ok && data.patient) {
-        setPatient(data.patient);
-      } else {
-        Alert.alert("Error", data.message || "Failed to fetch profile.");
-      }
+      if (response.ok && data.patient) setPatient(data.patient);
     } catch (error) {
-      console.error("Fetch Profile Error:", error);
-      Alert.alert("Error", "Something went wrong. Please try again.");
+      console.error("Fetch Error:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchPatientProfile();
-  }, []);
+  useEffect(() => { fetchPatientProfile(); }, []);
 
-  // 🔐 Logout
   const handleLogout = async () => {
     try {
       await AsyncStorage.removeItem("patientId");
       navigation.replace("SelectRole");
     } catch (error) {
-      console.error("Logout Error:", error);
-      Alert.alert("Error", "Failed to logout. Please try again.");
+      showAlert("Error", "Failed to logout.");
     }
   };
 
-  // ✏️ Open edit modal
   const openEditModal = () => {
     setEditData({
       first_name: patient?.first_name || "",
@@ -96,381 +84,236 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     setEditModalVisible(true);
   };
 
-
-// ✅ Update profile via API
-const handleUpdateProfile = async () => {
-  if (!editData.first_name || !editData.last_name || !editData.email) {
-    Alert.alert("Error", "Please fill all required fields.");
-    return;
-  }
-  if (editData.password && editData.password !== editData.confirm_password) {
-    Alert.alert("Error", "Passwords do not match.");
-    return;
-  }
-
-  try {
-    const patientId = await getPatientId();
-    if (!patientId) {
-      Alert.alert("Error", "No patient ID found.");
+  const handleUpdateProfile = async () => {
+    if (!editData.first_name || !editData.last_name || !editData.email) {
+      showAlert("Error", "Please fill required fields.");
+      return;
+    }
+    if (editData.password && editData.password !== editData.confirm_password) {
+      showAlert("Error", "Passwords do not match.");
       return;
     }
 
-    const response = await fetch(`${BASE_URL}/update/${patientId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(editData),
-    });
-
-    const data = await response.json();
-
-    if (response.ok) {
-      setPatient(data.patient); // Update local state with API response
-      setEditModalVisible(false);
-      Alert.alert("Success", "Profile updated successfully!");
-    } else {
-      Alert.alert("Error", data.message || "Failed to update profile.");
+    try {
+      const patientId = await getPatientId();
+      const response = await fetch(`${BASE_URL}/update/${patientId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editData),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setPatient(data.patient);
+        setEditModalVisible(false);
+        showAlert("Success", "Profile updated successfully!");
+      }
+    } catch (error) {
+      showAlert("Error", "Update failed.");
     }
-  } catch (error) {
-    console.error("Update Profile Error:", error);
-    Alert.alert("Error", "Something went wrong. Please try again.");
-  }
-};
+  };
 
+  const SidebarItem = ({ icon, label, screen, active = false }) => (
+    <TouchableOpacity
+      style={[styles.sidebarItem, active && styles.sidebarItemActive]}
+      onPress={() => navigation.navigate(screen)}
+    >
+      <Icon name={icon} size={22} color={active ? "#fff" : "#BFDBFE"} />
+      <Text style={[styles.sidebarLabel, active && styles.sidebarLabelActive]}>{label}</Text>
+    </TouchableOpacity>
+  );
 
-  // 🌀 Loader while fetching
-  if (loading) {
-    return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#007BFF" />
-      </View>
-    );
-  }
-
-  if (!patient) {
-    return (
-      <View style={styles.loaderContainer}>
-        <Text style={{ color: "red" }}>No patient data found</Text>
-      </View>
-    );
-  }
+  if (loading) return <View style={styles.loader}><ActivityIndicator size="large" color="#3B82F6" /></View>;
 
   return (
-    <ScrollView
-      style={styles.container}
-contentContainerStyle={{ paddingBottom: Platform.OS === "ios" ? 150 : 120 }}
-      keyboardShouldPersistTaps="handled"
-    >
-      {/* 🔝 Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={28} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <View style={{ width: 28 }} />
-      </View>
-
-      {/* 👤 Profile Card */}
-      <View style={styles.profileCard}>
-        <View style={styles.avatar}>
-          <Ionicons name="person-outline" size={50} color="#fff" />
+    <View style={styles.mainContainer}>
+      {/* SIDEBAR */}
+      <View style={styles.sidebar}>
+        <View style={styles.sidebarHeader}>
+          <Image source={require("../assets/Logo.jpg")} style={styles.logo} resizeMode="contain" />
+          <View>
+            <Text style={styles.brandMain}>Bharat Medical</Text>
+            <Text style={styles.brandSub}>Dashboard</Text>
+          </View>
         </View>
-        <View style={styles.info}>
-          <Text style={styles.name}>
-            {patient.first_name} {patient.last_name}
-          </Text>
-          <Text style={styles.phone}>{patient.phone_number}</Text>
-          <Text style={styles.email}>{patient.email}</Text>
-          <Text style={styles.gender}>{patient.gender}</Text>
+        <View style={styles.sidebarMenu}>
+          <SidebarItem icon="grid-outline" label="Dashboard" screen="patienthomescreen" />
+          <SidebarItem icon="people-outline" label="Find Doctor" screen="DoctorScreen" />
+          <SidebarItem icon="calendar-outline" label="Appointments" screen="PatientAppointmentsScreen" />
+          <SidebarItem icon="cart-outline" label="Medicine Store" screen="MedicineScreen" />
+          <SidebarItem icon="bag-handle-outline" label="My Orders" screen="patientorders" />
+          <SidebarItem icon="person-outline" label="My Profile" screen="PatientProfile" active />
         </View>
-        <TouchableOpacity style={styles.editBtn} onPress={openEditModal}>
-          <Text style={styles.editText}>Edit</Text>
-        </TouchableOpacity>
       </View>
 
-      {/* 📁 My Account */}
-      <Text style={styles.sectionTitle}>My Account</Text>
-      <View style={styles.accountList}>
-        <AccountItem
-          icon={<Ionicons name="calendar-outline" size={22} color="#0A66C2" />}
-          title="My Appointments"
-          onPress={() =>
-            navigation.navigate("PatientAppointmentsScreen", {
-              patientId: patient.id,
-            })
-          }
-        />
-        <AccountItem
-          icon={<Ionicons name="bag-handle-outline" size={22} color="green" />}
-          title="My Orders"
-          onPress={() => navigation.navigate("patientorders")}
-        />
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
+      <View style={styles.contentArea}>
+        {/* NAVBAR */}
+        <View style={styles.navbar}>
+          <Text style={styles.navTitle}>My Account Profile</Text>
+          <TouchableOpacity style={styles.logoutBtnTop} onPress={handleLogout}>
+            <Text style={styles.logoutBtnTextTop}>Logout</Text>
+            <Icon name="log-out-outline" size={20} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.scrollPadding}>
+          {/* PROFILE CARD */}
+          <View style={styles.profileHeaderCard}>
+            <View style={styles.avatarLarge}>
+              <Text style={styles.avatarText}>{patient?.first_name?.[0]}{patient?.last_name?.[0]}</Text>
+            </View>
+            <View style={styles.profileMeta}>
+              <Text style={styles.profileName}>{patient?.first_name} {patient?.last_name}</Text>
+              <Text style={styles.profileEmail}>{patient?.email}</Text>
+              <View style={styles.statusBadge}>
+                <View style={styles.dot} />
+                <Text style={styles.statusText}>Active Patient Account</Text>
+              </View>
+            </View>
+            <TouchableOpacity style={styles.editMainBtn} onPress={openEditModal}>
+              <Icon name="pencil" size={18} color="#fff" />
+              <Text style={styles.editMainBtnText}>Edit Profile</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.desktopGrid}>
+            {/* LEFT COLUMN: DETAILS */}
+            <View style={styles.detailsColumn}>
+              <Text style={styles.sectionTitle}>Personal Details</Text>
+              <View style={styles.infoGrid}>
+                <DetailItem label="First Name" value={patient?.first_name} icon="person-outline" />
+                <DetailItem label="Last Name" value={patient?.last_name} icon="person-outline" />
+                <DetailItem label="Gender" value={patient?.gender} icon="transgender-outline" />
+                <DetailItem label="Phone Number" value={patient?.phone_number} icon="call-outline" />
+              </View>
+            </View>
+
+            {/* RIGHT COLUMN: ACCOUNT NAVIGATION */}
+            <View style={styles.actionsColumn}>
+              <Text style={styles.sectionTitle}>Quick Access</Text>
+              <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate("PatientAppointmentsScreen")}>
+                <View style={[styles.actionIcon, { backgroundColor: '#E0F2FE' }]}>
+                  <Icon name="calendar-outline" size={22} color="#0284C7" />
+                </View>
+                <Text style={styles.actionLabel}>My Appointments</Text>
+                <Icon name="chevron-forward" size={18} color="#94A3B8" />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate("patientorders")}>
+                <View style={[styles.actionIcon, { backgroundColor: '#DCFCE7' }]}>
+                  <Icon name="bag-handle-outline" size={22} color="#16A34A" />
+                </View>
+                <Text style={styles.actionLabel}>Order History</Text>
+                <Icon name="chevron-forward" size={18} color="#94A3B8" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
       </View>
 
-      {/* ✏️ Edit Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={editModalVisible}
-        onRequestClose={() => setEditModalVisible(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={{ flex: 1, justifyContent: "center" }}
-        >
-          <View style={styles.modalContainer}>
-            <ScrollView
-              contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}
-              keyboardShouldPersistTaps="handled"
-            >
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Edit Profile</Text>
+      {/* EDIT MODAL */}
+      <Modal animationType="fade" transparent visible={editModalVisible}>
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Update Profile Information</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.inputGroup}>
+                <TextInput style={styles.input} placeholder="First Name" value={editData.first_name} onChangeText={(t)=>setEditData({...editData, first_name:t})} />
+                <TextInput style={styles.input} placeholder="Last Name" value={editData.last_name} onChangeText={(t)=>setEditData({...editData, last_name:t})} />
+              </View>
+              <TextInput style={styles.input} placeholder="Gender" value={editData.gender} onChangeText={(t)=>setEditData({...editData, gender:t})} />
+              <TextInput style={styles.input} placeholder="Phone Number" value={editData.phone_number} onChangeText={(t)=>setEditData({...editData, phone_number:t})} />
+              <TextInput style={styles.input} placeholder="Email" value={editData.email} onChangeText={(t)=>setEditData({...editData, email:t})} />
+              
+              <View style={styles.passWrapper}>
+                <TextInput style={[styles.input, {flex: 1, marginBottom: 0}]} placeholder="New Password" secureTextEntry={!showPassword} value={editData.password} onChangeText={(t)=>setEditData({...editData, password:t})} />
+                <TouchableOpacity onPress={()=>setShowPassword(!showPassword)} style={styles.eye}><Icon name={showPassword?"eye-off":"eye"} size={20} color="#64748B"/></TouchableOpacity>
+              </View>
 
-                <TextInput
-                  style={styles.input}
-                  placeholder="First Name"
-                  value={editData.first_name}
-                  onChangeText={(text) =>
-                    setEditData({ ...editData, first_name: text })
-                  }
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Last Name"
-                  value={editData.last_name}
-                  onChangeText={(text) =>
-                    setEditData({ ...editData, last_name: text })
-                  }
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Gender"
-                  value={editData.gender}
-                  onChangeText={(text) =>
-                    setEditData({ ...editData, gender: text })
-                  }
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Phone Number"
-                  keyboardType="phone-pad"
-                  value={editData.phone_number}
-                  onChangeText={(text) =>
-                    setEditData({ ...editData, phone_number: text })
-                  }
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Email"
-                  keyboardType="email-address"
-                  value={editData.email}
-                  onChangeText={(text) =>
-                    setEditData({ ...editData, email: text })
-                  }
-                />
- {/* Password Field */}
-<View style={styles.passwordContainer}>
-  <TextInput
-    style={[styles.input, { flex: 1 }]}
-    placeholder="Password"
-    secureTextEntry={!showPassword}
-    value={editData.password}
-    onChangeText={(text) =>
-      setEditData({ ...editData, password: text })
-    }
-  />
-  <TouchableOpacity
-    onPress={() => setShowPassword(!showPassword)}
-    style={styles.eyeIcon}
-  >
-    <Ionicons
-      name={showPassword ? "eye-off" : "eye"}
-      size={22}
-      color="#555"
-    />
-  </TouchableOpacity>
-</View>
+              <View style={styles.passWrapper}>
+                <TextInput style={[styles.input, {flex: 1, marginBottom: 0}]} placeholder="Confirm Password" secureTextEntry={!showConfirmPassword} value={editData.confirm_password} onChangeText={(t)=>setEditData({...editData, confirm_password:t})} />
+                <TouchableOpacity onPress={()=>setShowConfirmPassword(!showConfirmPassword)} style={styles.eye}><Icon name={showConfirmPassword?"eye-off":"eye"} size={20} color="#64748B"/></TouchableOpacity>
+              </View>
 
-{/* Confirm Password Field */}
-<View style={styles.passwordContainer}>
-  <TextInput
-    style={[styles.input, { flex: 1 }]}
-    placeholder="Confirm Password"
-    secureTextEntry={!showConfirmPassword}
-    value={editData.confirm_password}
-    onChangeText={(text) =>
-      setEditData({ ...editData, confirm_password: text })
-    }
-  />
-  <TouchableOpacity
-    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-    style={styles.eyeIcon}
-  >
-    <Ionicons
-      name={showConfirmPassword ? "eye-off" : "eye"}
-      size={22}
-      color="#555"
-    />
-  </TouchableOpacity>
-</View>
-
-
-
-                <TouchableOpacity
-                  style={styles.updateBtn}
-                  onPress={handleUpdateProfile}
-                >
-                  <Text style={styles.updateText}>Update Profile</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.cancelBtn}
-                  onPress={() => setEditModalVisible(false)}
-                >
-                  <Text style={styles.cancelText}>Cancel</Text>
-                </TouchableOpacity>
+              <View style={styles.modalFooter}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={()=>setEditModalVisible(false)}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.saveBtn} onPress={handleUpdateProfile}><Text style={styles.saveText}>Save Changes</Text></TouchableOpacity>
               </View>
             </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
-    </ScrollView>
+    </View>
   );
 };
 
-// 📦 Account Item Component
-const AccountItem = ({ icon, title, onPress }) => (
-  <TouchableOpacity style={styles.accountItem} onPress={onPress}>
-    <View style={styles.icon}>{icon}</View>
-    <Text style={styles.accountText}>{title}</Text>
-    <Ionicons name="chevron-forward" size={20} color="#aaa" />
-  </TouchableOpacity>
+const DetailItem = ({ label, value, icon }) => (
+  <View style={styles.detailItem}>
+    <Icon name={icon} size={20} color="#3B82F6" style={styles.detailIcon} />
+    <View>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailValue}>{value || 'Not provided'}</Text>
+    </View>
+  </View>
 );
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F9F9F9",marginTop:20, },
-  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#4A90E2",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginTop:10,
-  },
-  headerTitle: {
-    flex: 1,
-    textAlign: "center",
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
-    marginTop:10,
-  },
-  profileCard: {
-    backgroundColor: "#4A90E2",
-    borderRadius: 12,
-    margin: 16,
-    padding: 16,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  avatar: {
-    backgroundColor: "rgba(255,255,255,0.3)",
-    borderRadius: 50,
-    padding: 10,
-  },
-  info: { flex: 1, marginLeft: 12 },
-  name: { fontSize: 18, fontWeight: "bold", color: "#fff" },
-  phone: { fontSize: 14, color: "#E0E0E0", marginTop: 2 },
-  email: { fontSize: 14, color: "#E0E0E0", marginTop: 2 },
-  gender: { fontSize: 14, color: "#E0E0E0", marginTop: 2 },
-  editBtn: {
-    backgroundColor: "rgba(255,255,255,0.3)",
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-  },
-  editText: { color: "#fff", fontWeight: "600" },
-  sectionTitle: {
-    marginLeft: 16,
-    marginTop: 16,
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#333",
-  },
-  accountList: { margin: 10 },
-  accountItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    padding: 14,
-    marginVertical: 6,
-    borderRadius: 10,
-    elevation: 2,
-  },
-  icon: { marginRight: 12 },
-  accountText: { flex: 1, fontSize: 15, color: "#333" },
-  logoutBtn: {
-    backgroundColor: "#FF4D4D",
-    padding: 14,
-    borderRadius: 10,
-    marginVertical: 10,
-    alignItems: "center",
-  },
-  logoutText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-  modalContainer: {
-    flex: 1,
-    justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  modalContent: {
-    backgroundColor: "#fff",
-    margin: 20,
-    borderRadius: 12,
-    padding: 20,
-    elevation: 5,
-  },
-  modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 12 },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 10,
-    marginVertical: 6,
-  },
-  updateBtn: {
-    backgroundColor: "#4A90E2",
-    padding: 14,
-    borderRadius: 10,
-    marginTop: 10,
-    alignItems: "center",
-  },
-  updateText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-  cancelBtn: {
-    backgroundColor: "#ccc",
-    padding: 12,
-    borderRadius: 10,
-    marginTop: 10,
-    alignItems: "center",
-  },
-  cancelText: { color: "#333", fontWeight: "bold", fontSize: 16 },
-  passwordContainer: {
-  flexDirection: "row",
-  alignItems: "center",
-  borderWidth: 1,
-  borderColor: "#ccc",
-  borderRadius: 8,
-  paddingHorizontal: 10,
-  marginVertical: 6,
-  backgroundColor: "#fff",
-},
-eyeIcon: {
-  padding: 6,
-},
+  mainContainer: { flex: 1, flexDirection: "row", backgroundColor: "#F8FAFC" },
+  sidebar: { width: 280, backgroundColor: "#3B82F6", padding: 25, height: "100%" },
+  sidebarHeader: { flexDirection: "row", alignItems: "center", marginBottom: 40, gap: 12 },
+  logo: { width: 45, height: 45, borderRadius: 10, backgroundColor: "#fff" },
+  brandMain: { fontSize: 18, fontWeight: "800", color: "#FFFFFF" },
+  brandSub: { fontSize: 12, color: "#BFDBFE" },
+  sidebarMenu: { flex: 1 },
+  sidebarItem: { flexDirection: "row", alignItems: "center", padding: 15, borderRadius: 12, marginBottom: 10 },
+  sidebarItemActive: { backgroundColor: "#1E40AF" },
+  sidebarLabel: { marginLeft: 15, fontSize: 15, fontWeight: "600", color: "#BFDBFE" },
+  sidebarLabelActive: { color: "#fff" },
 
+  contentArea: { flex: 1 },
+  navbar: { height: 80, backgroundColor: "#fff", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 40, borderBottomWidth: 1, borderColor: "#F1F5F9" },
+  navTitle: { fontSize: 22, fontWeight: "800", color: "#1E293B" },
+  logoutBtnTop: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10 },
+  logoutBtnTextTop: { color: '#EF4444', fontWeight: '700', fontSize: 15 },
+
+  scrollPadding: { padding: 40 },
+  profileHeaderCard: { backgroundColor: "#fff", borderRadius: 24, padding: 30, flexDirection: 'row', alignItems: 'center', elevation: 4, borderWidth: 1, borderColor: '#F1F5F9' },
+  avatarLarge: { width: 100, height: 100, borderRadius: 50, backgroundColor: "#3B82F6", justifyContent: 'center', alignItems: 'center' },
+  avatarText: { color: "#fff", fontSize: 36, fontWeight: "800" },
+  profileMeta: { flex: 1, marginLeft: 30 },
+  profileName: { fontSize: 28, fontWeight: "800", color: "#1E293B" },
+  profileEmail: { fontSize: 16, color: "#64748B", marginTop: 4 },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, backgroundColor: '#DCFCE7', alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#16A34A' },
+  statusText: { color: '#16A34A', fontSize: 12, fontWeight: '700' },
+  editMainBtn: { backgroundColor: "#3B82F6", flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12 },
+  editMainBtnText: { color: "#fff", fontWeight: "700" },
+
+  desktopGrid: { flexDirection: 'row', gap: 30, marginTop: 40 },
+  detailsColumn: { flex: 2, backgroundColor: "#fff", borderRadius: 24, padding: 30, borderWidth: 1, borderColor: '#F1F5F9' },
+  actionsColumn: { flex: 1, backgroundColor: "#fff", borderRadius: 24, padding: 30, borderWidth: 1, borderColor: '#F1F5F9' },
+  sectionTitle: { fontSize: 18, fontWeight: "800", color: "#1E293B", marginBottom: 25 },
+  infoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 30 },
+  detailItem: { width: '45%', flexDirection: 'row', alignItems: 'center', gap: 15 },
+  detailLabel: { fontSize: 12, color: "#94A3B8", fontWeight: "700", textTransform: 'uppercase' },
+  detailValue: { fontSize: 16, color: "#1E293B", fontWeight: "600", marginTop: 2 },
   
+  actionItem: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 16, backgroundColor: '#F8FAFC', marginBottom: 15 },
+  actionIcon: { padding: 12, borderRadius: 12, marginRight: 15 },
+  actionLabel: { flex: 1, fontSize: 15, fontWeight: "700", color: "#475569" },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalContent: { backgroundColor: '#fff', width: 550, borderRadius: 24, padding: 35, maxHeight: '90%' },
+  modalTitle: { fontSize: 22, fontWeight: "800", color: "#1E293B", marginBottom: 25 },
+  inputGroup: { flexDirection: 'row', gap: 15 },
+  input: { backgroundColor: "#F1F5F9", padding: 15, borderRadius: 12, fontSize: 15, color: "#1E293B", marginBottom: 15, borderWidth: 1, borderColor: '#E2E8F0' },
+  passWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: "#F1F5F9", borderRadius: 12, marginBottom: 15, borderWidth: 1, borderColor: '#E2E8F0', paddingRight: 15 },
+  eye: { padding: 5 },
+  modalFooter: { flexDirection: 'row', justifyContent: 'flex-end', gap: 15, marginTop: 20 },
+  cancelBtn: { padding: 15 },
+  cancelText: { color: "#64748B", fontWeight: "700" },
+  saveBtn: { backgroundColor: "#3B82F6", paddingHorizontal: 25, paddingVertical: 15, borderRadius: 12 },
+  saveText: { color: "#fff", fontWeight: "700" },
+  loader: { flex: 1, justifyContent: 'center', alignItems: 'center' }
 });
 
 export default ProfileScreen;

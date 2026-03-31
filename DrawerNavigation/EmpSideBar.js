@@ -42,7 +42,7 @@ const SidebarMenu = () => {
   }, []);
 
   return (
-    <View
+  <View
       style={[
         styles.outerContainer,
         { minHeight: height }
@@ -50,12 +50,9 @@ const SidebarMenu = () => {
     >
       <ScrollView 
         contentContainerStyle={{
-          flexGrow: 1,
-          justifyContent: 'center',  // center vertically
-          alignItems: 'center',      // center horizontally
           paddingVertical: 20,
         }}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={true}
       >
         <View style={{ width: contentWidth, paddingHorizontal: containerPadding }}>
           <Text style={[styles.header, { fontSize: fontSize + 6 }]}>Menu</Text>

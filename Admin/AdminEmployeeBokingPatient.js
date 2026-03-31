@@ -10,8 +10,10 @@ import {
   UIManager,
   Platform,
   Alert,
+   SafeAreaView ,
+   useWindowDimensions,
 } from "react-native";
-import Icon from "react-native-vector-icons/MaterialIcons";
+import { MaterialIcons as Icon } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
@@ -28,8 +30,36 @@ export default function AdminEmployeePatientReports() {
   const [employees, setEmployees] = useState({});
   const [expanded, setExpanded] = useState(null);
   const [loading, setLoading] = useState(false);
+            const [loadingCount, setLoadingCount] = useState(0);
+  
   const [filter, setFilter] = useState("Daily"); // Daily / Weekly / Monthly
+const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const MAX_WIDTH = 420;
+  const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
+  const showAlert = (title, message, buttons) => {
+    if (Platform.OS === "web") {
+      if (buttons && buttons.length > 1) {
+        const confirmed = window.confirm(`${title}\n\n${message}`);
+        if (confirmed) {
+          const okBtn = buttons.find(b => b.style !== "cancel");
+          okBtn?.onPress?.();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
+  };  
 
+  useEffect(() => {
+            let interval;
+            if (loading) {
+              setLoadingCount(0);
+              interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+            } else clearInterval(interval);
+            return () => clearInterval(interval);
+          }, [loading]);
   useEffect(() => {
     fetchData();
   }, []);
@@ -104,132 +134,209 @@ export default function AdminEmployeePatientReports() {
   // ---------------------------
   // CSV Download
   // ---------------------------
-  const downloadCSV = async () => {
-    if (!filteredBookings.length) return Alert.alert("No data to download");
+ const downloadCSV = async () => {
+  if (!filteredBookings.length) return showAlert("No data to download");
 
-    const header = ["Employee Name","Patient Name","Booking Date","Service","Amount"];
-    const rows = filteredBookings.map(b => [
-      employees[b.employee_id] || `EMP-${b.employee_id}`,
-      b.patient_name,
-      new Date(b.appointment_date).toLocaleDateString(),
-      b.specialization,
-      b.doctor_consultant_fee,
-    ]);
+  const header = ["Employee Name","Patient Name","Booking Date","Service","Amount"];
+  const rows = filteredBookings.map(b => [
+    employees[b.employee_id] || `EMP-${b.employee_id}`,
+    b.patient_name,
+    new Date(b.appointment_date).toLocaleDateString(),
+    b.specialization,
+    b.doctor_consultant_fee,
+  ]);
 
-    const csvContent =
-      [header.join(","), ...rows.map(r => r.join(","))].join("\n");
+  const csvContent = [header.join(","), ...rows.map(r => r.join(","))].join("\n");
 
-    const fileUri = `${FileSystem.cacheDirectory}employee_bookings.csv`;
+  if (Platform.OS === "web") {
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "employee_bookings.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  } else {
+    const fileUri = `${FileSystem.documentDirectory}employee_bookings.csv`;
     await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
     await Sharing.shareAsync(fileUri, { mimeType: "text/csv" });
-  };
+  }
+};
 
-  return (
-    <ScrollView style={styles.page} contentContainerStyle={styles.pageContent}>
-      {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Icon name="arrow-back" size={26} color="#0a66c2" />
+
+ return (
+    <SafeAreaView style={styles.container}>
+      {/* HEADER AREA */}
+      <View style={styles.headerArea}>
+        <TouchableOpacity style={styles.circleBack} onPress={() => navigation.goBack()}>
+          <Icon name="arrow-back" size={22} color="#1e293b" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Employee-wise Bookings</Text>
-      </View>
-
-      {/* FILTERS */}
-      <View style={styles.filterContainer}>
-        {["Daily", "Weekly", "Monthly"].map(f => (
-          <TouchableOpacity
-            key={f}
-            style={[styles.filterButton, filter === f && styles.filterButtonActive]}
-            onPress={() => setFilter(f)}
-          >
-            <Text style={filter === f ? styles.filterTextActive : styles.filterText}>{f}</Text>
-          </TouchableOpacity>
-        ))}
-        <TouchableOpacity style={styles.downloadButton} onPress={downloadCSV}>
-          <Icon name="download" size={18} color="#fff" />
-          <Text style={styles.downloadText}>Download CSV</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* LOADER */}
-      {loading && (
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color="#0a66c2" />
-          <Text style={styles.loadingText}>Loading bookings...</Text>
+        <View>
+          <Text style={styles.headerTitle}>Staff Reports</Text>
+          <Text style={styles.headerSub}>Patient booking history</Text>
         </View>
-      )}
+      </View>
 
-      {/* BOOKINGS CARDS */}
-      {!loading &&
-        Object.entries(bookingsByEmployee).map(([empName, empBookings]) => (
-          <View key={empName} style={styles.card}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* SEGMENTED FILTERS */}
+        <View style={styles.tabContainer}>
+          {["Daily", "Weekly", "Monthly"].map(f => (
             <TouchableOpacity
-              style={styles.cardHeader}
-              onPress={() => toggleExpand(empName)}
+              key={f}
+              style={[styles.tab, filter === f && styles.activeTab]}
+              onPress={() => setFilter(f)}
             >
-              <Icon
-                name={expanded === empName ? "expand-more" : "chevron-right"}
-                size={22}
-                color="#0a66c2"
-              />
-              <Text style={styles.empName}>{empName}</Text>
+              <Text style={[styles.tabText, filter === f && styles.activeTabText]}>{f}</Text>
             </TouchableOpacity>
+          ))}
+        </View>
 
-            {expanded === empName && (
-              <ScrollView horizontal style={styles.tableScroll} contentContainerStyle={{ minWidth: 600 }}>
-                <View style={styles.table}>
-                  <View style={styles.tableHeader}>
-                    <Text style={styles.col}>Booking Date</Text>
-                    <Text style={styles.col}>Patient Name</Text>
-                    <Text style={styles.col}>Service</Text>
-                    <Text style={styles.col}>Employee</Text>
-                    <Text style={styles.col}>Fee</Text>
-                  </View>
-                  {empBookings.map((b, i) => (
-                    <View key={i} style={styles.tableRow}>
-                      <Text style={styles.col}>{new Date(b.appointment_date).toLocaleDateString()}</Text>
-                      <Text style={styles.col}>{b.patient_name}</Text>
-                      <Text style={styles.col}>{b.specialization}</Text>
-                      <Text style={styles.col}>{employees[b.employee_id] || `EMP-${b.employee_id}`}</Text>
-                      <Text style={[styles.col, styles.fee]}>₹{b.doctor_consultant_fee}</Text>
-                    </View>
-                  ))}
-                </View>
-              </ScrollView>
-            )}
+        {/* ACTIONS */}
+        <TouchableOpacity style={styles.actionBtn} onPress={downloadCSV}>
+          <Icon name="file-download" size={20} color="#fff" />
+          <Text style={styles.actionBtnText}>Export CSV Report</Text>
+        </TouchableOpacity>
+
+        {/* LOADING STATE */}
+        {loading ? (
+          <View style={styles.loaderContainer}>
+            <ActivityIndicator size="large" color="#2563eb" />
+            <Text style={styles.loaderText}>Syncing records... {loadingCount}s</Text>
           </View>
-        ))}
-    </ScrollView>
+        ) : Object.keys(bookingsByEmployee).length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Icon name="event-note" size={48} color="#cbd5e1" />
+            <Text style={styles.emptyText}>No bookings found for this period.</Text>
+          </View>
+        ) : (
+          Object.entries(bookingsByEmployee).map(([empName, empBookings]) => (
+            <View key={empName} style={styles.card}>
+              <TouchableOpacity
+                style={styles.cardHeader}
+                onPress={() => toggleExpand(empName)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.empTitleRow}>
+                  <View style={styles.avatarPlaceholder}>
+                    <Text style={styles.avatarText}>{empName.charAt(0)}</Text>
+                  </View>
+                  <View>
+                    <Text style={styles.empNameText}>{empName}</Text>
+                    <Text style={styles.bookingCount}>{empBookings.length} bookings</Text>
+                  </View>
+                </View>
+                <Icon
+                  name={expanded === empName ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                  size={24}
+                  color="#94a3b8"
+                />
+              </TouchableOpacity>
+
+              {expanded === empName && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.tableContainer}>
+                    <View style={styles.tHead}>
+                      <Text style={[styles.tCol, { width: 100 }]}>Date</Text>
+                      <Text style={[styles.tCol, { width: 140 }]}>Patient</Text>
+                      <Text style={[styles.tCol, { width: 120 }]}>Service</Text>
+                      <Text style={[styles.tCol, { width: 80, textAlign: 'right' }]}>Fee</Text>
+                    </View>
+                    {empBookings.map((b, i) => (
+                      <View key={i} style={styles.tRow}>
+                        <Text style={[styles.tCell, { width: 100 }]}>{new Date(b.appointment_date).toLocaleDateString()}</Text>
+                        <Text style={[styles.tCell, { width: 140, fontWeight: '600' }]}>{b.patient_name}</Text>
+                        <Text style={[styles.tCell, { width: 120 }]}>{b.specialization}</Text>
+                        <Text style={[styles.tCell, { width: 80, textAlign: 'right', color: '#2563eb', fontWeight: '700' }]}>₹{b.doctor_consultant_fee}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </ScrollView>
+              )}
+            </View>
+          ))
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: "#f4f8ff", padding: 12 },
-  pageContent: { alignItems: "center", width: "100%" },
+  container: { flex: 1, backgroundColor: "#F8FAFC" },
+  headerArea: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "ios" ? 10 : 40,
+    paddingBottom: 20,
+    gap: 15,
+  },
+  circleBack: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+  },
+  headerTitle: { fontSize: 24, fontWeight: "800", color: "#1e293b" },
+  headerSub: { fontSize: 13, color: "#64748b", fontWeight: "500" },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
 
-  header: { flexDirection: "row", alignItems: "center", marginBottom: 12, width: "100%", maxWidth: 1200, justifyContent: "center" },
-  headerTitle: { fontSize: 22, fontWeight: "700", color: "#0a66c2", textAlign: "center" },
+  tabContainer: {
+    flexDirection: "row",
+    backgroundColor: "#e2e8f0",
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 16,
+  },
+  tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 10 },
+  activeTab: { backgroundColor: "#fff", elevation: 2 },
+  tabText: { fontSize: 13, color: "#64748b", fontWeight: "600" },
+  activeTabText: { color: "#1e293b", fontWeight: "700" },
 
-  filterContainer: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
-  filterButton: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, marginRight: 8, borderWidth: 1, borderColor: "#0a66c2" },
-  filterButtonActive: { backgroundColor: "#0a66c2" },
-  filterText: { color: "#0a66c2", fontWeight: "700" },
-  filterTextActive: { color: "#fff", fontWeight: "700" },
+  actionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#1e293b",
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+    marginBottom: 20,
+  },
+  actionBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
 
-  downloadButton: { flexDirection: "row", alignItems: "center", backgroundColor: "#0a66c2", padding: 6, borderRadius: 6 },
-  downloadText: { color: "#fff", fontWeight: "700", marginLeft: 4 },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#f1f5f9",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+  },
+  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  empTitleRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  avatarPlaceholder: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#eff6ff", justifyContent: 'center', alignItems: 'center' },
+  avatarText: { color: "#2563eb", fontWeight: '700', fontSize: 16 },
+  empNameText: { fontSize: 16, fontWeight: "700", color: "#334155" },
+  bookingCount: { fontSize: 12, color: "#94a3b8", marginTop: 2 },
 
-  loader: { alignItems: "center", marginVertical: 30 },
-  loadingText: { marginTop: 8, color: "#555" },
+  tableContainer: { marginTop: 15, backgroundColor: "#f8fafc", borderRadius: 12, padding: 10 },
+  tHead: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#e2e8f0", paddingBottom: 8, marginBottom: 8 },
+  tCol: { fontSize: 11, fontWeight: "700", color: "#94a3b8", textTransform: 'uppercase', letterSpacing: 0.5 },
+  tRow: { flexDirection: "row", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
+  tCell: { fontSize: 13, color: "#475569" },
 
-  card: { backgroundColor: "#fff", borderRadius: 12, padding: 12, marginVertical: 6, elevation: 2, width: "100%", maxWidth: 900, alignSelf: "center" },
-  cardHeader: { flexDirection: "row", alignItems: "center" },
-  empName: { marginLeft: 10, fontWeight: "700", color: "#333" },
-
-  tableScroll: { width: "100%" },
-  table: { marginTop: 10, borderRadius: 8, overflow: "hidden", backgroundColor: "#f9fbff" },
-  tableHeader: { flexDirection: "row", backgroundColor: "#e3edff", paddingVertical: 6 },
-  tableRow: { flexDirection: "row", paddingVertical: 6, borderBottomWidth: 1, borderColor: "#eef2ff" },
-  col: { flex: 1, textAlign: "center", fontSize: 12, minWidth: 120 },
-  fee: { color: "#0a66c2", fontWeight: "700" },
+  loaderContainer: { padding: 50, alignItems: "center" },
+  loaderText: { marginTop: 12, color: "#64748b", fontSize: 14 },
+  emptyContainer: { padding: 60, alignItems: "center" },
+  emptyText: { marginTop: 12, color: "#94a3b8", fontSize: 14, textAlign: 'center' },
 });

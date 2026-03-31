@@ -10,11 +10,11 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
+  useWindowDimensions
 } from "react-native";
-import { Ionicons, MaterialIcons } from "@expo/vector-icons";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
-import { getDoctorId ,clearStorage} from "../utils/storage";
+import { getDoctorId, clearStorage } from "../utils/storage";
 
 const BASE_URL = "https://hospitaldatabasemanagement.onrender.com";
 
@@ -23,7 +23,9 @@ export default function DoctorUpdateScreen() {
 
   const [doctor, setDoctor] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingCount, setLoadingCount] = useState(0);
 
+  // Basic fields
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -31,17 +33,44 @@ export default function DoctorUpdateScreen() {
   const [scheduleIn, setScheduleIn] = useState("");
   const [scheduleOut, setScheduleOut] = useState("");
 
+  // New fields
+  const [role, setRole] = useState("");
+  const [gender, setGender] = useState("");
+  const [experience, setExperience] = useState("");
+  const [description, setDescription] = useState("");
+  const [status, setStatus] = useState("");
+
   const [modalVisible, setModalVisible] = useState(false);
   const [showPickerIn, setShowPickerIn] = useState(false);
   const [showPickerOut, setShowPickerOut] = useState(false);
-  const [tempTimeIn, setTempTimeIn] = useState(new Date());
-  const [tempTimeOut, setTempTimeOut] = useState(new Date());
 
-  const formatTime = (date) => {
-    let hours = date.getHours();
-    let minutes = date.getMinutes();
-    return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+  const { width } = useWindowDimensions();
+  const isDesktop = Platform.OS === "web" && width >= 900;
+
+  const showAlert = (title, message, buttons) => {
+    if (Platform.OS === "web") {
+      if (buttons && buttons.length > 1) {
+        const confirmed = window.confirm(`${title}\n\n${message}`);
+        if (confirmed) {
+          const okBtn = buttons.find((b) => b.style !== "cancel");
+          okBtn?.onPress?.();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
   };
+
+  useEffect(() => {
+    let interval;
+    if (loading) {
+      setLoadingCount(0);
+      interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+    } else clearInterval(interval);
+    return () => clearInterval(interval);
+  }, [loading]);
 
   useEffect(() => {
     const fetchDoctor = async () => {
@@ -54,17 +83,25 @@ export default function DoctorUpdateScreen() {
 
         if (response.ok) {
           setDoctor(data);
+          // Basic fields
           setName(data.name);
           setEmail(data.email);
           setPhoneNumber(data.phone_number);
           setDepartment(data.department);
           setScheduleIn(data.schedule_in);
           setScheduleOut(data.schedule_out);
+
+          // New fields
+          setRole(data.role || "");
+          setGender(data.gender || "");
+          setExperience(data.experience || "");
+          setDescription(data.description || "");
+          setStatus(data.status || "");
         } else {
-          Alert.alert("Error", data.message || "Failed to fetch doctor info");
+          showAlert("Error", data.message || "Failed to fetch doctor info");
         }
       } catch (err) {
-        Alert.alert("Error", err.message);
+        showAlert("Error", err.message);
       } finally {
         setLoading(false);
       }
@@ -75,7 +112,7 @@ export default function DoctorUpdateScreen() {
 
   const handleUpdate = async () => {
     if (!name || !email || !phoneNumber || !department) {
-      Alert.alert("Validation Error", "All fields are required!");
+      showAlert("Validation Error", "All fields are required!");
       return;
     }
 
@@ -91,295 +128,228 @@ export default function DoctorUpdateScreen() {
           department,
           scheduleIn,
           scheduleOut,
+          role,
+          gender,
+          experience,
+          description,
+          status
         }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        Alert.alert("Success", data.message);
+        showAlert("Success", data.message);
         setModalVisible(false);
         navigation.goBack();
       } else {
-        Alert.alert("Error", data.message || "Update failed");
+        showAlert("Error", data.message || "Update failed");
       }
     } catch (error) {
-      Alert.alert("Network Error", error.message || "Something went wrong");
+      showAlert("Network Error", error.message || "Something went wrong");
     } finally {
       setLoading(false);
     }
   };
-const handleLogout = async () => {
+
+  const handleLogout = async () => {
     await clearStorage();
     navigation.reset({
       index: 0,
       routes: [{ name: "SelectRole" }],
     });
   };
-  if (loading) return <ActivityIndicator style={{ flex: 1 }} size="large" color="#1E88E5" />;
+
+  if (loading) {
+    return (
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color="#007bff" />
+        <Text style={{ marginTop: 10 }}>Loading{loadingCount}s</Text>
+      </View>
+    );
+  }
 
   if (!doctor) return <Text style={{ textAlign: "center", marginTop: 20 }}>Doctor not found</Text>;
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-        <Ionicons name="arrow-back" size={28} color="#1E88E5" />
-      </TouchableOpacity>
+    <View style={styles.mainScreenWrapper}>
+      <View style={styles.contentArea}>
+        {/* Header */}
+        <View style={styles.headerNav}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerLeftBtn}>
+            <Ionicons name="arrow-back" size={28} color="#007BFF" />
+          </TouchableOpacity>
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.pageTitle}>Account Settings</Text>
+            <Text style={styles.pageSub}>Update your personal and professional availability</Text>
+          </View>
+          <TouchableOpacity onPress={handleLogout} style={styles.headerRightBtn}>
+            <Ionicons name="log-out-outline" size={26} color="#E53E3E" />
+          </TouchableOpacity>
+        </View>
 
-      <Text style={styles.title}>Doctor Profile</Text>
+        {/* Profile Card */}
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <View style={[styles.profileCard, isDesktop && { maxWidth: 800 }]}>
+            <View style={styles.profileHeader}>
+              <View style={styles.avatarLarge}>
+                <Text style={styles.avatarText}>{name.charAt(0)}</Text>
+              </View>
+              <View style={{ marginLeft: 20 }}>
+                <Text style={styles.doctorNameMain}>{name}</Text>
+                <Text style={styles.doctorDeptMain}>{department}</Text>
+              </View>
+            </View>
 
-      <View style={styles.profileCard}>
-        <View style={styles.infoRow}>
-          <Ionicons name="person" size={22} color="#1E88E5" />
-          <Text style={styles.profileValue}>{name}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <MaterialIcons name="email" size={22} color="#1E88E5" />
-          <Text style={styles.profileValue}>{email}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Ionicons name="business" size={22} color="#1E88E5" />
-          <Text style={styles.profileValue}>{department}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Ionicons name="time" size={22} color="#1E88E5" />
-          <Text style={styles.profileValue}>In: {scheduleIn}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Ionicons name="time-outline" size={22} color="#1E88E5" />
-          <Text style={styles.profileValue}>Out: {scheduleOut}</Text>
-        </View>
+            <View style={styles.divider} />
+
+            <View style={styles.infoGrid}>
+              <View style={styles.infoBox}>
+                <Text style={styles.infoLabel}>Email Address</Text>
+                <Text style={styles.infoValueText}>{email}</Text>
+              </View>
+              <View style={styles.infoBox}>
+                <Text style={styles.infoLabel}>Phone Number</Text>
+                <Text style={styles.infoValueText}>{phoneNumber || "Not Set"}</Text>
+              </View>
+              <View style={styles.infoBox}>
+                <Text style={styles.infoLabel}>Duty Start Time</Text>
+                <View style={styles.timeBadge}><Text style={styles.timeBadgeText}>{scheduleIn}</Text></View>
+              </View>
+              <View style={styles.infoBox}>
+                <Text style={styles.infoLabel}>Duty End Time</Text>
+                <View style={[styles.timeBadge, { backgroundColor: '#FFF5F5' }]}><Text style={[styles.timeBadgeText, { color: '#E53E3E' }]}>{scheduleOut}</Text></View>
+              </View>
+            </View>
+
+            <View style={styles.buttonActionRow}>
+              <TouchableOpacity style={styles.primaryEditBtn} onPress={() => setModalVisible(true)}>
+                <Ionicons name="create-outline" size={20} color="#fff" />
+                <Text style={styles.primaryEditBtnText}>Edit Details</Text>
+              </TouchableOpacity>
+              {!isDesktop && (
+                <TouchableOpacity style={styles.mobileLogoutBtn} onPress={handleLogout}>
+                  <Text style={styles.mobileLogoutText}>Logout Account</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </ScrollView>
       </View>
 
-      <TouchableOpacity style={styles.editButton} onPress={() => setModalVisible(true)}>
-        <Ionicons name="create" size={22} color="#fff" />
-        <Text style={styles.editButtonText}>Edit Profile</Text>
-      </TouchableOpacity>
-    {/* ✅ Logout Button */}
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <Ionicons name="log-out-outline" size={22} color="#fff" />
-        <Text style={styles.logoutButtonText}>Logout</Text>
-      </TouchableOpacity>
+      {/* Edit Modal */}
+      <Modal visible={modalVisible} animationType="fade" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, isDesktop && { width: 500 }]}>
+            <Text style={styles.modalHeaderTitle}>Update Information</Text>
+            <ScrollView>
+              {/* Basic fields */}
+              <Text style={styles.fieldLabel}>Full Name</Text>
+              <TextInput style={styles.modalInput} value={name} onChangeText={setName} placeholder="Enter name" />
 
-      <Modal
-        visible={modalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Edit Doctor Details</Text>
+              <Text style={styles.fieldLabel}>Email</Text>
+              <TextInput style={styles.modalInput} value={email} onChangeText={setEmail} keyboardType="email-address" />
 
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <View style={styles.inputContainer}>
-                <Ionicons name="person" size={20} color="#1E88E5" style={styles.inputIcon} />
-                <TextInput style={styles.input} placeholder="Full Name" value={name} onChangeText={setName} />
-              </View>
-              <View style={styles.inputContainer}>
-                <MaterialIcons name="email" size={20} color="#1E88E5" style={styles.inputIcon} />
-                <TextInput style={styles.input} placeholder="Email" keyboardType="email-address" value={email} onChangeText={setEmail} />
-              </View>
-              <View style={styles.inputContainer}>
-                <Ionicons name="call" size={20} color="#1E88E5" style={styles.inputIcon} />
-                <TextInput style={styles.input} placeholder="Phone Number" keyboardType="phone-pad" value={phoneNumber} onChangeText={setPhoneNumber} />
-              </View>
-              <View style={styles.inputContainer}>
-                <Ionicons name="business" size={20} color="#1E88E5" style={styles.inputIcon} />
-                <TextInput style={styles.input} placeholder="Department" value={department} onChangeText={setDepartment} />
+              <Text style={styles.fieldLabel}>Phone</Text>
+              <TextInput style={styles.modalInput} value={phoneNumber} onChangeText={setPhoneNumber} keyboardType="phone-pad" />
+
+              <Text style={styles.fieldLabel}>Department</Text>
+              <TextInput style={styles.modalInput} value={department} onChangeText={setDepartment} />
+
+              {/* New fields */}
+              <Text style={styles.fieldLabel}>Role</Text>
+              <TextInput style={styles.modalInput} value={role} onChangeText={setRole} placeholder="Enter role" />
+
+              <Text style={styles.fieldLabel}>Gender</Text>
+              <TextInput style={styles.modalInput} value={gender} onChangeText={setGender} placeholder="Enter gender" />
+
+              <Text style={styles.fieldLabel}>Experience (Years)</Text>
+              <TextInput style={styles.modalInput} value={experience} onChangeText={setExperience} keyboardType="numeric" placeholder="Enter experience" />
+
+              <Text style={styles.fieldLabel}>Description</Text>
+              <TextInput style={[styles.modalInput, { height: 80 }]} value={description} onChangeText={setDescription} multiline placeholder="Enter description" />
+
+              {/* <Text style={styles.fieldLabel}>Status</Text>
+              <TextInput style={styles.modalInput} value={status} onChangeText={setStatus} placeholder="Enter status" /> */}
+
+              {/* Time pickers */}
+              <View style={styles.modalTimeRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fieldLabel}>In Time</Text>
+                  {Platform.OS === 'web' ? (
+                    <input type="time" value={scheduleIn} onChange={(e) => setScheduleIn(e.target.value)} style={styles.webInputTime} />
+                  ) : (
+                    <TouchableOpacity style={styles.mobileTimeBtn} onPress={() => setShowPickerIn(true)}>
+                      <Text>{scheduleIn || "Set"}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.fieldLabel}>Out Time</Text>
+                  {Platform.OS === 'web' ? (
+                    <input type="time" value={scheduleOut} onChange={(e) => setScheduleOut(e.target.value)} style={styles.webInputTime} />
+                  ) : (
+                    <TouchableOpacity style={styles.mobileTimeBtn} onPress={() => setShowPickerOut(true)}>
+                      <Text>{scheduleOut || "Set"}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
 
-              <TouchableOpacity style={styles.timeButton} onPress={() => setShowPickerIn(true)}>
-                <Ionicons name="time" size={20} color="#1E88E5" />
-                <Text style={styles.timeText}>Schedule In: {scheduleIn || "Select Time"}</Text>
+              {/* Buttons */}
+              <TouchableOpacity style={styles.saveBtn} onPress={handleUpdate}>
+                <Text style={styles.saveBtnText}>Save Changes</Text>
               </TouchableOpacity>
-              {showPickerIn && (
-                <DateTimePicker
-                  value={tempTimeIn}
-                  mode="time"
-                  display="default"
-                  onChange={(event, selectedDate) => {
-                    setShowPickerIn(Platform.OS === "ios");
-                    if (selectedDate) {
-                      setTempTimeIn(selectedDate);
-                      setScheduleIn(formatTime(selectedDate));
-                    }
-                  }}
-                />
-              )}
-
-              <TouchableOpacity style={styles.timeButton} onPress={() => setShowPickerOut(true)}>
-                <Ionicons name="time-outline" size={20} color="#1E88E5" />
-                <Text style={styles.timeText}>Schedule Out: {scheduleOut || "Select Time"}</Text>
-              </TouchableOpacity>
-              {showPickerOut && (
-                <DateTimePicker
-                  value={tempTimeOut}
-                  mode="time"
-                  display="default"
-                  onChange={(event, selectedDate) => {
-                    setShowPickerOut(Platform.OS === "ios");
-                    if (selectedDate) {
-                      setTempTimeOut(selectedDate);
-                      setScheduleOut(formatTime(selectedDate));
-                    }
-                  }}
-                />
-              )}
-
-              <TouchableOpacity style={styles.updateButton} onPress={handleUpdate} disabled={loading}>
-                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.updateButtonText}>Update</Text>}
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.cancelButton} onPress={() => setModalVisible(false)}>
-                <Text style={styles.cancelText}>Cancel</Text>
+              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setModalVisible(false)}>
+                <Text style={styles.modalCloseText}>Dismiss</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </View>
   );
 }
 
+// Keep your styles as they were (no changes needed)
 const styles = StyleSheet.create({
-  container: {
-    padding: 20,
-    backgroundColor: "#F0F4F8",
-    flexGrow: 1,
-  },
-  backButton: { marginBottom: 15 },
-  title: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#1E88E5",
-    textAlign: "center",
-    marginBottom: 25,
-  },
-  profileCard: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 25,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 3,
-  },
-  infoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  profileValue: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginLeft: 10,
-  },
-  editButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#1E88E5",
-    justifyContent: "center",
-    paddingVertical: 12,
-    borderRadius: 30,
-    marginBottom: 25,
-  },
-  editButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-    marginLeft: 8,
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContent: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    width: "92%",
-    padding: 22,
-    maxHeight: "90%",
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#1E88E5",
-    textAlign: "center",
-    marginBottom: 18,
-  },
-  inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 14,
-  },
-  inputIcon: {
-    position: "absolute",
-    left: 12,
-    zIndex: 1,
-  },
-  input: {
-    flex: 1,
-    backgroundColor: "#F7F9FB",
-    borderWidth: 1,
-    borderColor: "#E1E5EA",
-    borderRadius: 12,
-    paddingLeft: 40,
-    paddingVertical: 12,
-    fontSize: 16,
-  },
-  timeButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#E3F2FD",
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 14,
-  },
-  timeText: {
-    marginLeft: 10,
-    fontSize: 16,
-    color: "#333",
-  },
-  updateButton: {
-    backgroundColor: "#1E88E5",
-    paddingVertical: 14,
-    borderRadius: 30,
-    alignItems: "center",
-    marginTop: 8,
-  },
-  updateButtonText: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  cancelButton: {
-    marginTop: 12,
-    alignItems: "center",
-  },
-  cancelText: {
-    color: "#E53935",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-   logoutButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#E53935",
-    justifyContent: "center",
-    paddingVertical: 12,
-    borderRadius: 30,
-    marginBottom: 25,
-  },
-  logoutButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-    marginLeft: 8,
-  },
+  mainScreenWrapper: { flex: 1, flexDirection: "row", backgroundColor: "#F7FAFC" },
+  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  contentArea: { flex: 1, padding: Platform.OS === 'web' ? 40 : 20 },
+  headerNav: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 30 },
+  headerLeftBtn: { padding: 5 },
+  headerRightBtn: { padding: 5 },
+  headerTitleContainer: { flex: 1, marginHorizontal: 15 },
+  pageTitle: { fontSize: 24, fontWeight: "bold", color: "#1A202C" },
+  pageSub: { color: "#718096", fontSize: 14, marginTop: 4 },
+  profileCard: { backgroundColor: "#fff", borderRadius: 20, padding: 30, borderWidth: 1, borderColor: "#EDF2F7", alignSelf: 'center', width: '100%' },
+  profileHeader: { flexDirection: "row", alignItems: "center", marginBottom: 20 },
+  avatarLarge: { width: 80, height: 80, borderRadius: 40, backgroundColor: "#EBF8FF", justifyContent: "center", alignItems: "center", borderWidth: 4, borderColor: "#fff" },
+  avatarText: { fontSize: 32, fontWeight: "bold", color: "#007BFF" },
+  doctorNameMain: { fontSize: 22, fontWeight: "bold", color: "#2D3748" },
+  doctorDeptMain: { fontSize: 16, color: "#718096" },
+  divider: { height: 1, backgroundColor: "#F7FAFC", marginVertical: 20 },
+  infoGrid: { flexDirection: "row", flexWrap: "wrap", gap: 20 },
+  infoBox: { width: "45%", marginBottom: 10 },
+  infoLabel: { fontSize: 12, color: "#A0AEC0", textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 },
+  infoValueText: { fontSize: 16, color: "#2D3748", fontWeight: "500" },
+  timeBadge: { backgroundColor: "#E6FFFA", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, alignSelf: 'flex-start' },
+  timeBadgeText: { color: "#319795", fontWeight: "bold" },
+  buttonActionRow: { marginTop: 40, flexDirection: 'row', gap: 15 },
+  primaryEditBtn: { backgroundColor: "#007BFF", paddingHorizontal: 25, paddingVertical: 12, borderRadius: 12, flexDirection: "row", alignItems: "center" },
+  primaryEditBtnText: { color: "#fff", fontWeight: "bold", marginLeft: 10 },
+  mobileLogoutBtn: { borderSize: 1, borderColor: "#FED7D7", paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12, backgroundColor: '#FFF5F5' },
+  mobileLogoutText: { color: "#E53E3E", fontWeight: "bold" },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
+  modalBox: { backgroundColor: "#fff", borderRadius: 20, padding: 25, width: "90%", maxHeight: '80%' },
+  modalHeaderTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 20, color: "#1A202C" },
+  fieldLabel: { fontSize: 14, color: "#4A5568", marginBottom: 8, fontWeight: "600", marginTop: 15 },
+  modalInput: { backgroundColor: "#F7FAFC", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 10, padding: 12, fontSize: 16 },
+  modalTimeRow: { flexDirection: "row", marginTop: 5 },
+  webInputTime: { padding: 10, borderRadius: 8, border: '1px solid #E2E8F0', backgroundColor: '#F7FAFC' },
+  mobileTimeBtn: { backgroundColor: "#F7FAFC", padding: 12, borderRadius: 10, borderWidth: 1, borderColor: "#E2E8F0" },
+  saveBtn: { backgroundColor: "#007BFF", padding: 15, borderRadius: 12, alignItems: "center", marginTop: 25 },
+  saveBtnText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  modalCloseBtn: { marginTop: 15, alignItems: "center" },
+  modalCloseText: { color: "#A0AEC0", fontWeight: "500" },
 });

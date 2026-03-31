@@ -10,6 +10,11 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
+  useWindowDimensions,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -20,14 +25,20 @@ import { getEmployeeId } from "../utils/storage"; // AsyncStorage helper
 const BASE_URL = "https://hospitaldatabasemanagement.onrender.com";
 
 export default function EmployeeUpdateScreen({ navigation }) {
+  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
+  const MAX_WIDTH = 420;
+  const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
+  const isDesktop = SCREEN_WIDTH >= 768; // Desktop breakpoint
+
   const [employeeId, setEmployeeId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [image, setImage] = useState(null);
 
-  // API-driven dropdowns
   const [departmentOptions, setDepartmentOptions] = useState([]);
   const [roleOptions, setRoleOptions] = useState([]);
 
-  // Form state
+  const [clickedAfterApproved, setClickedAfterApproved] = useState(false);
+
   const [form, setForm] = useState({
     fullName: "",
     email: "",
@@ -64,24 +75,22 @@ export default function EmployeeUpdateScreen({ navigation }) {
 
   const [showDobPicker, setShowDobPicker] = useState(false);
   const [showDojPicker, setShowDojPicker] = useState(false);
-
-  // ⏰ Timing pickers
   const [showScheduleInPicker, setShowScheduleInPicker] = useState(false);
   const [showScheduleOutPicker, setShowScheduleOutPicker] = useState(false);
   const [showBreakInPicker, setShowBreakInPicker] = useState(false);
   const [showBreakOutPicker, setShowBreakOutPicker] = useState(false);
-const [clickedAfterApproved, setClickedAfterApproved] = useState(false);
 
-  const [image, setImage] = useState(null);
-const [pendingUpdateForm, setPendingUpdateForm] = useState(null);
+  const showAlert = (title, message) => {
+    if (Platform.OS === "web") window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
 
-  // Fetch employee ID
+  // -------------------- FETCH EMPLOYEE ID --------------------
   useEffect(() => {
     const fetchStoredEmployeeId = async () => {
       const storedId = await getEmployeeId();
-      if (storedId) {
-        setEmployeeId(storedId);
-      } else {
+      if (storedId) setEmployeeId(storedId);
+      else {
         Alert.alert("Error", "No employee ID found. Please log in again.");
         navigation.goBack();
       }
@@ -89,7 +98,7 @@ const [pendingUpdateForm, setPendingUpdateForm] = useState(null);
     fetchStoredEmployeeId();
   }, []);
 
-  // Fetch department & role options
+  // -------------------- FETCH DEPARTMENT & ROLE OPTIONS --------------------
   useEffect(() => {
     const fetchOptions = async () => {
       try {
@@ -101,12 +110,8 @@ const [pendingUpdateForm, setPendingUpdateForm] = useState(null);
         const deptData = await deptRes.json();
         const roleData = await roleRes.json();
 
-        if (deptRes.ok && deptData.success) {
-          setDepartmentOptions(deptData.departments || []);
-        }
-        if (roleRes.ok && roleData.success) {
-          setRoleOptions(roleData.roles || []);
-        }
+        if (deptRes.ok && deptData.success) setDepartmentOptions(deptData.departments || []);
+        if (roleRes.ok && roleData.success) setRoleOptions(roleData.roles || []);
       } catch (error) {
         console.log("Dropdown fetch error", error);
       }
@@ -114,15 +119,17 @@ const [pendingUpdateForm, setPendingUpdateForm] = useState(null);
     fetchOptions();
   }, []);
 
-  // Fetch existing employee details
+  // -------------------- FETCH EMPLOYEE DETAILS --------------------
   useEffect(() => {
     if (!employeeId) return;
+
     const fetchEmployee = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`${BASE_URL}/employee/${employeeId}`);
-        const data = await response.json();
-        if (response.ok && data.success && data.employee) {
+        const res = await fetch(`${BASE_URL}/employee/${employeeId}`);
+        const data = await res.json();
+
+        if (res.ok && data.success && data.employee) {
           const emp = data.employee;
           setForm({
             ...form,
@@ -152,24 +159,16 @@ const [pendingUpdateForm, setPendingUpdateForm] = useState(null);
             branchName: emp.branch_name || "",
             bankName: emp.bank_name || "",
             accountNumber: emp.account_number || "",
-            temporaryAddresses:
-              emp.temporary_addresses || [
-                { street: "", state: "", pincode: "", city: "" },
-              ],
-            permanentAddresses:
-              emp.permanent_addresses || [
-                { street: "", state: "", pincode: "", city: "" },
-              ],
-            dateOfJoining: emp.date_of_joining
-              ? new Date(emp.date_of_joining)
-              : new Date(),
+            temporaryAddresses: emp.temporary_addresses || [{ street: "", state: "", pincode: "", city: "" }],
+            permanentAddresses: emp.permanent_addresses || [{ street: "", state: "", pincode: "", city: "" }],
+            dateOfJoining: emp.date_of_joining ? new Date(emp.date_of_joining) : new Date(),
           });
           setImage(emp.image ? { uri: emp.image } : null);
         } else {
-          Alert.alert("Error", data.message || "Failed to fetch employee details");
+          showAlert("Error", data.message || "Failed to fetch employee details");
         }
       } catch (error) {
-        Alert.alert("Error", "Failed to fetch employee details");
+        showAlert("Error", "Failed to fetch employee details");
       } finally {
         setLoading(false);
       }
@@ -177,720 +176,564 @@ const [pendingUpdateForm, setPendingUpdateForm] = useState(null);
     fetchEmployee();
   }, [employeeId]);
 
-  // Pick image
+  // -------------------- IMAGE PICKER --------------------
   const pickImage = async () => {
-    const permissionResult =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissionResult.granted) {
-      Alert.alert("Permission Denied", "Camera roll access is required.");
-      return;
-    }
+    Alert.alert("Update Photo", "Choose an option", [
+      {
+        text: "Take Photo",
+        onPress: async () => {
+          const perm = await ImagePicker.requestCameraPermissionsAsync();
+          if (!perm.granted) return showAlert("Permission Denied", "Camera access is required.");
+          const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.7 });
+          if (!result.canceled) setImage(result.assets[0]);
+        },
+      },
+      {
+        text: "Choose from Gallery",
+        onPress: async () => {
+          const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (!perm.granted) return showAlert("Permission Denied", "Gallery access is required.");
+          const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.7 });
+          if (!result.canceled) setImage(result.assets[0]);
+        },
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
 
-    const galleryResult = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.7,
-    });
+  // -------------------- HANDLE EMPLOYEE UPDATE --------------------
+  const handleUpdateEmployee = async () => {
+    if (!employeeId) return showAlert("Error", "Employee ID not found.");
+    setLoading(true);
 
-    if (!galleryResult.canceled) {
-      setImage(galleryResult.assets[0]);
+    try {
+      const statusRes = await fetch(`${BASE_URL}/employee/${employeeId}`);
+      const statusData = await statusRes.json();
+      if (!statusData.success || !statusData.employee) return showAlert("Error", "Unable to fetch employee status");
+
+      const currentStatus = statusData.employee.pending_approve_update;
+      const formData = new FormData();
+
+      Object.entries(form).forEach(([key, value]) => {
+        if (value instanceof Date) formData.append(key, value.toISOString());
+        else if (typeof value === "object" && value !== null) formData.append(key, JSON.stringify(value));
+        else formData.append(key, value);
+      });
+
+      if (image && !image.uri.startsWith("http")) {
+        const ext = image.uri.split(".").pop();
+        formData.append("image", { uri: image.uri, name: `profile.${ext}`, type: `image/${ext}` });
+      }
+
+      if (currentStatus === "approved") {
+        if (!clickedAfterApproved) {
+          const updateRes = await fetch(`${BASE_URL}/employee/update/${employeeId}`, { method: "PUT", body: formData });
+          const updateData = await updateRes.json();
+          if (!updateData.success) return showAlert("Error", updateData.message || "Update failed");
+          showAlert("Updated", "Your profile was updated successfully.");
+          setClickedAfterApproved(true);
+          return;
+        } else {
+          const pendingRes = await fetch(`${BASE_URL}/employee/pending-update/${employeeId}`, { method: "PUT" });
+          const pendingData = await pendingRes.json();
+          if (!pendingData.success) return showAlert("Error", pendingData.message || "Failed to set pending");
+          showAlert("Pending", "Your profile is now pending admin approval.");
+          setClickedAfterApproved(false);
+          return;
+        }
+      }
+
+      const pendingRes = await fetch(`${BASE_URL}/employee/pending-update/${employeeId}`, { method: "PUT" });
+      const pendingData = await pendingRes.json();
+      if (!pendingData.success) return showAlert("Error", pendingData.message || "Failed to set pending");
+      showAlert("Update Sent", "Your profile changes have been sent to admin for approval.");
+    } catch (err) {
+      console.error(err);
+      showAlert("Error", "Something went wrong");
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Handle update
+  // -------------------- RENDER HELPERS --------------------
+  const renderInput = (label, key, keyboardType = "default", secure = false) => (
+    <TextInput
+      style={styles.input}
+      placeholder={label}
+      value={form[key]}
+      onChangeText={(text) => setForm({ ...form, [key]: text })}
+      keyboardType={keyboardType}
+      secureTextEntry={secure}
+    />
+  );
 
+  const renderAddress = (type) => {
+    const addresses = type === "temp" ? form.temporaryAddresses : form.permanentAddresses;
+    return addresses.map((addr, idx) => (
+      <View key={idx} style={{ marginBottom: 15 }}>
+        {["street", "city", "state", "pincode"].map((field) => (
+          <TextInput
+            key={field}
+            style={styles.input}
+            placeholder={field.charAt(0).toUpperCase() + field.slice(1)}
+            value={addr[field]}
+            onChangeText={(text) => {
+              const newAddresses = [...addresses];
+              newAddresses[idx][field] = text;
+              setForm({ ...form, [type === "temp" ? "temporaryAddresses" : "permanentAddresses"]: newAddresses });
+            }}
+          />
+        ))}
+      </View>
+    ));
+  };
 
-const handleUpdateEmployee = async () => {
-  if (!employeeId) {
-    Alert.alert("Error", "Employee ID not found.");
-    return;
-  }
-
-  setLoading(true);
-
-  try {
-    // 1️⃣ Fetch current status
-    const statusRes = await fetch(`${BASE_URL}/employee/${employeeId}`);
-    const statusData = await statusRes.json();
-
-    if (!statusData.success || !statusData.employee) {
-      Alert.alert("Error", "Unable to fetch employee status");
-      return;
-    }
-
-    const currentStatus = statusData.employee.pending_approve_update;
-
-    // 2️⃣ Prepare FormData
-    const formData = new FormData();
-    Object.entries(form).forEach(([key, value]) => {
-      if (value instanceof Date) {
-        formData.append(key, value.toISOString());
-      } else if (typeof value === "object" && value !== null) {
-        formData.append(key, JSON.stringify(value));
-      } else {
-        formData.append(key, value);
-      }
-    });
-
-    if (image && !image.uri.startsWith("http")) {
-      const ext = image.uri.split(".").pop();
-      formData.append("image", {
-        uri: image.uri,
-        name: `profile.${ext}`,
-        type: `image/${ext}`,
-      });
-    }
-
-    // 3️⃣ Behavior based on current status
-    if (currentStatus === "approved") {
-      if (!clickedAfterApproved) {
-        // First click → update directly
-        const updateRes = await fetch(`${BASE_URL}/employee/update/${employeeId}`, {
-          method: "PUT",
-          body: formData,
-        });
-
-        const updateData = await updateRes.json();
-
-        if (!updateData.success) {
-          Alert.alert("Error", updateData.message || "Update failed");
-          return;
-        }
-
-        Alert.alert("Updated", "Your profile was updated successfully.");
-        setClickedAfterApproved(true); // Next click will set pending
-        return;
-      } else {
-        // Second click → mark pending
-        const pendingRes = await fetch(`${BASE_URL}/employee/pending-update/${employeeId}`, {
-          method: "PUT",
-        });
-        const pendingData = await pendingRes.json();
-
-        if (!pendingData.success) {
-          Alert.alert("Error", pendingData.message || "Failed to set pending");
-          return;
-        }
-
-        Alert.alert(
-          "Pending",
-          "Your profile is now pending admin approval."
-        );
-        setClickedAfterApproved(false); // Reset after sending to pending
-        return;
-      }
-    }
-
-    // 4️⃣ If not approved (pending or rejected) → mark pending directly
-    const pendingRes = await fetch(`${BASE_URL}/employee/pending-update/${employeeId}`, {
-      method: "PUT",
-    });
-    const pendingData = await pendingRes.json();
-
-    if (!pendingData.success) {
-      Alert.alert("Error", pendingData.message || "Failed to set pending");
-      return;
-    }
-
-    Alert.alert(
-      "Update Sent",
-      "Your profile changes have been sent to admin for approval."
-    );
-
-  } catch (err) {
-    console.error("Update error:", err);
-    Alert.alert("Error", "Something went wrong");
-  } finally {
-    setLoading(false);
-  }
-};
-
-
-
-
-
-
-
-
-  if (loading && !form.fullName) {
+  if (loading && !form.fullName)
     return (
       <View style={styles.loader}>
         <ActivityIndicator size="large" color="#007BFF" />
       </View>
     );
-  }
 
+  // -------------------- MAIN RETURN --------------------
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => navigation.goBack()}
-      >
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+  <View style={styles.desktopContainer}>
+    {/* LEFT COLUMN: FORM */}
+  <ScrollView contentContainerStyle={[styles.leftColumn]}>
+      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
         <Ionicons name="arrow-back" size={24} color="#007BFF" />
       </TouchableOpacity>
 
-      <Text style={styles.title}>Update Employee</Text>
-
-      {/* Profile Image */}
+      <Text style={styles.title}>Update Employee Profile</Text>
       <TouchableOpacity style={styles.imageContainer} onPress={pickImage}>
-        {image ? (
-          <Image source={{ uri: image.uri }} style={styles.image} />
-        ) : (
-          <Ionicons name="camera" size={50} color="#777" />
-        )}
+        {image ? <Image source={{ uri: image.uri }} style={styles.image} /> : <Ionicons name="camera" size={50} color="#777" />}
       </TouchableOpacity>
 
-      {/* Full Name */}
-      <TextInput
-        style={styles.input}
-        placeholder="Full Name"
-        value={form.fullName}
-        onChangeText={(text) => setForm({ ...form, fullName: text })}
+            {/* Basic Info */}
+            <Text style={styles.sectionTitle}>Basic Information</Text>
+            <View style={isDesktop ? styles.gridContainer : null}>
+              {renderInput("Full Name", "fullName")}
+              {renderInput("Email", "email", "email-address")}
+              {renderInput("Password", "password", "default", true)}
+              {renderInput("Confirm Password", "confirmPassword", "default", true)}
+              {renderInput("Mobile", "mobile", "phone-pad")}
+              {renderInput("Family Contact", "familyNumber", "phone-pad")}
+              {renderInput("Age", "age", "numeric")}
+              {renderInput("Experience", "experience")}
+              <View style={[styles.pickerWrapper, isDesktop && styles.halfInput]}>
+                <Picker selectedValue={form.bloodGroup} onValueChange={(v) => setForm({ ...form, bloodGroup: v })}>
+                  <Picker.Item label="Blood Group" value="" />
+                  {["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"].map((bg) => (
+                    <Picker.Item key={bg} label={bg} value={bg} />
+                  ))}
+                </Picker>
+              </View>
+             {isDesktop ? (
+  // Web / Desktop: native HTML date input
+  <input
+    type="date"
+    value={form.dob.toISOString().split("T")[0]}
+    onChange={(e) => setForm({ ...form, dob: new Date(e.target.value) })}
+    style={{
+      width: "48%",
+      padding: 12,
+      marginBottom: 15,
+      borderRadius: 8,
+      border: "1px solid #ddd",
+      fontSize: 15,
+    }}
+  />
+) : (
+  // Mobile: TouchableOpacity opens DateTimePicker
+  <TouchableOpacity
+    style={[styles.datePicker, isDesktop && styles.halfInput]}
+    onPress={() => setShowDobPicker(true)}
+  >
+    <Text style={styles.datePickerText}>
+      DOB: {form.dob.toISOString().split("T")[0]}
+    </Text>
+  </TouchableOpacity>
+)}
+
+            </View>
+
+            {/* Professional Details */}
+            <Text style={styles.sectionTitle}>Professional Details</Text>
+            <View style={isDesktop ? styles.gridContainer : null}>
+              {renderInput("Aadhar Number", "aadhar", "numeric")}
+              {renderInput("PAN Number", "pan")}
+              {renderInput("ESI Number", "esiNumber")}
+              {renderInput("Reporting Manager", "reportingManager")}
+              <View style={[styles.pickerWrapper, isDesktop && styles.halfInput]}>
+                <Picker selectedValue={form.department} onValueChange={(v) => setForm({ ...form, department: v })}>
+                  <Picker.Item label="Select Department" value="" />
+                  {departmentOptions.map((d) => (
+                    <Picker.Item key={d._id} label={d.department_name} value={d.department_name} />
+                  ))}
+                </Picker>
+              </View>
+              <View style={[styles.pickerWrapper, isDesktop && styles.halfInput]}>
+                <Picker selectedValue={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
+                  <Picker.Item label="Select Role" value="" />
+                  {roleOptions.map((r) => (
+                    <Picker.Item key={r._id} label={r.role_name} value={r.role_name} />
+                  ))}
+                </Picker>
+              </View>
+            {isDesktop ? (
+  // Web / Desktop: native HTML date input
+  <input
+    type="date"
+    value={form.dateOfJoining.toISOString().split("T")[0]}
+    onChange={(e) =>
+      setForm({ ...form, dateOfJoining: new Date(e.target.value) })
+    }
+    style={{
+      width: "48%",
+      padding: 12,
+      marginBottom: 15,
+      borderRadius: 8,
+      border: "1px solid #ddd",
+      fontSize: 15,
+    }}
+  />
+) : (
+  // Mobile: TouchableOpacity opens DateTimePicker
+  <TouchableOpacity
+    style={[styles.datePicker, isDesktop && styles.halfInput]}
+    onPress={() => setShowDojPicker(true)}
+  >
+    <Text style={styles.datePickerText}>
+      DOJ: {form.dateOfJoining.toISOString().split("T")[0]}
+    </Text>
+  </TouchableOpacity>
+)}
+
+            </View>
+
+          {/* Shift & Break */}
+<Text style={styles.sectionTitle}>Shift & Break Timing</Text>
+<View style={isDesktop ? styles.gridContainer : null}>
+  {["Schedule In", "Schedule Out", "Break In", "Break Out"].map((label, idx) => {
+    const value =
+      idx === 0 ? form.scheduleIn :
+      idx === 1 ? form.scheduleOut :
+      idx === 2 ? form.breakIn :
+      form.breakOut;
+
+    // Handler for web input
+    const handleWebChange = (e) => {
+      const newValue = e.target.value;
+      if (idx === 0) setForm({ ...form, scheduleIn: newValue });
+      else if (idx === 1) setForm({ ...form, scheduleOut: newValue });
+      else if (idx === 2) setForm({ ...form, breakIn: newValue });
+      else setForm({ ...form, breakOut: newValue });
+    };
+
+    return isDesktop ? (
+      // Desktop / Web: use native HTML time input
+      <input
+        key={idx}
+        type="time"
+        value={value}
+        onChange={handleWebChange}
+        style={{
+          width: "48%",
+          padding: 12,
+          marginBottom: 15,
+          borderRadius: 8,
+          border: "1px solid #ddd",
+          fontSize: 15,
+        }}
       />
-
-      {/* Email */}
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        value={form.email}
-        onChangeText={(text) => setForm({ ...form, email: text })}
-        keyboardType="email-address"
-      />
-
-      {/* Password */}
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        secureTextEntry
-        value={form.password}
-        onChangeText={(text) => setForm({ ...form, password: text })}
-      />
-
-      {/* Confirm Password */}
-      <TextInput
-        style={styles.input}
-        placeholder="Confirm Password"
-        secureTextEntry
-        value={form.confirmPassword}
-        onChangeText={(text) => setForm({ ...form, confirmPassword: text })}
-      />
-
-      {/* Mobile */}
-      <TextInput
-        style={styles.input}
-        placeholder="Mobile"
-        value={form.mobile}
-        onChangeText={(text) => setForm({ ...form, mobile: text })}
-        keyboardType="phone-pad"
-      />
-
-      {/* Family Contact */}
-      <TextInput
-        style={styles.input}
-        placeholder="Family Contact"
-        value={form.familyNumber}
-        onChangeText={(text) => setForm({ ...form, familyNumber: text })}
-        keyboardType="phone-pad"
-      />
-
-      {/* Age */}
-      <TextInput
-        style={styles.input}
-        placeholder="Age"
-        value={form.age}
-        onChangeText={(text) => setForm({ ...form, age: text })}
-        keyboardType="numeric"
-      />
-
-      {/* Experience */}
-      <TextInput
-        style={styles.input}
-        placeholder="Experience"
-        value={form.experience}
-        onChangeText={(text) => setForm({ ...form, experience: text })}
-      />
-
-      {/* Blood Group */}
-      <Picker
-        selectedValue={form.bloodGroup}
-        style={styles.picker}
-        onValueChange={(value) => setForm({ ...form, bloodGroup: value })}
-      >
-        <Picker.Item label="Select Blood Group" value="" />
-        {["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"].map((bg, idx) => (
-          <Picker.Item key={idx} label={bg} value={bg} />
-        ))}
-      </Picker>
-
-      {/* Aadhar Number */}
-      <TextInput
-        style={styles.input}
-        placeholder="Aadhar Number"
-        value={form.aadhar}
-        onChangeText={(text) => setForm({ ...form, aadhar: text })}
-        keyboardType="numeric"
-      />
-
-      {/* PAN Number */}
-      <TextInput
-        style={styles.input}
-        placeholder="PAN Number"
-        value={form.pan}
-        onChangeText={(text) => setForm({ ...form, pan: text })}
-      />
-
-      {/* ESI Number */}
-      <TextInput
-        style={styles.input}
-        placeholder="ESI Number"
-        value={form.esiNumber}
-        onChangeText={(text) => setForm({ ...form, esiNumber: text })}
-      />
-
-      {/* Reporting Manager */}
-      <TextInput
-        style={styles.input}
-        placeholder="Reporting Manager"
-        value={form.reportingManager}
-        onChangeText={(text) => setForm({ ...form, reportingManager: text })}
-      />
-
-      {/* Department */}
-      <Picker
-        selectedValue={form.department}
-        style={styles.picker}
-        onValueChange={(value) => setForm({ ...form, department: value })}
-      >
-        <Picker.Item label="Select Department" value="" />
-        {departmentOptions.map((dept, idx) => (
-          <Picker.Item
-            key={idx}
-            label={dept.department_name}
-            value={dept.department_name}
-          />
-        ))}
-      </Picker>
-
-      {/* Role */}
-      <Picker
-        selectedValue={form.role}
-        style={styles.picker}
-        onValueChange={(value) => setForm({ ...form, role: value })}
-      >
-        <Picker.Item label="Select Role" value="" />
-        {roleOptions.map((roleItem, idx) => (
-          <Picker.Item
-            key={idx}
-            label={roleItem.role_name}
-            value={roleItem.role_name}
-          />
-        ))}
-      </Picker>
-
-      {/* Date of Birth */}
+    ) : (
+      // Mobile: use TouchableOpacity to open native time picker
       <TouchableOpacity
-        style={styles.datePicker}
-        onPress={() => setShowDobPicker(true)}
+        key={idx}
+        style={[styles.datePicker, isDesktop && styles.halfInput]}
+        onPress={() => {
+          if (idx === 0) setShowScheduleInPicker(true);
+          else if (idx === 1) setShowScheduleOutPicker(true);
+          else if (idx === 2) setShowBreakInPicker(true);
+          else setShowBreakOutPicker(true);
+        }}
       >
-        <Text>Date of Birth: {form.dob.toISOString().split("T")[0]}</Text>
-      </TouchableOpacity>
-      {showDobPicker && (
-        <DateTimePicker
-          value={form.dob}
-          mode="date"
-          display="default"
-          onChange={(e, selectedDate) => {
-            setShowDobPicker(false);
-            if (selectedDate) setForm({ ...form, dob: selectedDate });
-          }}
-        />
-      )}
-
-      {/* Date of Joining */}
-      <TouchableOpacity
-        style={styles.datePicker}
-        onPress={() => setShowDojPicker(true)}
-      >
-        <Text>
-          Date of Joining: {form.dateOfJoining.toISOString().split("T")[0]}
+        <Text style={styles.datePickerText}>
+          {label}: {value || "Set Time"}
         </Text>
       </TouchableOpacity>
-      {showDojPicker && (
-        <DateTimePicker
-          value={form.dateOfJoining}
-          mode="date"
-          display="default"
-          onChange={(e, selectedDate) => {
-            setShowDojPicker(false);
-            if (selectedDate) setForm({ ...form, dateOfJoining: selectedDate });
-          }}
-        />
-      )}
+    );
+  })}
+</View>
 
-      {/* Schedule In */}
-      <TouchableOpacity
-        style={styles.datePicker}
-        onPress={() => setShowScheduleInPicker(true)}
-      >
-        <Text>
-          Schedule In: {form.scheduleIn ? form.scheduleIn : "Select Time"}
-        </Text>
-      </TouchableOpacity>
-      {showScheduleInPicker && (
-        <DateTimePicker
-          value={form.scheduleIn ? new Date(`1970-01-01T${form.scheduleIn}:00`) : new Date()}
-          mode="time"
-          is24Hour={true}
-          display="default"
-          onChange={(e, selectedDate) => {
-            setShowScheduleInPicker(false);
-            if (selectedDate) {
-              const timeStr = selectedDate.toTimeString().slice(0, 5);
-              setForm({ ...form, scheduleIn: timeStr });
-            }
-          }}
-        />
-      )}
 
-      {/* Schedule Out */}
-      <TouchableOpacity
-        style={styles.datePicker}
-        onPress={() => setShowScheduleOutPicker(true)}
-      >
-        <Text>
-          Schedule Out: {form.scheduleOut ? form.scheduleOut : "Select Time"}
-        </Text>
-      </TouchableOpacity>
-      {showScheduleOutPicker && (
-        <DateTimePicker
-          value={form.scheduleOut ? new Date(`1970-01-01T${form.scheduleOut}:00`) : new Date()}
-          mode="time"
-          is24Hour={true}
-          display="default"
-          onChange={(e, selectedDate) => {
-            setShowScheduleOutPicker(false);
-            if (selectedDate) {
-              const timeStr = selectedDate.toTimeString().slice(0, 5);
-              setForm({ ...form, scheduleOut: timeStr });
-            }
-          }}
-        />
-      )}
+{/* Job Description */}
+{isDesktop ? (
+  <textarea
+    placeholder="Job Description"
+    value={form.jobDescription}
+    onChange={(e) => setForm({ ...form, jobDescription: e.target.value })}
+    style={{
+      width: "100%",
+      padding: 12,
+      borderRadius: 8,
+      border: "1px solid #ddd",
+      fontSize: 15,
+      marginBottom: 15,
+      resize: "vertical",
+      minHeight: 80,
+    }}
+  />
+) : (
+  <TextInput
+    style={styles.input}
+    placeholder="Job Description"
+    value={form.jobDescription}
+    onChangeText={(text) => setForm({ ...form, jobDescription: text })}
+  />
+)}
 
-      {/* Break In */}
-      <TouchableOpacity
-        style={styles.datePicker}
-        onPress={() => setShowBreakInPicker(true)}
-      >
-        <Text>Break In: {form.breakIn ? form.breakIn : "Select Time"}</Text>
-      </TouchableOpacity>
-      {showBreakInPicker && (
-        <DateTimePicker
-          value={form.breakIn ? new Date(`1970-01-01T${form.breakIn}:00`) : new Date()}
-          mode="time"
-          is24Hour={true}
-          display="default"
-          onChange={(e, selectedDate) => {
-            setShowBreakInPicker(false);
-            if (selectedDate) {
-              const timeStr = selectedDate.toTimeString().slice(0, 5);
-              setForm({ ...form, breakIn: timeStr });
-            }
-          }}
-        />
-      )}
+{/* Employment Type */}
+{isDesktop ? (
+  <select
+    value={form.employmentType}
+    onChange={(e) => setForm({ ...form, employmentType: e.target.value })}
+    style={{
+      width: "100%",
+      padding: 12,
+      borderRadius: 8,
+      border: "1px solid #ddd",
+      fontSize: 15,
+      marginBottom: 15,
+    }}
+  >
+    <option value="">Select Employment Type</option>
+    {["Full-time", "Part-time", "Contract", "Apprentice"].map((type, idx) => (
+      <option key={idx} value={type}>{type}</option>
+    ))}
+  </select>
+) : (
+  <Picker
+    selectedValue={form.employmentType}
+    style={styles.picker}
+    onValueChange={(value) => setForm({ ...form, employmentType: value })}
+  >
+    <Picker.Item label="Select Employment Type" value="" />
+    {["Full-time", "Part-time", "Contract", "Apprentice"].map((type, idx) => (
+      <Picker.Item key={idx} label={type} value={type} />
+    ))}
+  </Picker>
+)}
 
-      {/* Break Out */}
-      <TouchableOpacity
-        style={styles.datePicker}
-        onPress={() => setShowBreakOutPicker(true)}
-      >
-        <Text>Break Out: {form.breakOut ? form.breakOut : "Select Time"}</Text>
-      </TouchableOpacity>
-      {showBreakOutPicker && (
-        <DateTimePicker
-          value={form.breakOut ? new Date(`1970-01-01T${form.breakOut}:00`) : new Date()}
-          mode="time"
-          is24Hour={true}
-          display="default"
-          onChange={(e, selectedDate) => {
-            setShowBreakOutPicker(false);
-            if (selectedDate) {
-              const timeStr = selectedDate.toTimeString().slice(0, 5);
-              setForm({ ...form, breakOut: timeStr });
-            }
-          }}
-        />
-      )}
+{/* Category */}
+{isDesktop ? (
+  <select
+    value={form.category}
+    onChange={(e) => setForm({ ...form, category: e.target.value })}
+    style={{
+      width: "100%",
+      padding: 12,
+      borderRadius: 8,
+      border: "1px solid #ddd",
+      fontSize: 15,
+      marginBottom: 15,
+    }}
+  >
+    <option value="">Select Category</option>
+    {["Permanent", "Temporary", "Intern"].map((cat, idx) => (
+      <option key={idx} value={cat}>{cat}</option>
+    ))}
+  </select>
+) : (
+  <Picker
+    selectedValue={form.category}
+    style={styles.picker}
+    onValueChange={(value) => setForm({ ...form, category: value })}
+  >
+    <Picker.Item label="Select Category" value="" />
+    {["Permanent", "Temporary", "Intern"].map((cat, idx) => (
+      <Picker.Item key={idx} label={cat} value={cat} />
+    ))}
+  </Picker>
+)}
 
-      {/* Monthly Salary */}
-      <TextInput
-        style={styles.input}
+{/* Bank & Salary */}
+<Text style={styles.sectionTitle}>Bank & Salary</Text>
+<View style={isDesktop ? styles.gridContainer : null}>
+  {isDesktop ? (
+    <>
+      <input
+        type="number"
         placeholder="Monthly Salary"
         value={form.monthlySalary}
-        onChangeText={(text) => setForm({ ...form, monthlySalary: text })}
-        keyboardType="numeric"
+        onChange={(e) => setForm({ ...form, monthlySalary: e.target.value })}
+        style={{ ...styles.input, width: "48%" }}
       />
-
-      {/* Job Description */}
-      <TextInput
-        style={styles.input}
-        placeholder="Job Description"
-        value={form.jobDescription}
-        onChangeText={(text) => setForm({ ...form, jobDescription: text })}
-      />
-
-      {/* Employment Type */}
-      <Picker
-        selectedValue={form.employmentType}
-        style={styles.picker}
-        onValueChange={(value) => setForm({ ...form, employmentType: value })}
-      >
-        <Picker.Item label="Select Employment Type" value="" />
-        {["Full-time", "Part-time", "Contract", "Apprentice"].map(
-          (type, idx) => (
-            <Picker.Item key={idx} label={type} value={type} />
-          )
-        )}
-      </Picker>
-
-      {/* Category */}
-      <Picker
-        selectedValue={form.category}
-        style={styles.picker}
-        onValueChange={(value) => setForm({ ...form, category: value })}
-      >
-        <Picker.Item label="Select Category" value="" />
-        {["Permanent", "Temporary", "Intern"].map((cat, idx) => (
-          <Picker.Item key={idx} label={cat} value={cat} />
-        ))}
-      </Picker>
-
-      {/* IFSC */}
-      <TextInput
-        style={styles.input}
+      <input
+        type="text"
         placeholder="IFSC"
         value={form.ifsc}
-        onChangeText={(text) => setForm({ ...form, ifsc: text })}
+        onChange={(e) => setForm({ ...form, ifsc: e.target.value })}
+        style={{ ...styles.input, width: "48%" }}
       />
-
-      {/* Bank Name */}
-      <TextInput
-        style={styles.input}
+      <input
+        type="text"
         placeholder="Bank Name"
         value={form.bankName}
-        onChangeText={(text) => setForm({ ...form, bankName: text })}
+        onChange={(e) => setForm({ ...form, bankName: e.target.value })}
+        style={{ ...styles.input, width: "48%" }}
       />
-
-      {/* Branch Name */}
-      <TextInput
-        style={styles.input}
-        placeholder="Branch Name"
-        value={form.branchName}
-        onChangeText={(text) => setForm({ ...form, branchName: text })}
-      />
-
-      {/* Account Number */}
-      <TextInput
-        style={styles.input}
+      <input
+        type="number"
         placeholder="Account Number"
         value={form.accountNumber}
-        onChangeText={(text) => setForm({ ...form, accountNumber: text })}
-        keyboardType="numeric"
+        onChange={(e) => setForm({ ...form, accountNumber: e.target.value })}
+        style={{ ...styles.input, width: "48%" }}
       />
+    </>
+  ) : (
+    <>
+      {renderInput("Monthly Salary", "monthlySalary", "numeric")}
+      {renderInput("IFSC", "ifsc")}
+      {renderInput("Bank Name", "bankName")}
+      {renderInput("Account Number", "accountNumber", "numeric")}
+    </>
+  )}
+</View>
 
-      {/* Temporary Address */}
-      <Text style={{ fontWeight: "bold", marginBottom: 5 }}>
-        Temporary Address
-      </Text>
-      {form.temporaryAddresses.map((addr, idx) => (
-        <View key={idx}>
-          <TextInput
-            style={styles.input}
-            placeholder="Street"
-            value={addr.street}
-            onChangeText={(text) => {
-              const updated = [...form.temporaryAddresses];
-              updated[idx].street = text;
-              setForm({ ...form, temporaryAddresses: updated });
-            }}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="City"
-            value={addr.city}
-            onChangeText={(text) => {
-              const updated = [...form.temporaryAddresses];
-              updated[idx].city = text;
-              setForm({ ...form, temporaryAddresses: updated });
-            }}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="State"
-            value={addr.state}
-            onChangeText={(text) => {
-              const updated = [...form.temporaryAddresses];
-              updated[idx].state = text;
-              setForm({ ...form, temporaryAddresses: updated });
-            }}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Pincode"
-            keyboardType="numeric"
-            value={addr.pincode}
-            onChangeText={(text) => {
-              const updated = [...form.temporaryAddresses];
-              updated[idx].pincode = text;
-              setForm({ ...form, temporaryAddresses: updated });
-            }}
-          />
-        </View>
-      ))}
 
-      {/* Permanent Address */}
-      <Text style={{ fontWeight: "bold", marginBottom: 5 }}>
-        Permanent Address
-      </Text>
-      {form.permanentAddresses.map((addr, idx) => (
-        <View key={idx}>
-          <TextInput
-            style={styles.input}
-            placeholder="Street"
-            value={addr.street}
-            onChangeText={(text) => {
-              const updated = [...form.permanentAddresses];
-              updated[idx].street = text;
-              setForm({ ...form, permanentAddresses: updated });
-            }}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="City"
-            value={addr.city}
-            onChangeText={(text) => {
-              const updated = [...form.permanentAddresses];
-              updated[idx].city = text;
-              setForm({ ...form, permanentAddresses: updated });
-            }}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="State"
-            value={addr.state}
-            onChangeText={(text) => {
-              const updated = [...form.permanentAddresses];
-              updated[idx].state = text;
-              setForm({ ...form, permanentAddresses: updated });
-            }}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Pincode"
-            keyboardType="numeric"
-            value={addr.pincode}
-            onChangeText={(text) => {
-              const updated = [...form.permanentAddresses];
-              updated[idx].pincode = text;
-              setForm({ ...form, permanentAddresses: updated });
-            }}
-          />
-        </View>
-      ))}
+            {/* Addresses */}
+            <Text style={styles.sectionTitle}>Temporary Address</Text>
+            {renderAddress("temp")}
+            <Text style={styles.sectionTitle}>Permanent Address</Text>
+            {renderAddress("perm")}
 
-      <TouchableOpacity
-        style={styles.updateButton}
-        onPress={handleUpdateEmployee}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.updateButtonText}>Update Employee Details</Text>
-        )}
-      </TouchableOpacity>
-    </ScrollView>
+            {/* Pickers */}
+            {showScheduleInPicker && (
+              <DateTimePicker
+                value={new Date()}
+                mode="time"
+                is24Hour
+                onChange={(e, d) => {
+                  setShowScheduleInPicker(false);
+                  if (d) setForm({ ...form, scheduleIn: d.toTimeString().slice(0, 5) });
+                }}
+              />
+            )}
+            {showScheduleOutPicker && (
+              <DateTimePicker
+                value={new Date()}
+                mode="time"
+                is24Hour
+                onChange={(e, d) => {
+                  setShowScheduleOutPicker(false);
+                  if (d) setForm({ ...form, scheduleOut: d.toTimeString().slice(0, 5) });
+                }}
+              />
+            )}
+            {showBreakInPicker && (
+              <DateTimePicker
+                value={new Date()}
+                mode="time"
+                is24Hour
+                onChange={(e, d) => {
+                  setShowBreakInPicker(false);
+                  if (d) setForm({ ...form, breakIn: d.toTimeString().slice(0, 5) });
+                }}
+              />
+            )}
+            {showBreakOutPicker && (
+              <DateTimePicker
+                value={new Date()}
+                mode="time"
+                is24Hour
+                onChange={(e, d) => {
+                  setShowBreakOutPicker(false);
+                  if (d) setForm({ ...form, breakOut: d.toTimeString().slice(0, 5) });
+                }}
+              />
+            )}
+            {showDobPicker && <DateTimePicker value={form.dob} mode="date" onChange={(e, d) => { setShowDobPicker(false); if(d) setForm({ ...form, dob: d }); }} />}
+            {showDojPicker && <DateTimePicker value={form.dateOfJoining} mode="date" onChange={(e, d) => { setShowDojPicker(false); if(d) setForm({ ...form, dateOfJoining: d }); }} />}
+               <TouchableOpacity style={styles.updateButton} onPress={handleUpdateEmployee} disabled={loading}>
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.updateButtonText}>Save All Changes</Text>}
+            </TouchableOpacity>
+                    </ScrollView>
+
+     {isDesktop && (
+      <View style={styles.rightColumn}>
+        <Text style={styles.brandTitle}>Welcome to Employee Portal</Text>
+        <Text style={styles.brandSubtitle}>Manage your profile, shifts, and bank info from here.</Text>
+      </View>
+    )}
+           
+          </View>
+    </KeyboardAvoidingView>
   );
 }
 
+// -------------------- STYLES --------------------
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    padding: 20,
-    backgroundColor: "#f8f9fa",
-  },
-  backButton: {
-    position: "absolute",
-    top: 20,
-    left: 20,
-    zIndex: 10,
-    backgroundColor: "#fff",
-    padding: 8,
-    borderRadius: 20,
-    elevation: 5,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 20,
-    textAlign: "center",
-    marginTop: 50,
-  },
-  imageContainer: {
-    alignSelf: "center",
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: "#ddd",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 20,
-    overflow: "hidden",
-  },
-  image: {
+ desktopContainer: { flex: 1, flexDirection: "row", backgroundColor: "#f8f9fa" },
+leftColumn: { flex: 3, padding: 20, backgroundColor: "#fff" },
+rightColumn: { flex: 2, minWidth: 400, backgroundColor: "#0077B6", justifyContent: "center", alignItems: "center", padding: 40 },
+
+
+  scrollContainer: { paddingBottom: 50, backgroundColor: "#f8f9fa" },
+  mainWrapper: { alignSelf: "center", backgroundColor: "#fff", padding: 25, marginVertical: 20, borderRadius: 12, elevation: 5, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10 },
+  gridContainer: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  halfInput: { width: "48%" },
+  title: { fontSize: 26, fontWeight: "800", color: "#333", textAlign: "center", marginBottom: 20, marginTop: 10 },
+  sectionTitle: { fontSize: 16, fontWeight: "bold", marginTop: 20, marginBottom: 12, color: "#007BFF", borderLeftWidth: 4, borderLeftColor: "#007BFF", paddingLeft: 10 },
+  input: { backgroundColor: "#fff", padding: 12, borderRadius: 8, borderWidth: 1, borderColor: "#ddd", marginBottom: 15, fontSize: 15 },
+  pickerWrapper: { borderWidth: 1, borderColor: "#ddd", borderRadius: 8, marginBottom: 15, height: 50, justifyContent: "center" },
+  datePicker: { backgroundColor: "#fff", padding: 12, borderRadius: 8, borderWidth: 1, borderColor: "#ddd", marginBottom: 15, height: 50, justifyContent: "center" },
+  datePickerText: { fontSize: 15, color: "#555" },
+  imageContainer: { alignSelf: "center", width: 110, height: 110, borderRadius: 55, backgroundColor: "#e9ecef", justifyContent: "center", alignItems: "center", marginBottom: 20, borderWidth: 2, borderColor: "#007BFF" },
+  image: { width: "100%", height: "100%", borderRadius: 55 },
+  updateButton: { backgroundColor: "#007BFF", padding: 18, borderRadius: 8, alignItems: "center", marginTop: 30 },
+  updateButtonText: { color: "#fff", fontSize: 17, fontWeight: "bold" },
+  backButton: { marginBottom: 10 },
+  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
+  brandTitle: { color: "#fff", fontSize: 36, fontWeight: "700", marginBottom: 20 },
+  brandSubtitle: { color: "rgba(255,255,255,0.9)", fontSize: 18, textAlign: "center" },
+  backButton: { marginBottom: 15 },
+   webInput: {
     width: "100%",
-    height: "100%",
-  },
-  input: {
-    backgroundColor: "#fff",
     padding: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#ddd",
+    fontSize: 15,
     marginBottom: 15,
+    fontFamily: "sans-serif",
   },
-  picker: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    height: 50,
-    marginBottom: 15,
-  },
-  datePicker: {
-    backgroundColor: "#fff",
+  webTextArea: {
+    width: "100%",
     padding: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#ddd",
+    fontSize: 15,
     marginBottom: 15,
+    fontFamily: "sans-serif",
+    minHeight: 80,
+    resize: "vertical",
   },
-  updateButton: {
-    backgroundColor: "#007BFF",
-    padding: 15,
+  webSelect: {
+    width: "100%",
+    padding: 12,
     borderRadius: 8,
-    alignItems: "center",
-    marginTop: 10,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    fontSize: 15,
+    marginBottom: 15,
+    fontFamily: "sans-serif",
+    backgroundColor: "#fff",
   },
-  updateButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
+  webHalfInput: {
+    width: "48%",
   },
-  loader: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+
 });

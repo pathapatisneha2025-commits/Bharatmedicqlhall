@@ -7,6 +7,8 @@ import {
   StyleSheet,
   SafeAreaView,
   ScrollView,
+      useWindowDimensions,
+
 } from "react-native";
 import { Ionicons, AntDesign, MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -21,10 +23,15 @@ const handleLogout = async () => {
       routes: [{ name: "SelectRole" }],
     });
   };
+const { width: SCREEN_WIDTH } = useWindowDimensions();
+
+  const MAX_WIDTH = 420;
+  const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
   // ==========================
   // Sidebar Sections and Items
   // ==========================
   const sections = [
+    
     // ==========================
     // HR Section
     // ==========================
@@ -68,12 +75,12 @@ const handleLogout = async () => {
         { name: "Role Name", icon: "person-circle-outline", screen: "rolename" },
 
         // Reports
-        { name: "Payslip", icon: "document-text-outline", screen: "subadminpayslip" },
+        { name: "Payslip", icon: "document-text-outline", screen: "AdminPayslipScreen" },
         { name: "KPI Metrics", icon: "bar-chart-outline", screen: "Departmentchart" },
-        { name: "Empworkingdays", icon: "bar-chart-outline", screen: "empworkingdays" },
-        { name: "Employee Request form", icon: "bar-chart-outline", screen: "DoctorRequestFormall" },
-        { name: "LatePenalityform", icon: "alert-circle-outline", screen: "EmployeeLatepenality" },
-        { name: "AllEmployeeBreakPenality", icon: "alert-circle-outline", screen: "BreakPenaltyScreen" },
+        // { name: "Empworkingdays", icon: "bar-chart-outline", screen: "empworkingdays" },
+        // { name: "Employee Request form", icon: "bar-chart-outline", screen: "DoctorRequestFormall" },
+        // { name: "LatePenalityform", icon: "alert-circle-outline", screen: "EmployeeLatepenality" },
+        // { name: "AllEmployeeBreakPenality", icon: "alert-circle-outline", screen: "BreakPenaltyScreen" },
         { name: "Deptwiseleavelimit", icon: "alert-circle-outline", screen: "AdminDepartmentLimitScreen" },
 
         { name: "CRMScreen", icon: "grid-outline", screen: "CRMScreen" },
@@ -94,10 +101,10 @@ const handleLogout = async () => {
         { name: "AdminApproverequestall", icon: "archive-outline", screen: "AdminRequestFormall" },
 
           { name: "DoctorsManagement", icon: "medkit-outline", screen: "DoctorApprovalScreen" },
-{ name: "Doctors Fee", icon: "medkit-outline", screen: "AddDoctors" },
+// { name: "Doctors Fee", icon: "medkit-outline", screen: "AddDoctors" },
         { name: "CreateSalesorederForm", icon: "archive-outline", screen: "SalesOrderForm" },
 
-        { name: "Doctors Fee", icon: "medkit-outline", screen: "AddDoctors" },
+        // { name: "Doctors Fee", icon: "medkit-outline", screen: "AddDoctors" },
         { name: "Doctors tokens", icon: "medkit-outline", screen: "AdminDoctorTokenScreen" },
         { name: "DoctorsDailyTokensreport", icon: "medkit-outline", screen: "DailyTokensReport" },
 
@@ -122,7 +129,8 @@ const handleLogout = async () => {
         { name: "DeliveryboyCashhandover", icon: "cash-outline", screen: "AdminHandoverScreen" },
 
         { name: "OrdersDeliverdByBus", icon: "cart-outline", screen: "AdminBusDeliveredOrdersScreen" },
-        { name: "OrdersDeliverdByDeliveryBoy", icon: "cart-outline", screen: " OrdersDeliverdByDeliveryBoy" },
+        { name: "OrdersDeliverdByDeliveryBoy", icon:"bicycle-outline", screen:"OrdersDeliverdByDeliveryBoy"},
+        { name: "DeliveryboyLocations", icon: "bicycle-outline", screen: "AdminDeliveryBoyMapScreen" },
 
 
       ],
@@ -131,6 +139,12 @@ const handleLogout = async () => {
 
   return (
     <SafeAreaView style={styles.container}>
+       {/* <View
+                               style={{
+                              width: containerWidth,
+                             alignSelf: "center", flex: 1, }}
+                                                               > */}
+
       {/* ==========================
           Header
       ========================== */}
@@ -150,7 +164,7 @@ const handleLogout = async () => {
         <View style={styles.adminRow}>
           <TouchableOpacity
             style={styles.adminCard}
-            onPress={() => navigation.navigate("DeptDashboard")}
+            onPress={() => navigation.navigate("AdminDashboard")}
           >
             <Ionicons name="grid-outline" size={26} color="#38bdf8" />
             <Text style={styles.adminCardText}>Dashboard</Text>
@@ -213,6 +227,7 @@ const handleLogout = async () => {
         <AntDesign name="logout" size={22} color="#ff4d4d" style={styles.icon} />
         <Text style={styles.logoutText}>Logout</Text>
       </TouchableOpacity>
+      {/* </View> */}
     </SafeAreaView>
   );
 };
@@ -312,7 +327,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 20,
-      paddingBottom: 60,  // 👈 Add this line (increase height from bottom)
+      paddingBottom: 40,  // 👈 Add this line (increase height from bottom)
 
     borderTopWidth: 1,
     borderTopColor: "#1e293b",

@@ -14,7 +14,7 @@ import { Picker } from "@react-native-picker/picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 
-const AdminRecurringAddTaskScreen = ({ navigation }) => {
+const AdminAddTaskScreen = ({ navigation }) => {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [assignedTo, setAssignedTo] = useState([]);
@@ -341,52 +341,74 @@ const AdminRecurringAddTaskScreen = ({ navigation }) => {
   );
 };
 
-export default AdminRecurringAddTaskScreen;
+export default AdminAddTaskScreen;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#e6f0ff", paddingTop: 40 , marginTop: 30},
+  container: {
+    flex: 1,
+    backgroundColor: "#ffff",
+    paddingTop: Platform.OS === "ios" ? 50 : 40,
+  },
+
+  // Top Bar
   topBar: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 20,
+    marginHorizontal: 15,
+    marginBottom: 25,
     backgroundColor: "#2563eb",
-    padding: 10,
-    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 6,
+    elevation: 5,
   },
-  header: { fontSize: 18, fontWeight: "bold", color: "white", marginLeft: 10 },
-  label: { fontSize: 14, fontWeight: "600", marginTop: 15, marginBottom: 5 },
+  header: { fontSize: 18, fontWeight: "bold", color: "white", marginLeft: 12 },
+
+  // Labels and inputs
+  label: { fontSize: 15, fontWeight: "600", marginTop: 18, marginBottom: 6, color: "#111827" },
   input: {
     borderWidth: 1,
     borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 10,
+    borderRadius: 10,
+    padding: 12,
     marginBottom: 15,
     backgroundColor: "white",
+    fontSize: 15,
   },
   pickerContainer: {
     borderWidth: 1,
     borderColor: "#ddd",
-    borderRadius: 8,
+    borderRadius: 10,
     marginBottom: 15,
     backgroundColor: "white",
+    overflow: "hidden",
   },
+
+  // Multi-select for assigned employees
   multiSelectContainer: {
     borderWidth: 1,
     borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 10,
+    borderRadius: 10,
+    padding: 12,
     marginBottom: 15,
     backgroundColor: "white",
   },
   multiSelectItem: {
-    padding: 8,
-    marginVertical: 3,
-    borderRadius: 5,
-    backgroundColor: "#f0f0f0",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginVertical: 4,
+    borderRadius: 8,
+    backgroundColor: "#f3f4f6",
   },
   multiSelectSelected: {
     backgroundColor: "#2563eb",
   },
+
+  // Date & Time pickers
   dateTimeRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -398,26 +420,38 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 10,
+    borderRadius: 10,
+    padding: 12,
     backgroundColor: "white",
+    justifyContent: "flex-start",
   },
+
+  // Footer buttons
   footer: {
     padding: 15,
-    backgroundColor: "#e6f0ff",
+    backgroundColor: "#f4f6fb",
     borderTopWidth: 1,
-    borderColor: "#ddd",
+    borderColor: "#e0e0e0",
   },
   buttonRow: { flexDirection: "row", justifyContent: "space-between" },
   button: {
     flex: 1,
-    padding: 15,
-    borderRadius: 8,
+    paddingVertical: 15,
+    borderRadius: 10,
     alignItems: "center",
     marginHorizontal: 5,
   },
-  cancelButton: { backgroundColor: "#f0f0f0" },
+  cancelButton: { backgroundColor: "#f3f4f6" },
   createButton: { backgroundColor: "#2563eb" },
-  cancelText: { color: "black", fontWeight: "bold" },
-  createText: { color: "white", fontWeight: "bold" },
+  cancelText: { color: "#111827", fontWeight: "600", fontSize: 15 },
+  createText: { color: "white", fontWeight: "600", fontSize: 15 },
+
+  // Loader
+  loaderContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f4f6fb",
+  },
 });
+

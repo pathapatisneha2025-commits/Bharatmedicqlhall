@@ -8,32 +8,69 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
-  Dimensions,
   Platform,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRoute, useNavigation } from "@react-navigation/native";
-import * as Location from "expo-location";
+import { useRoute } from "@react-navigation/native";
 
-import DeliveryMap from "./DeliveryMap.web"; // import the new map component
+import DeliveryMap from "./DeliveryMap"; // import the map component
 
 const BASE_URL = "https://hospitaldatabasemanagement.onrender.com";
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const GOOGLE_MAPS_API_KEY = "AIzaSyDqHcDP19qW9nuD5UO5M7f3v8eEUN9c5do";
 
-export default function IndividualOrderScreen() {
+export default function IndividualOrderScreen({ navigation }) {
   const route = useRoute();
-  const navigation = useNavigation();
-  const { orderId, deliveryBoyId, deliveryType, orderType } = route.params;
+  const { orderId, deliveryType, orderType } = route.params;
 
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingCount, setLoadingCount] = useState(0);
+
   const [deliveryLocation, setDeliveryLocation] = useState(null);
+  const [customerCoords, setCustomerCoords] = useState(null);
   const [routeCoords, setRouteCoords] = useState([]);
 
   const customer = orderType === "sales" ? order : order?.address;
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const isDesktop = SCREEN_WIDTH > 800;
 
-  // ----------------- Fetch order details -----------------
+  const showAlert = (title, message, buttons) => {
+    if (Platform.OS === "web") {
+      if (buttons && buttons.length > 1) {
+        const confirmed = window.confirm(`${title}\n\n${message}`);
+        if (confirmed) {
+          const okBtn = buttons.find(b => b.style !== "cancel");
+          okBtn?.onPress?.();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
+  };
+
+  const getCustomerAddressString = (order) => {
+    if (!order?.address) return "";
+    const addr = order.address;
+    const city = addr.city?.toLowerCase() === "vishakaptnam" ? "Visakhapatnam" : addr.city;
+    const state = addr.state?.toLowerCase() === "andhrapradesh" ? "Andhra Pradesh" : addr.state;
+    return `${addr.flat}, ${addr.street}, ${city}, ${state}, ${addr.pincode}, India`;
+  };
+
+  // Loader timer
+  useEffect(() => {
+    let interval;
+    if (loading) {
+      setLoadingCount(0);
+      interval = setInterval(() => setLoadingCount(c => c + 1), 1000);
+    } else clearInterval(interval);
+    return () => clearInterval(interval);
+  }, [loading]);
+
+  // Fetch order details
   useEffect(() => {
     fetchOrderDetails();
   }, []);
@@ -49,67 +86,83 @@ export default function IndividualOrderScreen() {
       const data = await res.json();
 
       if (res.ok) setOrder(data);
-      else Alert.alert("Error", data.error || "Failed to load order details");
+      else showAlert("Error", data.error || "Failed to load order details");
     } catch (error) {
       console.error(error);
-      Alert.alert("Error", "Unable to fetch order details");
+      showAlert("Error", "Unable to fetch order details");
     } finally {
       setLoading(false);
     }
   };
 
-  // ----------------- Delivery Boy Location -----------------
+  // Geocode customer address
+  const getCoordinatesFromAddress = async address => {
+    try {
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
+        address
+      )}&key=${GOOGLE_MAPS_API_KEY}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.status === "OK") {
+        const loc = data.results[0].geometry.location;
+        return { latitude: loc.lat, longitude: loc.lng };
+      }
+      console.warn("Geocoding failed:", data.status);
+      return null;
+    } catch (err) {
+      console.error("Geocoding error:", err);
+      return null;
+    }
+  };
+
+  // Fetch customer coords
   useEffect(() => {
     if (!order) return;
 
-    if (Platform.OS !== "web") {
-      (async () => {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") {
-          Alert.alert("Permission Denied", "Location permission is required for tracking.");
-          return;
-        }
+    const fetchCustomerCoords = async () => {
+      const addressString = getCustomerAddressString(order);
+      const coords = await getCoordinatesFromAddress(addressString);
+      if (coords) setCustomerCoords(coords);
 
-        const subscription = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.High, distanceInterval: 5 },
-          async (loc) => {
-            const newLocation = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-            setDeliveryLocation(newLocation);
+      if (deliveryLocation && coords) setRouteCoords([deliveryLocation, coords]);
+    };
 
-            if (customer?.latitude && customer?.longitude) {
-              setRouteCoords([
-                newLocation,
-                { latitude: Number(customer.latitude), longitude: Number(customer.longitude) },
-              ]);
-            }
-            setLoading(false);
-          }
-        );
+    fetchCustomerCoords();
+  }, [order, deliveryLocation]);
 
-        return () => subscription.remove();
-      })();
-    } else {
-      const interval = setInterval(async () => {
-        try {
-          const res = await fetch(`${BASE_URL}/delivery-boy/location?orderId=${orderId}`);
-          const data = await res.json();
-          if (data) {
-            setDeliveryLocation({ latitude: data.latitude, longitude: data.longitude });
-            if (customer?.latitude && customer?.longitude) {
-              setRouteCoords([
-                { latitude: data.latitude, longitude: data.longitude },
-                { latitude: Number(customer.latitude), longitude: Number(customer.longitude) },
-              ]);
-            }
-          }
-        } catch (e) {
-          console.error("Error fetching delivery location:", e);
-        }
-      }, 5000);
+ // Fetch delivery boy location from server using orderId
+const fetchDeliveryBoyLocation = async () => {
+  try {
+    const res = await fetch(`${BASE_URL}/deliveryboy/location/${orderId}`);
+    const data = await res.json();
 
-      return () => clearInterval(interval);
+    if (data.success && data.location) {
+      const loc = {
+        latitude: Number(data.location.latitude),
+        longitude: Number(data.location.longitude),
+      };
+      
+      setDeliveryLocation(loc);
+
+      // log the location to console
+      console.log("Delivery Boy Location:", loc);
+
+      if (customerCoords) setRouteCoords([loc, customerCoords]);
     }
-  }, [order]);
+  } catch (err) {
+    console.error("Error fetching delivery boy location:", err);
+  }
+};
+
+  // Polling for delivery boy location every 5 seconds
+  useEffect(() => {
+    if (!order || !customerCoords) return;
+
+    fetchDeliveryBoyLocation(); // initial fetch
+    const interval = setInterval(fetchDeliveryBoyLocation, 5000);
+
+    return () => clearInterval(interval);
+  }, [order, customerCoords]);
 
   const totalAmount =
     orderType === "sales"
@@ -120,7 +173,6 @@ export default function IndividualOrderScreen() {
     navigation.navigate("PaymentCollectionScreen", {
       orderId,
       amount: totalAmount,
-      deliveryBoyId,
       deliveryType,
       orderType,
     });
@@ -133,14 +185,14 @@ export default function IndividualOrderScreen() {
         : Number(order?.amount_received ?? 0);
 
     if (amountReceived < totalAmount) {
-      Alert.alert(
+      showAlert(
         "Payment Pending ❌",
         `Total Amount: ₹${totalAmount}\nReceived: ₹${amountReceived}\n\nPlease collect full payment before completing delivery.`
       );
       return;
     }
 
-    Alert.alert("Confirm Delivery", "Are you sure you want to complete this delivery?", [
+    showAlert("Confirm Delivery", "Are you sure you want to complete this delivery?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Yes, Complete",
@@ -159,12 +211,12 @@ export default function IndividualOrderScreen() {
 
             const data = await res.json();
             if (res.ok) {
-              Alert.alert("Success ✅", "Delivery marked as completed!");
+              showAlert("Success ✅", "Delivery marked as completed!");
               navigation.goBack();
-            } else Alert.alert("Error", data.error || "Failed to complete delivery");
+            } else showAlert("Error", data.error || "Failed to complete delivery");
           } catch (e) {
             console.error(e);
-            Alert.alert("Error", "Unable to complete delivery");
+            showAlert("Error", "Unable to complete delivery");
           }
         },
       },
@@ -175,141 +227,245 @@ export default function IndividualOrderScreen() {
     if (phone) Linking.openURL(`tel:${phone}`);
   };
 
-  if (loading)
+  if (loading) {
     return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color="#2196F3" />
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color="#0ea5e9" />
+        <Text style={{ marginTop: 12, color: "#64748b" }}>
+          Preparing Order Data... {loadingCount}s
+        </Text>
       </View>
     );
+  }
 
-  if (!order)
-    return (
-      <View style={styles.loader}>
-        <Text>No order details found.</Text>
-      </View>
-    );
-
-  // ----------------- Render -----------------
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={26} color="#2196F3" />
-          </TouchableOpacity>
-          <Text style={styles.header}>Order Details</Text>
-          <View style={{ width: 26 }} />
-        </View>
+      {/* Header */}
+      <View style={styles.headerContainer}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="chevron-back" size={24} color="#1e293b" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Order #{orderId?.toString().slice(-6) || 'Details'}</Text>
+        <View style={{ width: 40 }} />
+      </View>
 
-        {/* Customer Info */}
-        <View style={styles.card}>
-          <Text style={styles.title}>Customer Information</Text>
-          <Text style={[styles.text, { flexShrink: 1 }]}>
-            Name: {customer?.name || customer?.customer_name}
-          </Text>
-          <Text style={[styles.text, { flexShrink: 1 }]}>
-            Address:{" "}
-            {orderType === "sales"
-              ? `${customer.address}, ${customer.landmark} - ${customer.pincode}`
-              : `${customer?.flat}, ${customer?.street}, ${customer?.city}, ${customer?.state} - ${customer?.pincode}`}
-          </Text>
-          <Text style={styles.text}>Mobile: {customer?.mobile}</Text>
-        </View>
-
-        {/* Order Summary */}
-        <View style={styles.card}>
-          <Text style={styles.title}>Order Summary</Text>
-          {(orderType === "sales" ? order.items : order.order_summary)?.map((item, index) => (
-            <View key={index} style={styles.orderItem}>
-              <Text style={styles.itemText}>
-                {orderType === "sales" ? item.item_name : item.name} x {item.quantity}
-              </Text>
-              <Text style={styles.itemText}>₹{item.total}</Text>
+      <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+        <View style={[styles.mainWrapper, isDesktop && styles.desktopGrid]}>
+          
+          {/* LEFT COLUMN: Customer & Order Data */}
+          <View style={[isDesktop ? styles.column : null]}>
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <Ionicons name="person-circle-outline" size={22} color="#0ea5e9" />
+                <Text style={styles.cardTitle}>Customer Details</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.label}>Name</Text>
+                <Text style={styles.value}>{customer?.name || customer?.customer_name}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.label}>Phone</Text>
+                <TouchableOpacity onPress={() => callCustomer(customer?.mobile)}>
+                  <Text style={[styles.value, { color: '#0ea5e9', fontWeight: '700' }]}>{customer?.mobile}</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.addressContainer}>
+                <Ionicons name="location-outline" size={16} color="#64748b" style={{ marginTop: 2 }} />
+                <Text style={styles.addressText}>
+                  {orderType === "sales"
+                    ? `${customer?.address}, ${customer?.landmark} - ${customer?.pincode}`
+                    : `${customer?.flat}, ${customer?.street}, ${customer?.city}, ${customer?.state} - ${customer?.pincode}`}
+                </Text>
+              </View>
             </View>
-          ))}
-          <View style={styles.divider} />
-          <View style={styles.totalRow}>
-            <Text style={styles.totalText}>Total Amount:</Text>
-            <Text style={styles.totalText}>₹{totalAmount}</Text>
+
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <Ionicons name="receipt-outline" size={22} color="#0ea5e9" />
+                <Text style={styles.cardTitle}>Order Items</Text>
+              </View>
+              {(orderType === "sales" ? order.items : order.order_summary)?.map((item, index) => (
+                <View key={index} style={styles.orderItem}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.itemTitle}>{orderType === "sales" ? item.item_name : item.name}</Text>
+                    <Text style={styles.itemQty}>Quantity: {item.quantity}</Text>
+                  </View>
+                  <Text style={styles.itemPrice}>₹{item.total}</Text>
+                </View>
+              ))}
+              <View style={styles.divider} />
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Payment Mode</Text>
+                <Text style={styles.summaryValue}>{order.payment_mode || order.payment_method}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.totalLabel}>Total Bill</Text>
+                <Text style={styles.totalValue}>₹{totalAmount}</Text>
+              </View>
+            </View>
           </View>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalText}>Payment Mode:</Text>
-            <Text style={styles.totalText}>{order.payment_mode || order.payment_method}</Text>
+
+          {/* RIGHT COLUMN: Map & Actions */}
+          <View style={[isDesktop ? styles.column : null]}>
+            <View style={[styles.card, { padding: 0, overflow: 'hidden' }]}>
+              <View style={[styles.cardHeader, { padding: 15 }]}>
+                <Ionicons name="map-outline" size={22} color="#0ea5e9" />
+                <Text style={styles.cardTitle}>Live Tracking</Text>
+              </View>
+              <View style={isDesktop ? { height: 350 } : { height: 250 }}>
+               {deliveryLocation && customerCoords ? (
+  <DeliveryMap
+    deliveryLocation={deliveryLocation}
+    customerCoords={customerCoords}
+    routeCoords={routeCoords}
+  />
+) : (
+  <ActivityIndicator size="large" color="#0ea5e9" />
+)}
+           </View>
+            </View>
+
+            <View style={styles.actionContainer}>
+              <View style={styles.buttonGrid}>
+                <TouchableOpacity style={[styles.actionButton, styles.btnCall]} onPress={() => callCustomer(customer?.mobile)}>
+                  <Ionicons name="call" size={20} color="#fff" />
+                  <Text style={styles.buttonText}>Call</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[styles.actionButton, styles.btnPayment]} onPress={handlePayment}>
+                  <Ionicons name="card" size={20} color="#fff" />
+                  <Text style={styles.buttonText}>Payment</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={styles.btnAddress}
+                onPress={() =>
+                  navigation.navigate("AddressChangeRequestScreen", {
+                    orderId,
+                    deliveryBoyId,
+                    currentAddress:
+                      orderType === "sales"
+                        ? `${customer.address}, ${customer.landmark} - ${customer.pincode}`
+                        : `${customer.flat}, ${customer.street}, ${customer.city}, ${customer.state} - ${customer.pincode}`,
+                  })
+                }
+              >
+                <Ionicons name="location" size={18} color="#f59e0b" />
+                <Text style={styles.btnAddressText}>Request Address Change</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.completeButton} onPress={completeDelivery}>
+                <Text style={styles.completeButtonText}>Finish Delivery</Text>
+                <Ionicons name="checkmark-circle" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
           </View>
+
         </View>
-
-        {/* Live Location Map */}
-        <View style={styles.card}>
-          <Text style={styles.title}>Live Delivery Tracking</Text>
-          <DeliveryMap deliveryLocation={deliveryLocation} customer={customer} routeCoords={routeCoords} />
-        </View>
-
-        {/* Action Buttons */}
-        <View style={[styles.buttonRow, { flexDirection: SCREEN_WIDTH < 500 ? "column" : "row" }]}>
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: "#4CAF50", marginVertical: SCREEN_WIDTH < 500 ? 5 : 0 }]}
-            onPress={() => callCustomer(customer?.mobile)}
-          >
-            <Text style={styles.buttonText}>📞 Call Customer</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: "#2196F3", marginVertical: SCREEN_WIDTH < 500 ? 5 : 0 }]}
-            onPress={handlePayment}
-          >
-            <Text style={styles.buttonText}>💳 Collect Payment</Text>
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: "#FF9800", marginTop: 10 }]}
-          onPress={() =>
-            navigation.navigate("AddressChangeRequestScreen", {
-              orderId,
-              deliveryBoyId,
-              currentAddress:
-                orderType === "sales"
-                  ? `${customer.address}, ${customer.landmark} - ${customer.pincode}`
-                  : `${customer.flat}, ${customer.street}, ${customer.city}, ${customer.state} - ${customer.pincode}`,
-            })
-          }
-        >
-          <Text style={styles.buttonText}>📍 Request Address Change</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.completeButton} onPress={completeDelivery}>
-          <Text style={styles.buttonText}>✅ Complete Delivery</Text>
-        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// -------------------- Styles --------------------
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#f8f9fa" },
-  container: { flexGrow: 1, padding: 12, paddingBottom: 30 },
-  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
-  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  header: { fontSize: 22, fontWeight: "bold", color: "#2196F3" },
+  safeArea: { flex: 1, backgroundColor: "#f8fafc" },
+  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  
+  headerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+  },
+  headerTitle: { fontSize: 18, fontWeight: "700", color: "#1e293b" },
+  backButton: { padding: 8, backgroundColor: '#f1f5f9', borderRadius: 10 },
+
+  scrollContainer: { flexGrow: 1, padding: 16 },
+  mainWrapper: { flexDirection: 'column' },
+  desktopGrid: { flexDirection: 'row', gap: 20 },
+  column: { flex: 1 },
+
   card: {
     backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 15,
-    elevation: 3,
-    maxWidth: Platform.OS === "web" ? 600 : "100%",
-    alignSelf: "center",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: "#000",
+    shadowOpacity: 0.02,
+    shadowRadius: 10,
   },
-  title: { fontSize: 18, fontWeight: "bold", marginBottom: 8 },
-  text: { fontSize: 16, color: "#333", marginBottom: 4 },
-  orderItem: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
-  itemText: { fontSize: 16, color: "#333" },
-  divider: { height: 1, backgroundColor: "#ddd", marginVertical: 10 },
-  totalRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
-  totalText: { fontSize: 16, fontWeight: "bold", color: "#000" },
-  buttonRow: { justifyContent: "space-between", marginTop: 10 },
-  actionButton: { flex: 1, paddingVertical: 12, borderRadius: 8, marginHorizontal: 5 },
-  completeButton: { backgroundColor: "#FF5722", paddingVertical: 14, borderRadius: 10, marginTop: 20 },
-  buttonText: { color: "#fff", textAlign: "center", fontWeight: "600", fontSize: 16 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, gap: 8 },
+  cardTitle: { fontSize: 16, fontWeight: '700', color: '#1e293b' },
+
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+  label: { color: '#64748b', fontSize: 14 },
+  value: { color: '#1e293b', fontSize: 14, fontWeight: '600' },
+  
+  addressContainer: { flexDirection: 'row', backgroundColor: '#f8fafc', padding: 12, borderRadius: 12, gap: 8 },
+  addressText: { flex: 1, color: '#475569', fontSize: 13, lineHeight: 18 },
+
+  orderItem: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12, alignItems: 'center' },
+  itemTitle: { fontSize: 14, fontWeight: '600', color: '#1e293b' },
+  itemQty: { fontSize: 12, color: '#94a3b8', marginTop: 2 },
+  itemPrice: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
+  
+  divider: { height: 1, backgroundColor: "#e2e8f0", marginVertical: 15 },
+  summaryRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
+  summaryLabel: { color: '#64748b', fontSize: 14 },
+  summaryValue: { color: '#1e293b', fontWeight: '600' },
+  
+  totalLabel: { fontSize: 16, fontWeight: '700', color: '#1e293b' },
+  totalValue: { fontSize: 18, fontWeight: '800', color: '#0ea5e9' },
+
+  actionContainer: { marginTop: 10 },
+  buttonGrid: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  actionButton: { 
+    flex: 1, 
+    height: 50, 
+    borderRadius: 12, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    gap: 8 
+  },
+  btnCall: { backgroundColor: '#10b981' },
+  btnPayment: { backgroundColor: '#0ea5e9' },
+  buttonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+
+  btnAddress: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    paddingVertical: 12, 
+    borderRadius: 12, 
+    borderWidth: 1, 
+    borderColor: '#f59e0b',
+    borderStyle: 'dashed',
+    gap: 8,
+    marginBottom: 20
+  },
+  btnAddressText: { color: '#b45309', fontWeight: '600', fontSize: 14 },
+
+  completeButton: { 
+    backgroundColor: "#1e293b", 
+    height: 60, 
+    borderRadius: 15, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    gap: 12,
+    shadowColor: "#1e293b",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5
+  },
+  completeButtonText: { color: "#fff", fontWeight: "800", fontSize: 18 },
 });

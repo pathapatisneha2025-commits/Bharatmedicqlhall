@@ -10,8 +10,11 @@ import {
   Image,
   Modal,
   StyleSheet,
+  Platform,
+  StatusBar,
+    useWindowDimensions,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
 import { useNavigation } from "@react-navigation/native";
@@ -24,6 +27,8 @@ const AttendanceLogsScreen = () => {
   const [mergedData, setMergedData] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
   const [loading, setLoading] = useState(true);
+    const [loadingCount, setLoadingCount] = useState(0);
+  
   const [filterDate, setFilterDate] = useState(null);
   const [filterStatus, setFilterStatus] = useState("All");
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -38,6 +43,39 @@ const AttendanceLogsScreen = () => {
     "https://hospitaldatabasemanagement.onrender.com/attendance/logout/all";
   const BREAK_API =
     "https://hospitaldatabasemanagement.onrender.com/BreakIn-attendance/employee/all";
+
+
+    const { width: SCREEN_WIDTH } = useWindowDimensions();
+      const MAX_WIDTH = 420;
+      const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
+        const isWeb = Platform.OS === "web";
+      
+    const getUnifiedId = (row) => row.employee_id ?? row.phone;
+
+      const showAlert = (title, message, buttons) => {
+          if (Platform.OS === "web") {
+            if (buttons && buttons.length > 1) {
+              const confirmed = window.confirm(`${title}\n\n${message}`);
+              if (confirmed) {
+                const okBtn = buttons.find(b => b.style !== "cancel");
+                okBtn?.onPress?.();
+              }
+            } else {
+              window.alert(`${title}\n\n${message}`);
+            }
+          } else {
+            Alert.alert(title, message, buttons);
+          }
+        };  
+    
+      useEffect(() => {
+                  let interval;
+                  if (loading) {
+                    setLoadingCount(0);
+                    interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+                  } else clearInterval(interval);
+                  return () => clearInterval(interval);
+                }, [loading]);
 
   // Fetch login + logout + break logs
   useEffect(() => {
@@ -59,7 +97,7 @@ const AttendanceLogsScreen = () => {
         if (breakJson.success) setBreakData(breakJson.data || []);
       } catch (err) {
         console.log("Fetch Error:", err);
-        Alert.alert("Error", "Failed to fetch data");
+       showAlert ("Error", "Failed to fetch data");
       } finally {
         setLoading(false);
       }
@@ -73,30 +111,60 @@ const AttendanceLogsScreen = () => {
     if (loginData.length === 0 && logoutData.length === 0) return;
 
     const getDateOnly = (ts) => {
-      if (!ts) return null;
-      const d = new Date(ts);
-      if (isNaN(d)) return null;
-      return d.toISOString().split("T")[0];
-    };
+  if (!ts) return null;
+  return new Date(ts).toLocaleDateString("en-IN", {
+    timeZone: "Asia/Kolkata",
+  });
+};
 
-    const formatTime = (ts) => {
-      if (!ts) return "--";
-      if (typeof ts === "string") return ts.substring(11, 19);
-      return "--";
-    };
+ // For login (UTC → IST)
+const formatLoginTime = (ts) => {
+  if (!ts) return "--";
+
+  const date = new Date(ts); // UTC time from API
+  // Convert to IST manually by adding 5:30
+  const istOffset = 5.5 * 60; // 5 hours 30 minutes in minutes
+  const localMinutes = date.getUTCMinutes() + istOffset;
+  const localHours = date.getUTCHours() + Math.floor(localMinutes / 60);
+  const minutes = localMinutes % 60;
+  const hours12 = localHours % 12 || 12;
+  const ampm = localHours >= 12 ? "PM" : "AM";
+
+  return `${hours12}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+};
+
+// For logout (already IST, just extract HH:MM)
+const formatLogoutTime = (ts) => {
+  if (!ts) return "--";
+
+  const date = new Date(ts.replace("Z", "")); // Remove Z to treat as local
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const hours12 = hours % 12 || 12;
+  const ampm = hours >= 12 ? "PM" : "AM";
+
+  return `${hours12}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+};
+
+
+
 
     const mergedMap = {};
 
     // LOGIN MAP
     loginData.forEach((login) => {
-      const key = `${login.employee_id}-${getDateOnly(login.timestamp)}`;
+const uniqueId = getUnifiedId(login);
+const key = `${uniqueId}-${getDateOnly(login.timestamp)}`;
+
       mergedMap[key] = {
         employee_id: login.employee_id,
         login_id: login.id,
         logout_id: null,
-        name: login.full_name,
+          phone: login.phone || null,
+
+  name: login.full_name || `Employee (${login.phone})`,
         date: new Date(login.timestamp).toLocaleDateString(),
-        checkInTime: formatTime(login.timestamp),
+        checkInTime: formatLoginTime(login.timestamp),
         checkInTimeFull: login.timestamp,
         login_image: login.image_url,
         logout_image: null,
@@ -110,7 +178,8 @@ const AttendanceLogsScreen = () => {
 
     // LOGOUT MAP
     logoutData.forEach((logout) => {
-      const key = `${logout.employee_id}-${getDateOnly(logout.timestamp)}`;
+const uniqueId = getUnifiedId(logout);
+const key = `${uniqueId}-${getDateOnly(logout.timestamp)}`;
 
       const baseDate = logout.timestamp || mergedMap[key]?.checkInTimeFull;
 
@@ -119,29 +188,38 @@ const AttendanceLogsScreen = () => {
           employee_id: logout.employee_id,
           login_id: null,
           logout_id: logout.id,
-          name: `Employee ${logout.employee_id}`,
+name: logout.full_name || `Employee (${logout.employee_id})`,
           date: new Date(baseDate).toLocaleDateString(),
           checkInTime: "--",
           checkInTimeFull: null,
-          logoutTime: formatTime(logout.timestamp),
+          logoutTime: logout.timestamp,
           logoutTimeFull: logout.timestamp,
           login_image: null,
           logout_image: logout.image_url,
           status: "Off Duty",
-          totalHours: "--",
+    totalHours: logout.daily_hours || "--", // ✅ Use API daily_hours if available
           breakStatus: "--",
           breakIds: [],
         };
       } else {
-        mergedMap[key].logoutTime = formatTime(logout.timestamp);
-        mergedMap[key].logoutTimeFull = logout.timestamp;
+       mergedMap[key].logoutTime =formatLogoutTime(logout.timestamp); // ✅ Only time
+mergedMap[key].logoutTimeFull = logout.timestamp; // Keep full timestamp for calculations
+
         mergedMap[key].logout_image = logout.image_url;
         mergedMap[key].logout_id = logout.id;
         mergedMap[key].status = "Off Duty";
-        mergedMap[key].totalHours = calculateTotalHours(
-          mergedMap[key].checkInTimeFull,
-          logout.timestamp
-        );
+        if (logout.session_hours?.hours || logout.session_hours?.minutes) {
+    const h = logout.session_hours.hours || 0;
+    const m = logout.session_hours.minutes || 0;
+    mergedMap[key].totalHours = `${h}h ${m}m`;
+    mergedMap[key].sessionHours = logout.session_hours;
+  } else {
+    mergedMap[key].totalHours = calculateTotalHours(
+      mergedMap[key].checkInTimeFull,
+      logout.timestamp
+    );
+  }
+
       }
     });
 
@@ -230,7 +308,7 @@ const AttendanceLogsScreen = () => {
   const handleDeleteAttendance = async () => {
     if (!selectedEmployee) return;
 
-    Alert.alert("Confirm Delete", "Delete this attendance record?", [
+    showAlert ("Confirm Delete", "Delete this attendance record?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -272,13 +350,13 @@ const AttendanceLogsScreen = () => {
               );
 
               setModalVisible(false);
-              Alert.alert("Success", "Deleted successfully");
+              showAlert ("Success", "Deleted successfully");
             } else {
-              Alert.alert("Error", result.message || "Delete failed");
+              showAlert ("Error", result.message || "Delete failed");
             }
           } catch (err) {
             console.log("Delete Error:", err);
-            Alert.alert("Error", "Something went wrong");
+            showAlert ("Error", "Something went wrong");
           } finally {
             setLoading(false);
           }
@@ -291,7 +369,7 @@ const AttendanceLogsScreen = () => {
   const handleUpdateAttendance = async () => {
     if (!selectedEmployee) return;
 
-    Alert.alert("Confirm Update", "Update record?", [
+   showAlert ("Confirm Update", "Update record?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Update",
@@ -329,13 +407,13 @@ const AttendanceLogsScreen = () => {
               );
 
               setModalVisible(false);
-              Alert.alert("Success", "Updated successfully");
+              showAlert ("Success", "Updated successfully");
             } else {
-              Alert.alert("Error", result.message || "Update failed");
+              showAlert ("Error", result.message || "Update failed");
             }
           } catch (err) {
             console.log("Update error:", err);
-            Alert.alert("Error", "Something went wrong");
+            showAlert ("Error", "Something went wrong");
           } finally {
             setLoading(false);
           }
@@ -346,7 +424,7 @@ const AttendanceLogsScreen = () => {
 const exportAttendance = () => {
   const url = "https://hospitaldatabasemanagement.onrender.com/attendance/export";
 
-  Alert.alert(
+  showAlert (
     "Export Attendance",
     "Your attendance file will download in your browser.",
     [
@@ -358,308 +436,154 @@ const exportAttendance = () => {
 
   if (loading)
     return (
-      <View style={styles.loader}>
+      <View style={styles.loaderContainer}>
         <ActivityIndicator size="large" color="#007bff" />
-        <Text>Loading...</Text>
+        <Text style={styles.loadingText}>Verifying location{loadingCount}s</Text>
       </View>
     );
 
   return (
-    <View style={styles.container}>
-      {/* HEADER */}
-      <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
-        </TouchableOpacity>
-        <Text style={styles.title}>Employee Attendance</Text>
-      </View>
-
-      {/* FILTERS */}
-      <View style={styles.filterRow}>
-        <TouchableOpacity
-          style={styles.filterBtn}
-          onPress={() => setShowDatePicker(true)}
-        >
-          <Ionicons name="calendar-outline" size={18} color="#000" />
-          <Text style={{ marginLeft: 5 }}>
-            {filterDate || "Pick Date"}
-          </Text>
-        </TouchableOpacity>
-
-        {showDatePicker && (
-          <DateTimePicker
-            value={new Date()}
-            mode="date"
-            onChange={handleDateChange}
-          />
-        )}
-
-        <View style={styles.pickerWrapper}>
-          <Picker
-            selectedValue={filterStatus}
-            onValueChange={setFilterStatus}
-            style={{ height: 50, width: 120 }}
-          >
-            <Picker.Item label="All" value="All" />
-            <Picker.Item label="On Duty" value="On Duty" />
-            <Picker.Item label="Off Duty" value="Off Duty" />
-          </Picker>
-        </View>
+    <View style={styles.mainWrapper}>
+      <StatusBar barStyle="dark-content" />
 
       
-          <TouchableOpacity onPress={exportAttendance} style={{ marginLeft: "auto" }}>
-    <Ionicons name="download-outline" size={26} color="#000" />
-  </TouchableOpacity>
+
+      {/* RIGHT CONTENT AREA */}
+      <View style={styles.contentArea}>
+        <View style={styles.headerTitleContainer}>
+          <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
+             <View>
+                <Text style={styles.pageTitle}>Employee Attendance Logs</Text>
+                <Text style={styles.pageSubTitle}>Monitor daily check-ins and break timings</Text>
+             </View>
+             <TouchableOpacity style={styles.exportBtn} onPress={exportAttendance}>
+                <Feather name="download" size={18} color="#fff" />
+                <Text style={styles.exportBtnText}>Export CSV</Text>
+             </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* FILTERS */}
+        <View style={styles.filterCard}>
+          <TouchableOpacity style={styles.dateFilter} onPress={() => setShowDatePicker(true)}>
+            <Feather name="calendar" size={18} color="#2563EB" />
+            <Text style={styles.filterLabel}>{filterDate || "All Dates"}</Text>
+          </TouchableOpacity>
+
+          <View style={styles.pickerWrapper}>
+            <Picker
+              selectedValue={filterStatus}
+              onValueChange={setFilterStatus}
+              style={{ height: 40, width: 140, border: 'none' }}
+            >
+              <Picker.Item label="All Status" value="All" />
+              <Picker.Item label="On Duty" value="On Duty" />
+              <Picker.Item label="Off Duty" value="Off Duty" />
+            </Picker>
+          </View>
+          
+          <TouchableOpacity onPress={() => {setFilterDate(null); setFilterStatus("All")}} style={styles.resetBtn}>
+            <Text style={styles.resetBtnText}>Reset</Text>
+          </TouchableOpacity>
+        </View>
+
+       {showDatePicker && Platform.OS !== "web" && (
+  <DateTimePicker
+    value={new Date()}
+    mode="date"
+    onChange={handleDateChange}
+  />
+)}
+
+        {/* LOGS TABLE */}
+        <View style={styles.tableCard}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+            <View>
+              <View style={styles.tableHeaderRow}>
+                <Text style={[styles.hCell, { width: 50 }]}>#</Text>
+                <Text style={[styles.hCell, { width: 150 }]}>Employee Name</Text>
+                <Text style={[styles.hCell, { width: 100 }]}>Verification</Text>
+                <Text style={[styles.hCell, { width: 110 }]}>Status</Text>
+                <Text style={[styles.hCell, { width: 110 }]}>Break</Text>
+                <Text style={[styles.hCell, { width: 110 }]}>Check-In</Text>
+                <Text style={[styles.hCell, { width: 110 }]}>Check-Out</Text>
+                <Text style={[styles.hCell, { width: 100 }]}>Total</Text>
+                <Text style={[styles.hCell, { width: 60 }]}>View</Text>
+              </View>
+
+              <FlatList
+                data={filteredData}
+                keyExtractor={(item) => item.sno.toString()}
+                renderItem={({ item }) => (
+                  <View style={styles.tableDataRow}>
+                    <Text style={[styles.dCell, { width: 50, color: '#94a3b8' }]}>{item.sno}</Text>
+                    <Text style={[styles.dCell, { width: 150, fontWeight: '700' }]}>{item.name}</Text>
+                    <View style={[styles.dCell, { width: 100, flexDirection: 'row' }]}>
+                       <Image source={{ uri: item.login_image }} style={styles.miniImg} />
+                       {item.logout_image && <Image source={{ uri: item.logout_image }} style={[styles.miniImg, {marginLeft: -10}]} />}
+                    </View>
+                    <View style={[{ width: 110, paddingLeft: 10 }]}>
+                        <View style={[styles.statusPill, {backgroundColor: item.status === 'On Duty' ? '#ecfdf5' : '#fff1f2'}]}>
+                           <Text style={[styles.pillText, {color: item.status === 'On Duty' ? '#059669' : '#ef4444'}]}>{item.status}</Text>
+                        </View>
+                    </View>
+                    <View style={[{ width: 110, paddingLeft: 10 }]}>
+                        <View style={[styles.statusPill, {backgroundColor: item.breakStatus === 'On Break' ? '#fffbeb' : '#f1f5f9'}]}>
+                           <Text style={[styles.pillText, {color: item.breakStatus === 'On Break' ? '#d97706' : '#64748b'}]}>{item.breakStatus}</Text>
+                        </View>
+                    </View>
+                    <Text style={[styles.dCell, { width: 110 }]}>{item.checkInTime}</Text>
+                    <Text style={[styles.dCell, { width: 110 }]}>{item.logoutTime}</Text>
+                    <Text style={[styles.dCell, { width: 100, fontWeight: '600' }]}>{item.totalHours}</Text>
+                    <TouchableOpacity style={[styles.dCell, { width: 60 }]} onPress={() => openModal(item)}>
+                       <Feather name="eye" size={18} color="#2563EB" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              />
+            </View>
+          </ScrollView>
+        </View>
       </View>
 
-      {/* TABLE */}
-      <ScrollView horizontal>
-        <View>
-          <View style={[styles.tableRow, styles.tableHeader]}>
-            {[
-              "S.No",
-              "Name",
-              "Login Img",
-              "Logout Img",
-              "Status",
-              "Break",
-              "Check-In",
-              "Logout",
-              "Total Hrs",
-              "Date",
-              "Action",
-            ].map((h, i) => (
-              <Text
-                key={i}
-                style={[
-                  styles.cell,
-                  styles.headerCell,
-                  { width: h === "Action" ? 80 : 105 },
-                ]}
-              >
-                {h}
-              </Text>
-            ))}
-          </View>
-
-          <FlatList
-            data={filteredData}
-            keyExtractor={(item) => item.sno.toString()}
-              contentContainerStyle={{ paddingBottom: 100 }} // 👈 extra scroll space
-
-            renderItem={({ item }) => (
-              <View style={styles.tableRow}>
-                <Text style={[styles.cell, { width: 50 }]}>{item.sno}</Text>
-                <Text style={[styles.cell, { width: 130 }]}>{item.name}</Text>
-
-                <View
-                  style={[
-                    styles.cell,
-                    { width: 100, alignItems: "center" },
-                  ]}
-                >
-                  <Image
-                    source={{ uri: item.login_image }}
-                    style={styles.profileImage}
-                  />
-                </View>
-
-                <View
-                  style={[
-                    styles.cell,
-                    { width: 100, alignItems: "center" },
-                  ]}
-                >
-                  {item.logout_image ? (
-                    <Image
-                      source={{ uri: item.logout_image }}
-                      style={styles.profileImage}
-                    />
-                  ) : (
-                    <Text style={{ fontSize: 12, color: "#aaa" }}>
-                      No Image
-                    </Text>
-                  )}
-                </View>
-
-                <Text
-                  style={[
-                    styles.cell,
-                    { width: 100 },
-                    item.status === "On Duty"
-                      ? { color: "green" }
-                      : { color: "red" },
-                  ]}
-                >
-                  {item.status}
-                </Text>
-
-                <Text
-                  style={[
-                    styles.cell,
-                    { width: 100 },
-                    item.breakStatus === "On Break"
-                      ? { color: "orange" }
-                      : { color: "green" },
-                  ]}
-                >
-                  {item.breakStatus}
-                </Text>
-
-                <Text style={[styles.cell, { width: 120 }]}>
-                  {item.checkInTime}
-                </Text>
-
-                <Text style={[styles.cell, { width: 120 }]}>
-                  {item.logoutTime}
-                </Text>
-
-                <Text style={[styles.cell, { width: 120 }]}>
-                  {item.totalHours}
-                </Text>
-
-                <Text style={[styles.cell, { width: 100 }]}>
-                  {item.date}
-                </Text>
-
-                <TouchableOpacity
-                  style={[styles.cell, { width: 80, alignItems: "center" }]}
-                  onPress={() => openModal(item)}
-                >
-                  <Ionicons
-                    name="eye-outline"
-                    size={22}
-                    color="#007bff"
-                  />
-                </TouchableOpacity>
-              </View>
-            )}
-          />
-        </View>
-      </ScrollView>
-
-      {/* MODAL */}
-      <Modal visible={modalVisible} transparent animationType="slide">
+      {/* MODAL PRESERVED */}
+      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             {selectedEmployee && (
               <>
-                <Text style={styles.modalTitle}>
-                  {selectedEmployee.name}
-                </Text>
-
-                <View style={styles.modalRow}>
-                  <Image
-                    source={{ uri: selectedEmployee.login_image }}
-                    style={styles.modalImage}
-                  />
-                  {selectedEmployee.logout_image ? (
-                    <Image
-                      source={{ uri: selectedEmployee.logout_image }}
-                      style={styles.modalImage}
-                    />
-                  ) : (
-                    <Text>No Logout Image</Text>
-                  )}
+                <View style={styles.modalHeader}>
+                   <Text style={styles.modalTitle}>Record Details</Text>
+                   <TouchableOpacity onPress={() => setModalVisible(false)}><Ionicons name="close" size={24} color="#64748b"/></TouchableOpacity>
                 </View>
-
-                <Text style={styles.modalText}>
-                  Status:{" "}
-                  <Text
-                    style={{
-                      color:
-                        selectedEmployee.status === "On Duty"
-                          ? "green"
-                          : "red",
-                    }}
-                  >
-                    {selectedEmployee.status}
-                  </Text>
-                </Text>
-
-                <Text style={styles.modalText}>Break Status:</Text>
-                {selectedEmployee.breakIds?.map((bId, idx) => (
-                  <View
-                    key={bId}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 10,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <Text>Break {idx + 1}</Text>
-
-                    <Picker
-                      selectedValue={
-                        selectedEmployee.breakStatuses[bId] || "Returned"
-                      }
-                      style={{ width: 120, height: 40 }}
-                      onValueChange={(val) =>
-                        setSelectedEmployee((prev) => ({
-                          ...prev,
-                          breakStatuses: {
-                            ...prev.breakStatuses,
-                            [bId]: val,
-                          },
-                        }))
-                      }
-                    >
-                      <Picker.Item label="On Break" value="On Break" />
-                      <Picker.Item label="Returned" value="Returned" />
-                    </Picker>
+                <ScrollView contentContainerStyle={{ padding: 20 }}>
+                  <Text style={styles.detailName}>{selectedEmployee.name}</Text>
+                  <Text style={styles.detailDate}>{selectedEmployee.date}</Text>
+                  
+                  <View style={styles.modalImgRow}>
+                    <View>
+                       <Text style={styles.imgLabel}>Check-In Image</Text>
+                       <Image source={{ uri: selectedEmployee.login_image }} style={styles.modalImage} />
+                    </View>
+                    <View>
+                       <Text style={styles.imgLabel}>Check-Out Image</Text>
+                       {selectedEmployee.logout_image ? (
+                        <Image source={{ uri: selectedEmployee.logout_image }} style={styles.modalImage} />
+                       ) : (
+                        <View style={[styles.modalImage, styles.emptyImg]}><Text>N/A</Text></View>
+                       )}
+                    </View>
                   </View>
-                ))}
 
-                <Text style={styles.modalText}>
-                  Check-In: {selectedEmployee.checkInTime || "--"}
-                </Text>
-                <Text style={styles.modalText}>
-                  Logout: {selectedEmployee.logoutTime || "--"}
-                </Text>
-                <Text style={styles.modalText}>
-                  Total Hours: {selectedEmployee.totalHours || "--"}
-                </Text>
-                <Text style={styles.modalText}>
-                  Date: {selectedEmployee.date}
-                </Text>
-
-                <View
-                  style={{
-                    flexDirection: "row",
-                    gap: 10,
-                    marginTop: 10,
-                  }}
-                >
-                  <TouchableOpacity
-                    style={[styles.closeBtn, { backgroundColor: "#6c757d" }]}
-                    onPress={() => setModalVisible(false)}
-                  >
-                    <Text style={styles.closeBtnText}>Close</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.closeBtn, { backgroundColor: "orange" }]}
-                    onPress={handleUpdateAttendance}
-                  >
-                    <Ionicons
-                      name="create-outline"
-                      size={20}
-                      color="#fff"
-                    />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.closeBtn, { backgroundColor: "red" }]}
-                    onPress={handleDeleteAttendance}
-                  >
-                    <Ionicons
-                      name="trash-outline"
-                      size={20}
-                      color="#fff"
-                    />
-                  </TouchableOpacity>
-                </View>
+                  <View style={styles.modalActions}>
+                    <TouchableOpacity style={styles.updateBtn} onPress={handleUpdateAttendance}>
+                      <Text style={styles.btnText}>Update Record</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.deleteBtn} onPress={handleDeleteAttendance}>
+                      <Text style={styles.btnText}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
               </>
             )}
           </View>
@@ -669,29 +593,62 @@ const exportAttendance = () => {
   );
 };
 
-export default AttendanceLogsScreen;
-
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f4f6f8", padding: 10, marginTop: 30 },
-  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
-  headerRow: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
-  title: { fontSize: 20, fontWeight: "bold", marginLeft: 10 },
-  filterRow: { flexDirection: "row", alignItems: "center", marginBottom: 15 },
-  filterBtn: { flexDirection: "row", borderWidth: 1, borderColor: "#ccc", padding: 8, borderRadius: 8, alignItems: "center", backgroundColor: "#fff" },
-  pickerWrapper: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, justifyContent: "center", marginLeft: 10, backgroundColor: "#fff" },
-  
-  tableHeader: { backgroundColor: "#e0e0e0" },
-  tableRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#ddd", backgroundColor: "#fff" },
-  cell: { padding: 8, borderRightWidth: 1, borderRightColor: "#ddd", fontSize: 13, textAlignVertical: "center" },
-  headerCell: { fontWeight: "bold", fontSize: 14 },
-  profileImage: { width: 40, height: 40, borderRadius: 20 },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", alignItems: "center" },
-  modalBox: { backgroundColor: "#fff", width: "85%", borderRadius: 10, padding: 20, alignItems: "center" },
-  modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 10 },
-  modalRow: { flexDirection: "row", justifyContent: "center", gap: 15, marginBottom: 15 },
-  modalImage: { width: 80, height: 80, borderRadius: 40 },
-  modalText: { fontSize: 14, marginBottom: 4 },
-  closeBtn: { backgroundColor: "#007bff", paddingVertical: 8, paddingHorizontal: 20, borderRadius: 6 },
-  closeBtnText: { color: "#fff", fontWeight: "bold" },
+  mainWrapper: { flex: 1, flexDirection: 'row', backgroundColor: '#F8FAFC' },
+  sidebar: { width: 260, backgroundColor: '#fff', borderRightWidth: 1, borderRightColor: '#E2E8F0', padding: 24 },
+  brandContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 40 },
+  brandLogo: { width: 40, height: 40, backgroundColor: '#2563EB', borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  brandLetter: { color: '#fff', fontWeight: 'bold', fontSize: 22 },
+  brandName: { fontSize: 18, fontWeight: '800', color: '#1E293B' },
+  brandPortal: { fontSize: 12, color: '#64748B' },
+  navGroup: { flex: 1 },
+  navItem: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 12, marginBottom: 8 },
+  navItemActive: { backgroundColor: '#2563EB' },
+  navText: { marginLeft: 12, fontSize: 15, fontWeight: '600', color: '#64748B' },
+  navTextActive: { color: '#fff' },
+  logoutSection: { flexDirection: 'row', alignItems: 'center', padding: 14, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
+  logoutText: { marginLeft: 12, fontWeight: '700', color: '#EF4444' },
+
+  contentArea: { flex: 1, padding: 32 },
+  headerTitleContainer: { marginBottom: 24 },
+  pageTitle: { fontSize: 26, fontWeight: '800', color: '#1E293B' },
+  pageSubTitle: { fontSize: 15, color: '#64748B', marginTop: 4 },
+  exportBtn: { flexDirection: 'row', backgroundColor: '#2563EB', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
+  exportBtnText: { color: '#fff', fontWeight: '700', marginLeft: 8 },
+
+  filterCard: { flexDirection: 'row', backgroundColor: '#fff', padding: 12, borderRadius: 16, marginBottom: 20, alignItems: 'center', gap: 12, borderWeight: 1, borderColor: '#e2e8f0' },
+  dateFilter: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eff6ff', padding: 10, borderRadius: 10 },
+  filterLabel: { marginLeft: 8, color: '#2563EB', fontWeight: '600' },
+  pickerWrapper: { backgroundColor: '#f8fafc', borderRadius: 10, overflow: 'hidden' },
+  resetBtn: { padding: 10 },
+  resetBtnText: { color: '#64748B', fontWeight: '600' },
+
+  tableCard: { backgroundColor: '#fff', borderRadius: 20, padding: 10, flex: 1, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, borderWeight: 1, borderColor: '#e2e8f0' },
+  tableHeaderRow: { flexDirection: 'row', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  hCell: { fontWeight: '800', color: '#64748B', fontSize: 13, paddingHorizontal: 10 },
+  tableDataRow: { flexDirection: 'row', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f8fafc', alignItems: 'center' },
+  dCell: { fontSize: 14, color: '#334155', paddingHorizontal: 10 },
+  miniImg: { width: 32, height: 32, borderRadius: 16, borderWeight: 2, borderColor: '#fff', backgroundColor: '#e2e8f0' },
+  statusPill: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 20, alignSelf: 'flex-start' },
+  pillText: { fontSize: 11, fontWeight: '800' },
+
+  loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' },
+  loadingText: { marginTop: 12, color: '#2563EB', fontWeight: '700' },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalBox: { width: '90%', maxWidth: 500, backgroundColor: '#fff', borderRadius: 24, overflow: 'hidden' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  modalTitle: { fontSize: 18, fontWeight: '800' },
+  detailName: { fontSize: 22, fontWeight: '800', color: '#1e293b' },
+  detailDate: { color: '#64748b', marginBottom: 20 },
+  modalImgRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
+  imgLabel: { fontSize: 12, fontWeight: '700', color: '#94a3b8', marginBottom: 8 },
+  modalImage: { width: 210, height: 150, borderRadius: 12 },
+  emptyImg: { backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center' },
+  modalActions: { flexDirection: 'row', gap: 12 },
+  updateBtn: { flex: 2, backgroundColor: '#2563EB', padding: 16, borderRadius: 12, alignItems: 'center' },
+  deleteBtn: { flex: 1, backgroundColor: '#ef4444', padding: 16, borderRadius: 12, alignItems: 'center' },
+  btnText: { fontWeight: '700', color: '#fff' }
 });
+
+export default AttendanceLogsScreen;

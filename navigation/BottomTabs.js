@@ -1,7 +1,7 @@
 import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons, FontAwesome5, MaterialCommunityIcons } from "@expo/vector-icons";
-import { View } from "react-native";
+import { View, Platform } from "react-native"; // Added Platform here
 
 // Screens
 import HomeScreen from "../patient/PatientHome";
@@ -19,6 +19,9 @@ export default function BottomTabs() {
         headerShown: false,
         tabBarShowLabel: true,
         tabBarStyle: {
+          // --- HIDE ON DESKTOP LOGIC ---
+          display: Platform.OS === "web" ? "none" : "flex", 
+          // -----------------------------
           position: "absolute",
           backgroundColor: "#ffffff",
           borderTopLeftRadius: 25,
@@ -40,52 +43,22 @@ export default function BottomTabs() {
         tabBarInactiveTintColor: "#999",
         tabBarIcon: ({ color, focused }) => {
           let icon;
-
           switch (route.name) {
             case "Home":
               icon = <Ionicons name={focused ? "home" : "home-outline"} size={26} color={color} />;
               break;
-
             case "Doctors":
-              icon = (
-                <MaterialCommunityIcons
-                  name="stethoscope"
-                  size={26}
-                  color={color}
-                />
-              );
+              icon = <MaterialCommunityIcons name="stethoscope" size={26} color={color} />;
               break;
-
             case "Orders":
-              icon = (
-                <FontAwesome5
-                  name="clipboard-list"
-                  size={23}
-                  color={color}
-                />
-              );
+              icon = <FontAwesome5 name="clipboard-list" size={23} color={color} />;
               break;
-
             case "Medicines":
-              icon = (
-                <FontAwesome5
-                  name="pills"
-                  size={22}
-                  color={color}
-                />
-              );
+              icon = <FontAwesome5 name="pills" size={22} color={color} />;
               break;
-
             case "Profile":
-              icon = (
-                <Ionicons
-                  name={focused ? "person-circle" : "person-circle-outline"}
-                  size={26}
-                  color={color}
-                />
-              );
+              icon = <Ionicons name={focused ? "person-circle" : "person-circle-outline"} size={26} color={color} />;
               break;
-
             default:
               icon = <Ionicons name="ellipse-outline" size={26} color={color} />;
           }
@@ -102,11 +75,7 @@ export default function BottomTabs() {
       <Tab.Screen name="Doctors" component={DoctorsScreen} />
       <Tab.Screen name="Orders" component={OrdersScreen} />
       <Tab.Screen name="Medicines" component={MedicinesScreen} />
-      <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
-        options={{ title: "Profile" }}
-      />
+      <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: "Profile" }} />
     </Tab.Navigator>
   );
 }

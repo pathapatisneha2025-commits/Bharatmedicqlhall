@@ -9,8 +9,11 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
+  useWindowDimensions,
+  Platform,
+  SafeAreaView,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 
 const BASE_URL = "https://hospitaldatabasemanagement.onrender.com/salarydeduction";
@@ -18,6 +21,7 @@ const BASE_URL = "https://hospitaldatabasemanagement.onrender.com/salarydeductio
 export default function SalaryDeductionsScreen() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingCount, setLoadingCount] = useState(0);
 
   const [minSalary, setMinSalary] = useState("");
   const [maxSalary, setMaxSalary] = useState("");
@@ -27,9 +31,36 @@ export default function SalaryDeductionsScreen() {
 
   const [searchText, setSearchText] = useState("");
   const [filteredData, setFilteredData] = useState([]);
-const navigation = useNavigation();
+  
+  const navigation = useNavigation();
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const isWeb = SCREEN_WIDTH > 800;
 
-  // ------------------ FETCH ALL ------------------
+  const showAlert = (title, message, buttons) => {
+    if (Platform.OS === "web") {
+      if (buttons && buttons.length > 1) {
+        const confirmed = window.confirm(`${title}\n\n${message}`);
+        if (confirmed) {
+          const okBtn = buttons.find((b) => b.style !== "cancel");
+          okBtn?.onPress?.();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
+  };
+
+  useEffect(() => {
+    let interval;
+    if (loading) {
+      setLoadingCount(0);
+      interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+    } else clearInterval(interval);
+    return () => clearInterval(interval);
+  }, [loading]);
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -38,8 +69,7 @@ const navigation = useNavigation();
       setData(result);
       setFilteredData(result);
     } catch (err) {
-      Alert.alert("Error", "Failed to fetch data");
-      console.error(err);
+      showAlert("Error", "Failed to fetch data");
     } finally {
       setLoading(false);
     }
@@ -49,10 +79,9 @@ const navigation = useNavigation();
     fetchData();
   }, []);
 
-  // ------------------ ADD / UPDATE ------------------
   const handleSubmit = async () => {
     if (!minSalary || !deductionPerDay || !unauthorizedPenalty) {
-      Alert.alert("Validation Error", "Min Salary, Deduction, and Penalty are required!");
+      showAlert("Validation Error", "Required fields: Min Salary, Deduction, and Penalty.");
       return;
     }
 
@@ -74,15 +103,13 @@ const navigation = useNavigation();
         body: JSON.stringify(payload),
       });
 
-      const result = await response.json();
       if (response.ok) {
-        Alert.alert("Success", editId ? "Updated successfully" : "Added successfully");
+        showAlert("Success", editId ? "Rule updated" : "Rule added");
         resetForm();
         fetchData();
-      } else Alert.alert("Error", result.message || "Something went wrong");
+      }
     } catch (err) {
-      console.error(err);
-      Alert.alert("Error", "Failed to save data");
+      showAlert("Error", "Failed to save rule");
     } finally {
       setLoading(false);
     }
@@ -96,7 +123,6 @@ const navigation = useNavigation();
     setEditId(null);
   };
 
-  // ------------------ EDIT ------------------
   const handleEdit = (item) => {
     setMinSalary(item.min_salary.toString());
     setMaxSalary(item.max_salary ? item.max_salary.toString() : "");
@@ -105,9 +131,8 @@ const navigation = useNavigation();
     setEditId(item.id);
   };
 
-  // ------------------ DELETE ------------------
   const handleDelete = async (id) => {
-    Alert.alert("Confirm Delete", "Are you sure?", [
+    showAlert("Confirm Delete", "Permanently remove this rule?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -116,14 +141,12 @@ const navigation = useNavigation();
           try {
             setLoading(true);
             const response = await fetch(`${BASE_URL}/delete/${id}`, { method: "DELETE" });
-            const result = await response.json();
             if (response.ok) {
-              Alert.alert("Success", "Record deleted successfully");
+              showAlert("Success", "Rule removed");
               fetchData();
-            } else Alert.alert("Error", result.message || "Failed to delete");
+            }
           } catch (err) {
-            console.error(err);
-            Alert.alert("Error", "Failed to delete record");
+            showAlert("Error", "Failed to delete");
           } finally {
             setLoading(false);
           }
@@ -132,158 +155,269 @@ const navigation = useNavigation();
     ]);
   };
 
-  // ------------------ SEARCH ------------------
   const handleSearch = () => {
-    const filtered = data.filter(
-      (item) =>
-        item.min_salary.toString().includes(searchText) ||
-        (item.max_salary ? item.max_salary.toString().includes(searchText) : false) ||
-        item.deduction_per_day.toString().includes(searchText) ||
-        item.unauthorized_penalty.toString().includes(searchText)
+    const filtered = data.filter((item) =>
+      item.min_salary.toString().includes(searchText) ||
+      (item.max_salary ? item.max_salary.toString().includes(searchText) : false)
     );
     setFilteredData(filtered);
   };
-   if (loading) {
-    return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text style={{ marginTop: 10 }}>Loading employee...</Text>
-      </View>
-    );
-  }
 
-  // ------------------ RENDER ITEM ------------------
   const renderItem = ({ item }) => (
-    <View style={styles.card}>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.cardText}><Text style={styles.bold}>Min:</Text> {item.min_salary}</Text>
-        <Text style={styles.cardText}><Text style={styles.bold}>Max:</Text> {item.max_salary || "∞"}</Text>
-        <Text style={styles.cardText}><Text style={styles.bold}>Deduction/Day:</Text> {item.deduction_per_day}</Text>
-        <Text style={styles.cardText}><Text style={styles.bold}>Penalty:</Text> {item.unauthorized_penalty}</Text>
+    <View style={styles.ruleCard}>
+      <View style={styles.cardInfo}>
+        <View style={styles.badgeRow}>
+          <View style={styles.rangeBadge}>
+            <Text style={styles.rangeText}>
+              ₹{item.min_salary} — {item.max_salary || "∞"}
+            </Text>
+          </View>
+        </View>
+        
+        <View style={styles.statsContainer}>
+          <View style={styles.statBox}>
+            <Text style={styles.statLabel}>Daily</Text>
+            <Text style={styles.statValue}>₹{item.deduction_per_day}</Text>
+          </View>
+          <View style={[styles.statBox, { borderLeftWidth: 1, borderColor: '#e2e8f0' }]}>
+            <Text style={styles.statLabel}>Penalty</Text>
+            <Text style={[styles.statValue, { color: '#ef4444' }]}>₹{item.unauthorized_penalty}</Text>
+          </View>
+        </View>
       </View>
-      <View style={styles.iconContainer}>
-        <TouchableOpacity onPress={() => handleEdit(item)}>
-          <Ionicons name="create-outline" size={24} color="orange" />
+
+      <View style={styles.cardActions}>
+        <TouchableOpacity onPress={() => handleEdit(item)} style={styles.actionBtn}>
+          <Feather name="edit-3" size={16} color="#2563eb" />
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => handleDelete(item.id)} style={{ marginLeft: 10 }}>
-          <Ionicons name="trash-outline" size={24} color="red" />
+        <TouchableOpacity onPress={() => handleDelete(item.id)} style={[styles.actionBtn, { backgroundColor: '#fee2e2' }]}>
+          <Feather name="trash-2" size={16} color="#ef4444" />
         </TouchableOpacity>
       </View>
     </View>
   );
 
+  if (loading && loadingCount === 0) {
+    return (
+      <View style={styles.loaderCenter}>
+        <ActivityIndicator size="large" color="#2563eb" />
+        <Text style={styles.loaderText}>Syncing Rules... {loadingCount}s</Text>
+      </View>
+    );
+  }
+
   return (
-    <ScrollView style={styles.container}>
-<View style={styles.headerContainer}>
-  <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-    <Ionicons name="arrow-back" size={24} color="#007BFF" />
-  </TouchableOpacity>
-  <Text style={styles.header}>Salary Deductions</Text>
-</View>
-
-      {/* Search */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search-outline" size={20} color="#007BFF" style={{ marginLeft: 8 }} />
-        <TextInput
-          placeholder="Search by value"
-          value={searchText}
-          onChangeText={setSearchText}
-          style={styles.searchInput}
-        />
-        <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-          <Text style={styles.searchButtonText}>Go</Text>
+    <SafeAreaView style={styles.safeContainer}>
+      {/* Header */}
+      <View style={styles.headerArea}>
+        <TouchableOpacity style={styles.circleBack} onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={22} color="#1e293b" />
         </TouchableOpacity>
+        <View>
+          <Text style={styles.headerTitle}>Deduction Rules</Text>
+          <Text style={styles.headerSub}>Salary brackets and penalty configurations</Text>
+        </View>
       </View>
 
-      {/* Form */}
-      <View style={styles.form}>
-        <TextInput
-          placeholder="Min Salary"
-          keyboardType="numeric"
-          value={minSalary}
-          onChangeText={setMinSalary}
-          style={styles.input}
-        />
-        <TextInput
-          placeholder="Max Salary (leave empty for no max)"
-          keyboardType="numeric"
-          value={maxSalary}
-          onChangeText={setMaxSalary}
-          style={styles.input}
-        />
-        <TextInput
-          placeholder="Deduction per day"
-          keyboardType="numeric"
-          value={deductionPerDay}
-          onChangeText={setDeductionPerDay}
-          style={styles.input}
-        />
-        <TextInput
-          placeholder="Unauthorized Penalty"
-          keyboardType="numeric"
-          value={unauthorizedPenalty}
-          onChangeText={setUnauthorizedPenalty}
-          style={styles.input}
-        />
+      <ScrollView contentContainerStyle={styles.scrollPadding} showsVerticalScrollIndicator={false}>
+        
+        {/* Search Bar */}
+        <View style={styles.searchBox}>
+          <Feather name="search" size={18} color="#94a3b8" />
+          <TextInput
+            placeholder="Search by salary range..."
+            value={searchText}
+            onChangeText={(txt) => {
+              setSearchText(txt);
+              if (txt === "") setFilteredData(data);
+            }}
+            style={styles.searchTextInput}
+          />
+          <TouchableOpacity style={styles.goBtn} onPress={handleSearch}>
+            <Text style={styles.goBtnText}>FIND</Text>
+          </TouchableOpacity>
+        </View>
 
-        <TouchableOpacity style={styles.button} onPress={handleSubmit}>
-          <Text style={styles.buttonText}>{editId ? "Update" : "Add"}</Text>
-        </TouchableOpacity>
-      </View>
+        <View style={[styles.mainLayout, isWeb && styles.flexRow]}>
+          
+          {/* Form Card */}
+          <View style={[styles.formCard, isWeb && { width: 350 }]}>
+            <Text style={styles.formTitle}>{editId ? "Update Rule" : "New Configuration"}</Text>
+            
+            <View style={styles.inputGrid}>
+              <View style={styles.inputWrapper}>
+                <Text style={styles.label}>Min Salary</Text>
+                <TextInput keyboardType="numeric" value={minSalary} onChangeText={setMinSalary} style={styles.modernInput} placeholder="Min" />
+              </View>
+              <View style={styles.inputWrapper}>
+                <Text style={styles.label}>Max Salary</Text>
+                <TextInput keyboardType="numeric" value={maxSalary} onChangeText={setMaxSalary} style={styles.modernInput} placeholder="Max" />
+              </View>
+            </View>
 
-      {/* List */}
-      <Text style={styles.subHeader}>All Records</Text>
-      {loading ? (
-        <ActivityIndicator size="large" color="#007BFF" style={{ marginTop: 10 }} />
-      ) : (
-        <FlatList
-          data={filteredData}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={renderItem}
-        />
-      )}
-    </ScrollView>
+            <Text style={styles.label}>Daily Deduction (₹)</Text>
+            <TextInput keyboardType="numeric" value={deductionPerDay} onChangeText={setDeductionPerDay} style={styles.modernInput} />
+
+            <Text style={styles.label}>Unauthorized Penalty (₹)</Text>
+            <TextInput keyboardType="numeric" value={unauthorizedPenalty} onChangeText={setUnauthorizedPenalty} style={styles.modernInput} />
+
+            <TouchableOpacity style={[styles.submitBtn, editId && styles.updateBtn]} onPress={handleSubmit}>
+              <Text style={styles.submitBtnText}>{editId ? "Apply Changes" : "Save Rule"}</Text>
+            </TouchableOpacity>
+            
+            {editId && (
+              <TouchableOpacity onPress={resetForm} style={styles.cancelLink}>
+                <Text style={styles.cancelLinkText}>Discard Edit</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* List Card */}
+          <View style={[styles.listContainer, isWeb && { flex: 1 }]}>
+            <View style={styles.listHeader}>
+              <Text style={styles.listTitle}>Existing Rules</Text>
+              <View style={styles.countBadge}>
+                <Text style={styles.countText}>{filteredData.length} active</Text>
+              </View>
+            </View>
+
+            <FlatList
+              data={filteredData}
+              keyExtractor={(item) => item.id.toString()}
+              renderItem={renderItem}
+              scrollEnabled={false}
+              ListEmptyComponent={<Text style={styles.emptyText}>No rules found.</Text>}
+            />
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerContainer: {
-  flexDirection: "row",
-  alignItems: "center",
-  marginBottom: 15,
-},
-backButton: {
-  marginRight: 10,
-  padding: 4,
-},
-header: {
-  fontSize: 24,
-  fontWeight: "bold",
-  color: "#007BFF",
-  textAlign: "left", // aligns text next to arrow
-},
+  safeContainer: { flex: 1, backgroundColor: "#F8FAFC" },
+  headerArea: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "ios" ? 10 : 40,
+    paddingBottom: 20,
+    gap: 15,
+  },
+  circleBack: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+  },
+  headerTitle: { fontSize: 24, fontWeight: "800", color: "#1e293b" },
+  headerSub: { fontSize: 13, color: "#64748b", fontWeight: "500" },
+  scrollPadding: { paddingHorizontal: 20, paddingBottom: 40 },
 
-  container: { flex: 1, padding: 16, backgroundColor: "#F0F4F8" },
-  searchContainer: {
+  searchBox: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fff",
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginBottom: 15,
+    borderRadius: 16,
+    paddingHorizontal: 15,
+    height: 54,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    marginBottom: 25,
     elevation: 2,
   },
-  searchInput: { flex: 1, padding: 8, fontSize: 15 },
-  searchButton: { backgroundColor: "#007BFF", paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8, marginLeft: 5 },
-  searchButtonText: { color: "#fff", fontWeight: "bold" },
-  form: { backgroundColor: "#fff", padding: 16, borderRadius: 12, elevation: 3, marginBottom: 15 },
-  input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 10, marginBottom: 10, fontSize: 15 },
-  button: { backgroundColor: "#007BFF", padding: 12, borderRadius: 8, alignItems: "center", marginTop: 5 },
-  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-  subHeader: { fontSize: 18, fontWeight: "bold", color: "#333", marginBottom: 10 },
-  card: { flexDirection: "row", backgroundColor: "#fff", padding: 12, borderRadius: 12, marginBottom: 10, elevation: 2 },
-  cardText: { fontSize: 15, color: "#333", marginBottom: 4 },
-  bold: { fontWeight: "bold" },
-  iconContainer: { flexDirection: "row", alignItems: "center" },
+  searchTextInput: { flex: 1, marginLeft: 10, fontSize: 15, color: "#1e293b",outlineStyle: "none" },
+  goBtn: { backgroundColor: "#1e293b", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
+  goBtnText: { color: "#fff", fontWeight: "800", fontSize: 11, letterSpacing: 0.5 },
+
+  mainLayout: { gap: 20 },
+  flexRow: { flexDirection: 'row', alignItems: 'flex-start' },
+
+  formCard: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: "#f1f5f9",
+    elevation: 3,
+  },
+  formTitle: { fontSize: 18, fontWeight: "700", color: "#1e293b", marginBottom: 20 },
+  inputGrid: { flexDirection: "row", gap: 15 },
+  inputWrapper: { flex: 1 },
+  label: { fontSize: 11, fontWeight: "800", color: "#64748b", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 },
+  modernInput: {
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 48,
+    marginBottom: 18,
+    fontSize: 15,
+    color: "#1e293b",
+  },
+  submitBtn: {
+    backgroundColor: "#2563eb",
+    height: 54,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 10,
+  },
+  updateBtn: { backgroundColor: "#1e293b" },
+  submitBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  cancelLink: { marginTop: 15, alignItems: "center" },
+  cancelLinkText: { color: "#ef4444", fontWeight: "600", fontSize: 14 },
+
+  listContainer: { gap: 12 },
+  listHeader: { flexDirection: "row", alignItems: "center", marginBottom: 15, gap: 10 },
+  listTitle: { fontSize: 20, fontWeight: "800", color: "#1e293b" },
+  countBadge: { backgroundColor: '#e2e8f0', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  countText: { fontSize: 11, fontWeight: '700', color: '#64748b' },
+
+  ruleCard: {
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 15,
+    flexDirection: "row",
+    borderWidth: 1,
+    borderColor: "#f1f5f9",
+    elevation: 2,
+  },
+  cardInfo: { flex: 1 },
+  badgeRow: { marginBottom: 12 },
+  rangeBadge: {
+    backgroundColor: "#eff6ff",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+  },
+  rangeText: { color: "#2563eb", fontWeight: "800", fontSize: 13 },
+  statsContainer: { flexDirection: 'row', gap: 20 },
+  statBox: { flex: 1 },
+  statLabel: { fontSize: 10, color: '#94a3b8', fontWeight: '700', textTransform: 'uppercase', marginBottom: 2 },
+  statValue: { fontSize: 16, fontWeight: '800', color: '#1e293b' },
+
+  cardActions: { gap: 10, justifyContent: "center", paddingLeft: 15 },
+  actionBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#f1f5f9",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  loaderCenter: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F8FAFC" },
+  loaderText: { marginTop: 15, color: "#64748b", fontWeight: "600" },
+  emptyText: { textAlign: "center", color: "#94a3b8", marginTop: 40, fontSize: 15 },
 });

@@ -8,12 +8,15 @@ import {
   ScrollView,
   BackHandler,
   Alert,
+    Platform,
+  useWindowDimensions,
+StatusBar,
   ActivityIndicator,
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
 import { useNavigation } from "@react-navigation/native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons,MaterialCommunityIcons } from "@expo/vector-icons";
 import { getEmployeeId } from "../utils/storage";
 
 const BASE_URL = "https://hospitaldatabasemanagement.onrender.com";
@@ -40,13 +43,32 @@ const LeaveApplyScreen = () => {
 
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
+  const MAX_WIDTH = 1500;
+  const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
+const gridStyle = {
+  flexDirection: SCREEN_WIDTH > 800 ? "row" : "column", // row for desktop, column for mobile
+  justifyContent: "space-between",
+  gap: SCREEN_WIDTH > 800 ? 20 : 0, // gap works on web
+};
 
+const columnStyle = {
+  flex: 1,
+  minWidth: 300, // prevent columns from shrinking too much
+};
+const isDesktop = SCREEN_WIDTH > 800;
+
+
+  const showAlert = (title, message) => {
+    if (Platform.OS === 'web') window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
   // Fetch employee details
   useEffect(() => {
     const fetchEmployee = async () => {
       try {
         const storedEmpId = await getEmployeeId();
-        if (!storedEmpId) return Alert.alert("Error", "Employee ID not found.");
+        if (!storedEmpId) return showAlert("Error", "Employee ID not found.");
         const idNum = Number(storedEmpId);
         setEmpId(idNum);
 
@@ -145,6 +167,25 @@ useEffect(() => {
 
   fetchSalaryDeduction();
 }, [empId, employeeName, leaveDurationType, leaveHours, startDate, endDate]);
+const handleWebDateChange = (type, value) => {
+  const date = new Date(value);
+
+  if (type === "start") {
+    setStartDate(date);
+
+    // ✅ DESKTOP CONDITION
+    if (date > endDate) {
+      setEndDate(date);
+    }
+  } else {
+    // prevent end date < start date
+    if (date < startDate) {
+      showAlert("Invalid Date", "End date cannot be before start date");
+      return;
+    }
+    setEndDate(date);
+  }
+};
 
 
   // Fetch applied leaves
@@ -305,14 +346,14 @@ const checkDepartmentLimit = () => {
 
       const data = await res.json();
       if (res.ok) {
-        Alert.alert("✅ Success", data.message || "Leave submitted successfully.");
+       showAlert("✅ Success", data.message || "Leave submitted successfully.");
         navigation.navigate("LeaveConfirm", { leave: data.leave });
       } else {
-        Alert.alert("❌ Error", data.message || "Failed to submit leave");
+        showAlert("❌ Error", data.message || "Failed to submit leave");
       }
     } catch (err) {
       console.error(err);
-      Alert.alert("Error", "Something went wrong while submitting leave.");
+      showAlert("Error", "Something went wrong while submitting leave.");
     } finally {
       setLoading(false);
     }
@@ -322,58 +363,81 @@ const handleSubmit = async () => {
   try {
     setLoading(true);
 
-    if (!empId) return Alert.alert("Error", "Employee ID not found.");
+    if (!empId) return showAlert("Error", "Employee ID not found.");
     if (!reason.trim()) {
-      Alert.alert("Validation", "Please provide a reason for leave.");
+      showAlert("Validation", "Please provide a reason for leave.");
       setLoading(false);
       return;
     }
 
     if (leaveDurationType === "hourly" && parseFloat(leaveHours) > 10) {
-      Alert.alert("Validation", "Hourly leave cannot exceed 10 hours.");
+      showAlert("Validation", "Hourly leave cannot exceed 10 hours.");
       setLoading(false);
       return;
     }
 
     // Check department limits
-  const deptCheck = checkDepartmentLimit();
-  if (!deptCheck.allowed) {
-    Alert.alert(
-      "Department Limit Reached",
-      `The department limit for ${department} is ${deptCheck.limit} per day.\nAlready ${deptCheck.leavesTaken} leave(s) taken on ${deptCheck.date.toDateString()}.`
-    );
-    setLoading(false);
-    return;
-  }
-
-
-    // Check if employee already applied leave for the start date
-    if (isDuplicateLeave()) {
-      Alert.alert("Duplicate Leave", "You have already applied for leave on this day.");
+    const deptCheck = checkDepartmentLimit();
+    if (!deptCheck.allowed) {
+      showAlert(
+        "Department Limit Reached",
+        `The department limit for ${department} is ${deptCheck.limit} per day.\nAlready ${deptCheck.leavesTaken} leave(s) taken on ${deptCheck.date.toDateString()}.`
+      );
       setLoading(false);
       return;
     }
 
-    if (salaryData && salaryData.remainingPaidLeaves <= 0) {
-      const deductionAmount = salaryData.deductionPerDay || 0;
-      Alert.alert(
-        "Paid Leaves Completed",
-        `Your paid leaves are completed.\n💰 Salary deduction of ₹${deductionAmount} will be applied for this leave.\nDo you still want to continue?`,
-        [
-          { text: "Cancel", style: "cancel", onPress: () => setLoading(false) },
-          { text: "Proceed", onPress: submitLeave },
-        ]
-      );
-    } else {
+    // Check if duplicate leave
+    if (isDuplicateLeave()) {
+      showAlert("Duplicate Leave", "You have already applied for leave on this day.");
+      setLoading(false);
+      return;
+    }
+
+    // Paid leave confirmation
+    const proceedWithLeave = async () => {
       await submitLeave();
       setAppliedLeaves(prev => [...prev, startDate.toDateString()]);
+    };
+
+    if (salaryData && salaryData.remainingPaidLeaves <= 0) {
+      const deductionAmount = salaryData.deductionPerDay || 0;
+
+      if (Platform.OS === "web") {
+        // Web: use confirm dialog
+        const confirmed = window.confirm(
+          `Your paid leaves are completed.\n💰 Salary deduction of ₹${deductionAmount} will be applied for this leave.\nDo you want to continue?`
+        );
+        if (!confirmed) {
+          setLoading(false);
+          return;
+        }
+        await proceedWithLeave();
+      } else {
+        // Android/iOS: use Alert.alert with buttons
+        Alert.alert(
+          "Paid Leaves Completed",
+          `Your paid leaves are completed.\n💰 Salary deduction of ₹${deductionAmount} will be applied for this leave.`,
+          [
+            { text: "Cancel", style: "cancel", onPress: () => setLoading(false) },
+            { text: "Proceed", onPress: proceedWithLeave },
+          ]
+        );
+      }
+    } else {
+      await proceedWithLeave();
     }
   } catch (error) {
     console.error(error);
-    Alert.alert("Error", "Something went wrong.");
+    showAlert("Error", "Something went wrong.");
     setLoading(false);
   }
 };
+
+const isSingleDateLeave =
+  leaveDurationType === "fullDay" ||
+  leaveDurationType === "firsthalf" ||
+  leaveDurationType === "secondhalf";
 
 
 useEffect(() => {
@@ -403,166 +467,296 @@ useEffect(() => {
     );
 
 
-
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-        <Ionicons name="arrow-back" size={24} color="#1976D2" />
-      </TouchableOpacity>
-
-      <Text style={styles.headerTitle}>Apply for Leave</Text>
-
-      <Text style={styles.label}>Employee Name</Text>
-      <TextInput style={styles.input} value={employeeName} editable={false} />
-
-      <Text style={styles.label}>Department</Text>
-      <TextInput style={styles.input} value={department} editable={false} />
-
-      <Text style={styles.label}>Leave Type</Text>
-      <View style={styles.pickerContainer}>
-        <Picker selectedValue={leaveType} onValueChange={setLeaveType}>
-          <Picker.Item label="Sick Leave" value="Sick Leave" />
-          <Picker.Item label="Casual Leave" value="Casual Leave" />
-          <Picker.Item label="Emergency Leave" value="Emergency Leave" />
-        </Picker>
-      </View>
-
-      <Text style={styles.label}>Leave Duration</Text>
-      <View style={styles.pickerContainer}>
-      <Picker
-  selectedValue={leaveDurationType}
-  onValueChange={(value) => {
-    setLeaveDurationType(value); // triggers useEffect for deduction
-  }}
->
-  <Picker.Item label="Hourly" value="hourly" />
-  <Picker.Item label="First half" value="firsthalf" />
-  <Picker.Item label="Second half" value="secondhalf" />
-  <Picker.Item label="Full Day" value="fullDay" />
-  <Picker.Item label="Multiple Days" value="multipleDays" />
-</Picker>
-
-      </View>
-
-      {/* Date Section */}
-      {leaveDurationType === "multipleDays" ? (
-        <>
-          <Text style={styles.label}>Start Date</Text>
-          <TouchableOpacity style={styles.input} onPress={() => setShowStartDatePicker(true)}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <Text>{startDate.toDateString()}</Text>
-              <Ionicons name="calendar-outline" size={20} color="#1976D2" />
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <View style={[styles.mainWrapper, { flexDirection: isDesktop ? 'row' : 'column' }]}>
+        
+        {/* LEFT BRANDING PANEL (Visible on Desktop) */}
+        {isDesktop && (
+          <View style={styles.brandingSide}>
+            <View style={styles.brandOverlay}>
+              <View style={styles.heroLogoBox}>
+                <Ionicons name="calendar" size={32} color="#fff" />
+              </View>
+              <Text style={styles.heroTitle}>Leave{"\n"}Management</Text>
+              <Text style={styles.heroSubtitle}>Hospital HR Portal</Text>
+              <View style={styles.heroDivider} />
+              <Text style={styles.heroDescription}>
+                Submit your time-off requests, view automated salary impact calculations, and track department limits.
+              </Text>
+              <TouchableOpacity style={styles.actionBtnOutline} onPress={() => navigation.goBack()}>
+                <Text style={styles.actionBtnOutlineText}>Cancel Request</Text>
+              </TouchableOpacity>
             </View>
-          </TouchableOpacity>
-          {showStartDatePicker && (
-            <DateTimePicker
-              value={startDate}
-              mode="date"
-              display="default"
-              minimumDate={new Date()}
-              onChange={(event, date) => {
-                setShowStartDatePicker(false);
-                if (date) {
-                  setStartDate(date);
-                  if (date > endDate) setEndDate(date);
-                }
-              }}
-            />
-          )}
+          </View>
+        )}
 
-          <Text style={styles.label}>End Date</Text>
-          <TouchableOpacity style={styles.input} onPress={() => setShowEndDatePicker(true)}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <Text>{endDate.toDateString()}</Text>
-              <Ionicons name="calendar-outline" size={20} color="#1976D2" />
+        {/* RIGHT CONTENT FORM */}
+        <View style={styles.dashboardSide}>
+          <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <View style={styles.headerRow}>
+              {!isDesktop && (
+                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backCircle}>
+                  <Ionicons name="arrow-back" size={24} color="#1A1A1A" />
+                </TouchableOpacity>
+              )}
+              <View>
+                <Text style={styles.welcomeText}>Apply for Leave</Text>
+                <Text style={styles.dateSubtitle}>{new Date().toDateString()}</Text>
+              </View>
             </View>
-          </TouchableOpacity>
-          {showEndDatePicker && (
-            <DateTimePicker
-              value={endDate}
-              mode="date"
-              display="default"
-              minimumDate={startDate}
-              onChange={(event, date) => {
-                setShowEndDatePicker(false);
-                if (date) setEndDate(date);
-              }}
-            />
-          )}
-        </>
+
+            <View style={styles.formContainer}>
+              <View style={styles.formSection}>
+                <Text style={styles.sectionTitle}>Employee Details</Text>
+                <View style={styles.readOnlyRow}>
+                    <View style={{flex: 1}}>
+                        <Text style={styles.label}>Full Name</Text>
+                        <TextInput style={[styles.textInput, styles.disabledInput]} value={employeeName} editable={false} />
+                    </View>
+                    <View style={{flex: 1}}>
+                        <Text style={styles.label}>Department</Text>
+                        <TextInput style={[styles.textInput, styles.disabledInput]} value={department} editable={false} />
+                    </View>
+                </View>
+              </View>
+
+              <View style={styles.formSection}>
+                <Text style={styles.sectionTitle}>Leave Configuration</Text>
+                <View style={styles.row}>
+                    <View style={{flex: 1}}>
+                        <Text style={styles.label}>Type of Leave</Text>
+                        <View style={styles.pickerWrapper}>
+                            <Picker selectedValue={leaveType} onValueChange={setLeaveType}>
+                                <Picker.Item label="Sick Leave" value="Sick Leave" />
+                                <Picker.Item label="Casual Leave" value="Casual Leave" />
+                                  <Picker.Item label="Emergency Leave" value="Emergency Leave" />
+                                
+                            </Picker>
+                        </View>
+                    </View>
+                    <View style={{flex: 1}}>
+                        <Text style={styles.label}>Duration</Text>
+                        <View style={styles.pickerWrapper}>
+                            <Picker selectedValue={leaveDurationType} onValueChange={setLeaveDurationType}>
+                                <Picker.Item label="Hourly" value="hourly" />
+                                               <Picker.Item label="First half" value="firsthalf" />
+                                               <Picker.Item label="Second half" value="secondhalf" />
+                                               <Picker.Item label="Full Day" value="fullDay" />
+                                               <Picker.Item label="Multiple Days" value="multipleDays" />
+                            </Picker>
+                        </View>
+                    </View>
+                </View>
+{/* Date Selection is now visible for ALL types, including Hourly */}
+{/* 1. Show Date Selection for everything EXCEPT hourly */}
+{leaveDurationType !== "hourly" && (
+  <View style={[styles.dateGrid, { marginTop: 15 }]}>
+    <View style={{ flex: 1 }}>
+      <Text style={styles.label}>
+        {leaveDurationType === "multipleDays" ? "Start Date" : "Leave Date"}
+      </Text>
+      {Platform.OS === 'web' ? (
+        <input 
+          type="date" 
+          value={startDate.toISOString().split('T')[0]} 
+          style={styles.webDateInput} 
+          onChange={(e) => handleWebDateChange('start', e.target.value)} 
+        />
       ) : (
-        <View style={styles.input}>
-          <Text>{new Date().toDateString()}</Text>
-        </View>
+        <TouchableOpacity style={styles.datePickerBtn} onPress={() => setShowStartDatePicker(true)}>
+          <Text style={styles.dateBtnText}>{startDate.toLocaleDateString()}</Text>
+          <Ionicons name="calendar-outline" size={18} color="#0D6EFD" />
+        </TouchableOpacity>
       )}
+    </View>
 
-      {leaveDurationType === "hourly" && (
-        <>
-          <Text style={styles.label}>Leave Hours</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter hours"
-            value={leaveHours}
-            onChangeText={setLeaveHours}
-            keyboardType="numeric"
+    {/* End Date only for Multiple Days */}
+    {leaveDurationType === "multipleDays" && (
+      <View style={{ flex: 1 }}>
+        <Text style={styles.label}>End Date</Text>
+        {Platform.OS === 'web' ? (
+          <input 
+            type="date" 
+            value={endDate.toISOString().split('T')[0]}
+            style={styles.webDateInput} 
+            onChange={(e) => handleWebDateChange('end', e.target.value)} 
           />
-        </>
-      )}
-
-      <Text style={styles.label}>Reason</Text>
-      <TextInput
-        style={[styles.input, { height: 100 }]}
-        placeholder="Reason for leave..."
-        multiline
-        value={reason}
-        onChangeText={setReason}
-      />
-
-      <View style={styles.deductionCard}>
-        {deductionLoading ? (
-          <ActivityIndicator />
-        ) : salaryData ? (
-          <>
-            <Text style={styles.deductionText}>Monthly Salary: ₹{salaryData.monthlySalary}</Text>
-            <Text style={styles.deductionText}>Paid Leaves: {salaryData.paidLeaves}</Text>
-            <Text style={styles.deductionText}>Used Leaves: {salaryData.usedLeaves}</Text>
-            <Text style={styles.deductionText}>Remaining Paid Leaves: {salaryData.remainingPaidLeaves}</Text>
-            <Text style={styles.deductionText}>Deduction Per Day: ₹{salaryData.deductionPerDay}</Text>
-            <Text style={styles.deductionText}>Unauthorized Leaves: {salaryData.UnauthorizedLeaves}</Text>
-            <Text style={styles.deductionText}>Unpaid Days: {salaryData.unpaidDays}</Text>
-            <Text style={styles.deductionText}>Salary Deduction: ₹{salaryData.salaryDeduction}</Text>
-            <Text style={styles.deductionText}>Total Penalty: ₹{salaryData.totalPenalty}</Text>
-          </>
         ) : (
-          <Text>No deduction data available.</Text>
+          <TouchableOpacity style={styles.datePickerBtn} onPress={() => setShowEndDatePicker(true)}>
+            <Text style={styles.dateBtnText}>{endDate.toLocaleDateString()}</Text>
+            <Ionicons name="calendar-outline" size={18} color="#0D6EFD" />
+          </TouchableOpacity>
         )}
       </View>
+    )}
+  </View>
+)}
 
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity style={styles.cancelBtn} onPress={() => navigation.goBack()}>
-          <Text style={styles.btnText}>Cancel</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Submit</Text>}
-        </TouchableOpacity>
+{/* 2. Show ONLY Number of Hours when Hourly is selected */}
+{leaveDurationType === "hourly" && (
+  <View style={{ marginTop: 15 }}>
+    <Text style={styles.label}>Number of Hours</Text>
+    <TextInput 
+      style={styles.textInput} 
+      placeholder="Enter hours (e.g. 4)" 
+      keyboardType="numeric" 
+      value={leaveHours} 
+      onChangeText={setLeaveHours} 
+    />
+  </View>
+)}
+                <Text style={styles.label}>Reason for Request</Text>
+                <TextInput style={[styles.textInput, {height: 80}]} multiline placeholder="Please explain..." value={reason} onChangeText={setReason} />
+              </View>
+
+              {/* SALARY SUMMARY CARD */}
+              <View style={styles.summaryCard}>
+                <View style={styles.summaryHeader}>
+                   <MaterialCommunityIcons name="calculator-variant" size={24} color="#0D6EFD" />
+                   <Text style={styles.summaryTitle}>Calculated Impact</Text>
+                </View>
+                {deductionLoading ? <ActivityIndicator color="#0D6EFD" /> : (
+                    <View style={styles.summaryGrid}>
+    {/* Leave Summary */}
+    <SummaryRow label="Total Days" value={`${leaveCount} Days`} />
+    <SummaryRow label="Paid Leaves" value={salaryData?.paidLeaves || "0"} />
+    <SummaryRow label="Used Leaves" value={salaryData?.usedLeaves || "0"} />
+    <SummaryRow label="Remaining Paid" value={salaryData?.remainingPaidLeaves || "0"} />
+    
+    <View style={styles.totalDivider} />
+    
+    {/* Financial Details */}
+    <SummaryRow label="Monthly Salary" value={`₹${salaryData?.monthlySalary || "0"}`} />
+    <SummaryRow label="Deduction Per Day" value={`₹${salaryData?.deductionPerDay || "0"}`} />
+    {/* <SummaryRow label="Unauthorized Leaves" value={salaryData?.UnauthorizedLeaves || "0"} /> */}
+    <SummaryRow label="Unpaid Days" value={salaryData?.unpaidDays || "0"} />
+    <SummaryRow label="Total Penalty" value={`₹${salaryData?.totalPenalty || "0"}`} />
+    
+    <View style={styles.totalDivider} />
+    
+    {/* Final Calculation */}
+    <View style={styles.totalRow}>
+        <View>
+            <Text style={styles.totalLabel}>Salary Deduction</Text>
+            <Text style={styles.dateSubtitle}>Estimated for this request</Text>
+        </View>
+        <Text style={styles.totalVal}>₹{salaryData?.salaryDeduction || "0"}</Text>
+    </View>
+</View>
+                )}
+              </View>
+
+              <View style={styles.buttonRow}>
+                 <TouchableOpacity style={styles.cancelBtn} onPress={() => navigation.goBack()}>
+                    <Text style={styles.cancelBtnText}>Back</Text>
+                 </TouchableOpacity>
+                 <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
+                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Submit Application</Text>}
+                 </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        </View>
       </View>
-    </ScrollView>
-  );
+
+     {showStartDatePicker && (
+      <DateTimePicker
+        value={startDate}
+        mode="date"
+        minimumDate={new Date()}
+        onChange={(event, date) => {
+          setShowStartDatePicker(false);
+          if (!date) return;
+
+          setStartDate(date);
+
+          // keep end date valid
+          if (date > endDate) {
+            setEndDate(date);
+          }
+        }}
+      />
+    )}
+
+    {showEndDatePicker && (
+      <DateTimePicker
+        value={endDate}
+        mode="date"
+        minimumDate={startDate}
+        onChange={(event, date) => {
+          setShowEndDatePicker(false);
+          if (date) setEndDate(date);
+        }}
+      />
+    )}
+  </View>
+);
+  
 };
 
-export default LeaveApplyScreen;
+const SummaryRow = ({label, value}) => (
+    <View style={styles.summaryItem}>
+        <Text style={styles.sumLabel}>{label}</Text>
+        <Text style={styles.sumValText}>{value}</Text>
+    </View>
+);
 
 const styles = StyleSheet.create({
-  container: { padding: 20, backgroundColor: "#F5F6FA", flexGrow: 1 },
-  backButton: { marginBottom: 15 },
-  headerTitle: { fontSize: 24, fontWeight: "bold", color: "#1976D2", marginBottom: 10 },
-  label: { marginTop: 10, fontWeight: "500" },
-  input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 10, padding: 10, marginTop: 5, backgroundColor: "#fff" },
-  pickerContainer: { borderWidth: 1, borderColor: "#ccc", borderRadius: 10, marginTop: 5, backgroundColor: "#fff" },
-  deductionCard: { backgroundColor: "#FFF3E0", padding: 12, borderRadius: 10, marginVertical: 15, borderWidth: 1, borderColor: "#FFB74D" },
-  deductionText: { fontSize: 14, color: "#E65100", marginBottom: 5 },
-  buttonContainer: { flexDirection: "row", justifyContent: "space-between", marginTop: 20 },
-  cancelBtn: { flex: 0.45, padding: 15, borderRadius: 10, backgroundColor: "#B0BEC5", alignItems: "center" },
-  submitBtn: { flex: 0.45, padding: 15, borderRadius: 10, backgroundColor: "#1976D2", alignItems: "center" },
-  btnText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+  container: { flex: 1, backgroundColor: "#fff" },
+  mainWrapper: { flex: 1 },
+  
+  // Left Side
+  brandingSide: { width: '35%', backgroundColor: '#0D6EFD', padding: 40, justifyContent: 'center' },
+  brandOverlay: { maxWidth: 350, alignSelf: 'center' },
+  heroLogoBox: { width: 60, height: 60, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginBottom: 25 },
+  heroTitle: { fontSize: 40, fontWeight: '800', color: '#fff', lineHeight: 46 },
+  heroSubtitle: { fontSize: 18, color: 'rgba(255,255,255,0.8)', marginTop: 10 },
+  heroDivider: { height: 3, width: 40, backgroundColor: '#fff', marginVertical: 30, borderRadius: 2 },
+  heroDescription: { fontSize: 16, color: 'rgba(255,255,255,0.7)', lineHeight: 26, marginBottom: 40 },
+  actionBtnOutline: { borderWidth: 1.5, borderColor: '#fff', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  actionBtnOutlineText: { color: '#fff', fontWeight: '700' },
+
+  // Right Side
+  dashboardSide: { flex: 1, backgroundColor: '#F8FAFC' },
+  scrollContent: { paddingHorizontal: '6%', paddingVertical: 40 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 30, gap: 15 },
+  backCircle: { width: 45, height: 45, borderRadius: 23, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', elevation: 3 },
+  welcomeText: { fontSize: 28, fontWeight: '800', color: '#1E293B' },
+  dateSubtitle: { fontSize: 14, color: '#64748B', fontWeight: '500' },
+
+  formContainer: { gap: 20 },
+  formSection: { backgroundColor: '#fff', padding: 20, borderRadius: 20, borderWidth: 1, borderColor: '#E2E8F0' },
+  sectionTitle: { fontSize: 13, fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 15, letterSpacing: 1 },
+  readOnlyRow: { flexDirection: 'row', gap: 15 },
+  row: { flexDirection: 'row', gap: 15 },
+  label: { fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8, marginTop: 5 },
+  textInput: { borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, backgroundColor: '#F8FAFC', padding: 12, fontSize: 15 ,outlineStyle: "none"},
+  disabledInput: { color: '#94A3B8', backgroundColor: '#F1F5F9' },
+  pickerWrapper: { borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, backgroundColor: '#F8FAFC', overflow: 'hidden' },
+  dateGrid: { flexDirection: 'row', gap: 15 },
+  datePickerBtn: { height: 50, borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15 },
+  dateBtnText: { fontSize: 14, fontWeight: '600', color: '#1E293B' },
+  webDateInput: { height: 50, border: '1px solid #E2E8F0', borderRadius: '12px', padding: '0 12px', width: '100%', backgroundColor: '#fff', outline: 'none' },
+
+  // Summary Card
+  summaryCard: { backgroundColor: '#fff', padding: 22, borderRadius: 24, borderWidth: 1, borderColor: '#E2E8F0', borderLeftWidth: 8, borderLeftColor: '#0D6EFD' },
+  summaryHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
+  summaryTitle: { fontSize: 17, fontWeight: '800', color: '#1E293B' },
+  summaryItem: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  sumLabel: { fontSize: 14, color: '#64748B' },
+  sumValText: { fontSize: 14, fontWeight: '700', color: '#1E293B' },
+  totalDivider: { height: 1, backgroundColor: '#E2E8F0', marginVertical: 12 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  totalLabel: { fontSize: 15, fontWeight: '800', color: '#1E293B' },
+  totalVal: { fontSize: 20, fontWeight: '900', color: '#0D6EFD' },
+
+  buttonRow: { flexDirection: 'row', gap: 15, marginTop: 10 },
+  cancelBtn: { flex: 1, height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', backgroundColor: '#E2E8F0' },
+  cancelBtnText: { fontWeight: '700', color: '#475569' },
+  submitBtn: { flex: 2, height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0D6EFD' },
+  submitBtnText: { fontWeight: '800', color: '#fff', fontSize: 16 }
 });
+
+export default LeaveApplyScreen;

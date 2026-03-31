@@ -1,96 +1,48 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
   TextInput,
   StyleSheet,
   TouchableOpacity,
-  Alert,
-  ActivityIndicator,
   ScrollView,
-  KeyboardAvoidingView,
   Platform,
-  useWindowDimensions,
+  Alert,
 } from "react-native";
-import DateTimePicker from "@react-native-community/datetimepicker";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, Feather } from "@expo/vector-icons";
 import Checkbox from "expo-checkbox";
 import { Picker } from "@react-native-picker/picker";
-import * as Notifications from "expo-notifications";
 import { getEmployeeId } from "../utils/storage";
 
 const BASE_URL = "https://hospitaldatabasemanagement.onrender.com";
 
-// Notification handler
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
-
 const CreateTaskScreen = ({ navigation }) => {
-  const { width: SCREEN_WIDTH } = useWindowDimensions();
-  const MAX_FORM_WIDTH = 420; // max width for tablet/desktop
-
-  const containerWidth = SCREEN_WIDTH > MAX_FORM_WIDTH ? MAX_FORM_WIDTH : SCREEN_WIDTH - 20;
-
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [assignees, setAssignees] = useState([]);
   const [allEmployees, setAllEmployees] = useState([]);
-  const [filteredEmployees, setFilteredEmployees] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [priority, setPriority] = useState("Medium");
-  const [dueDate, setDueDate] = useState(new Date());
-  const [dueTime, setDueTime] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [dropdownVisible, setDropdownVisible] = useState(false);
+  const [dueDate, setDueDate] = useState(new Date().toISOString().split("T")[0]);
+  const [dueTime, setDueTime] = useState("12:00");
+const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false); // ✅ THIS
 
-  // Fetch employees
+  const isMounted = useRef(true);
+
   useEffect(() => {
-    const fetchEmployees = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch(`${BASE_URL}/employee/all`);
-        const data = await response.json();
-        if (response.ok && data?.success && data?.employees) {
-          const employeesOnDuty = data.employees.map((emp) => ({
-            id: emp.id,
-            full_name: emp.full_name,
-            email: emp.email,
-            status: "On Duty",
-          }));
-          setAllEmployees(employeesOnDuty);
-          setFilteredEmployees(employeesOnDuty);
-        } else {
-          Alert.alert("Error", "Failed to fetch employee data.");
-        }
-      } catch (error) {
-        Alert.alert("Network Error", "Unable to fetch employee data.");
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchEmployees();
+    return () => { isMounted.current = false; };
   }, []);
 
-  // Filter employees by search query
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setFilteredEmployees(allEmployees);
-    } else {
-      const filtered = allEmployees.filter(
-        (emp) =>
-          emp.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          emp.email.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      setFilteredEmployees(filtered);
+  const fetchEmployees = async () => {
+    try {
+      const response = await fetch(`${BASE_URL}/employee/all`);
+      const json = await response.json();
+      if (json?.employees && isMounted.current) setAllEmployees(json.employees);
+    } catch (error) {
+      console.error("Fetch error:", error);
     }
-  }, [searchQuery, allEmployees]);
+  };
 
   const toggleAssignee = (emp) => {
     setAssignees((prev) => {
@@ -100,233 +52,292 @@ const CreateTaskScreen = ({ navigation }) => {
   };
 
   const handleCreateTask = async () => {
+    if (!title.trim() || !description.trim() || assignees.length === 0) {
+      alert("Please fill in all required fields.");
+      return;
+    }
+
     try {
-      if (!title.trim()) return Alert.alert("Validation Error", "Task title is required.");
-      if (!description.trim()) return Alert.alert("Validation Error", "Task description is required.");
-      if (assignees.length === 0) return Alert.alert("Validation Error", "Please select at least one assignee.");
-
-      const formattedDate = dueDate.toISOString().split("T")[0];
-      const formattedTime = dueTime.toTimeString().split(" ")[0];
-
       const createdBy = await getEmployeeId();
-      if (!createdBy) return Alert.alert("Error", "Unable to get your user ID.");
-
       const payload = {
         title: title.trim(),
         description: description.trim(),
         assignto: assignees.map((a) => a.email),
         priority,
-        due_date: formattedDate,
-        due_time: formattedTime,
+        due_date: dueDate,
+        due_time: dueTime,
         created_by: createdBy,
       };
 
-      setLoading(true);
       const response = await fetch(`${BASE_URL}/task/add`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      const data = await response.json();
-
-      if (response.ok && data?.task) {
-        await Notifications.scheduleNotificationAsync({
-          content: { title: "Task Created ✅", body: `Task "${title}" has been assigned.` },
-          trigger: null,
-        });
-
-        Alert.alert("Success", data.message || "Task created successfully!", [
-          { text: "OK", onPress: () => navigation.goBack() },
-        ]);
-      } else {
-        Alert.alert("Error", data?.error || data?.message || "Task creation failed.");
+      if (response.ok) {
+        alert("Task Published Successfully!");
+        navigation.goBack();
       }
     } catch (error) {
-      Alert.alert("Error", error.message || "Could not create task. Please try again.");
-    } finally {
-      setLoading(false);
+      alert("Failed to create task.");
     }
   };
 
-  if (loading)
-    return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text>Loading...</Text>
-      </View>
-    );
+  const filteredEmployees = allEmployees.filter((emp) =>
+    emp.full_name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 40, alignItems: "center" }}>
-        <View style={[styles.container, { width: containerWidth }]}>
-          {/* Header */}
-          <View style={styles.topBar}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={22} color="white" />
-            </TouchableOpacity>
-            <Text style={styles.header}>Create New Task</Text>
+    <View style={styles.mainContainer}>
+      <View style={styles.headerBar}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backCircle}>
+            <Ionicons name="arrow-back" size={20} color="#64748b" />
+          </TouchableOpacity>
+          <View style={{ marginLeft: 16 }}>
+            <Text style={styles.breadcrumb}>TASKS / NEW ASSIGNMENT</Text>
+            <Text style={styles.headerTitle}>Create New Task</Text>
           </View>
+        </View>
 
-          {/* Title */}
-          <Text style={styles.label}>Task Title *</Text>
-          <TextInput style={styles.input} placeholder="Enter task title" value={title} onChangeText={setTitle} />
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.discardBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.discardText}>Discard</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.publishBtn} onPress={handleCreateTask}>
+            <Ionicons name="cloud-upload-outline" size={18} color="white" style={{ marginRight: 8 }} />
+            <Text style={styles.publishText}>Publish Task</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
-          {/* Description */}
-          <Text style={styles.label}>Description *</Text>
-          <TextInput
-            style={[styles.input, { height: 90 }]}
-            placeholder="Enter task description"
-            value={description}
-            onChangeText={setDescription}
-            multiline
-          />
+      <ScrollView contentContainerStyle={styles.scrollWrapper}>
+        <View style={styles.desktopLayout}>
+          <View style={styles.leftColumn}>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>General Information</Text>
+              <Text style={styles.inputLabel}>TASK TITLE</Text>
+              <TextInput style={styles.textInput} placeholder="e.g. Update Records" value={title} onChangeText={setTitle} />
+              
+              <Text style={styles.inputLabel}>DESCRIPTION</Text>
+              <TextInput 
+                style={[styles.textInput, styles.textArea]} 
+                placeholder="Details..." 
+                multiline 
+                value={description} 
+                onChangeText={setDescription} 
+              />
+            </View>
 
-          {/* Employee Selector */}
-          <Text style={styles.label}>Assign To *</Text>
-          <View style={styles.dropdownContainer}>
-            <TouchableOpacity
-              style={styles.dropdownButton}
-              onPress={() => setDropdownVisible(!dropdownVisible)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.dropdownButtonText}>
-                {assignees.length > 0 ? `${assignees.length} Selected` : "Select Employees"}
-              </Text>
-              <Ionicons name={dropdownVisible ? "chevron-up" : "chevron-down"} size={18} color="#2563eb" />
-            </TouchableOpacity>
-
-            {dropdownVisible && (
-              <View style={styles.checkboxContainer}>
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Search employee..."
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                />
-                <ScrollView style={{ maxHeight: 250 }}>
-                  {filteredEmployees.map((emp, idx) => {
-                    const isSelected = assignees.some((a) => a.email === emp.email);
-                    return (
-                      <TouchableOpacity
-                        key={idx}
-                        onPress={() => toggleAssignee(emp)}
-                        activeOpacity={1}
-                        style={styles.checkboxItem}
-                      >
-                        <Checkbox value={isSelected} onValueChange={() => toggleAssignee(emp)} color={isSelected ? "#2563eb" : undefined} />
-                        <Text style={styles.checkboxLabel}>
-                          {emp.full_name} ({emp.email})
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
+            <View style={[styles.card, { marginTop: 24 }]}>
+              <Text style={styles.cardTitle}>Schedule</Text>
+              <View style={styles.row}>
+                <View style={{ flex: 1, marginRight: 16 }}>
+                  <Text style={styles.inputLabel}>DUE DATE</Text>
+                  {Platform.OS === 'web' ? (
+                    <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} style={styles.htmlInput} />
+                  ) : <Text>Use Mobile Date Picker</Text>}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>DUE TIME</Text>
+                  {Platform.OS === 'web' ? (
+                    <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} style={styles.htmlInput} />
+                  ) : <Text>Use Mobile Time Picker</Text>}
+                </View>
               </View>
-            )}
+            </View>
           </View>
 
-          {/* Priority */}
-          <Text style={styles.label}>Priority *</Text>
-          <View style={styles.pickerContainer}>
-            <Picker selectedValue={priority} onValueChange={(itemValue) => setPriority(itemValue)}>
-              <Picker.Item label="High" value="High" />
-              <Picker.Item label="Medium" value="Medium" />
-              <Picker.Item label="Low" value="Low" />
-            </Picker>
+          <View style={styles.rightColumn}>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Priority</Text>
+              <View style={styles.pickerContainer}>
+                <Picker selectedValue={priority} onValueChange={setPriority}>
+                  <Picker.Item label="High" value="High" />
+                  <Picker.Item label="Medium" value="Medium" />
+                  <Picker.Item label="Low" value="Low" />
+                </Picker>
+              </View>
+            </View>
+<View style={[styles.card, { marginTop: 24 }]}>
+  <Text style={styles.cardTitle}>Assign Team</Text>
+
+  {/* Selected Assignees */}
+  <TouchableOpacity
+    style={styles.assigneeInput}
+    onPress={() => setShowAssigneeDropdown(!showAssigneeDropdown)}
+    activeOpacity={0.9}
+  >
+    {assignees.length === 0 ? (
+      <Text style={styles.placeholderText}>Select team members</Text>
+    ) : (
+      <View style={styles.chipContainer}>
+        {assignees.map((emp) => (
+          <View key={emp.email} style={styles.chip}>
+            <Text style={styles.chipText}>{emp.full_name}</Text>
+            <TouchableOpacity onPress={() => toggleAssignee(emp)}>
+              <Ionicons name="close" size={14} color="#475569" />
+            </TouchableOpacity>
           </View>
+        ))}
+      </View>
+    )}
+    <Ionicons
+      name={showAssigneeDropdown ? "chevron-up" : "chevron-down"}
+      size={18}
+      color="#64748b"
+    />
+  </TouchableOpacity>
 
-          {/* Due Date */}
-          <Text style={styles.label}>Due Date *</Text>
-          <TouchableOpacity style={styles.datePicker} onPress={() => setShowDatePicker(true)}>
-            <Ionicons name="calendar-outline" size={20} color="#2563eb" />
-            <Text style={styles.dateText}>{dueDate.toLocaleDateString()}</Text>
-          </TouchableOpacity>
-          {showDatePicker && (
-            <DateTimePicker
-              value={dueDate}
-              mode="date"
-              display="default"
-              minimumDate={new Date()}
-              onChange={(e, selected) => {
-                setShowDatePicker(false);
-                if (selected) setDueDate(selected);
-              }}
-            />
-          )}
+  {/* Dropdown */}
+  {showAssigneeDropdown && (
+    <View style={styles.assigneeDropdown}>
+      <View style={styles.searchContainer}>
+        <Feather name="search" size={16} color="#94a3b8" />
+        <TextInput
+          placeholder="Search employee..."
+          style={styles.searchField}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+      </View>
 
-          {/* Due Time */}
-          <Text style={styles.label}>Due Time *</Text>
-          <TouchableOpacity style={styles.datePicker} onPress={() => setShowTimePicker(true)}>
-            <Ionicons name="time-outline" size={20} color="#2563eb" />
-            <Text style={styles.dateText}>{dueTime.toLocaleTimeString([], { hour12: false })}</Text>
-          </TouchableOpacity>
-          {showTimePicker && (
-            <DateTimePicker
-              value={dueTime}
-              mode="time"
-              display="default"
-              is24Hour
-              onChange={(e, selected) => {
-                setShowTimePicker(false);
-                if (selected) setDueTime(selected);
-              }}
-            />
-          )}
-
-          {/* Buttons */}
-          <View style={styles.buttonRow}>
-            <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={() => navigation.goBack()} activeOpacity={0.8}>
-              <Text style={styles.cancelText}>Cancel</Text>
+      <ScrollView style={{ maxHeight: 260 }}>
+        {filteredEmployees.map((item) => {
+          const selected = assignees.some((a) => a.email === item.email);
+          return (
+            <TouchableOpacity
+              key={item.email}
+              style={[
+                styles.dropdownAssignee,
+                selected && styles.dropdownAssigneeActive,
+              ]}
+              onPress={() => toggleAssignee(item)}
+            >
+              <View>
+                <Text style={styles.empName}>{item.full_name}</Text>
+                <Text style={styles.empEmail}>{item.email}</Text>
+              </View>
+              {selected && (
+                <Ionicons name="checkmark-circle" size={18} color="#2563eb" />
+              )}
             </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  )}
+</View>
 
-            <TouchableOpacity style={[styles.button, styles.createButton]} onPress={handleCreateTask} activeOpacity={0.8}>
-              <Text style={styles.createText}>+ Create Task</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 };
 
-export default CreateTaskScreen;
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    backgroundColor: "#f8faff",
-  },
-  scrollContainer: { paddingBottom: 40, alignItems: "center" },
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#2563eb",
-    paddingVertical: 12,
+  mainContainer: { flex: 1, backgroundColor: "#f8fafc" },
+  headerBar: { height: 80, backgroundColor: "#ffffff", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 40, borderBottomWidth: 1, borderBottomColor: "#e2e8f0" },
+  headerLeft: { flexDirection: "row", alignItems: "center" },
+  backCircle: { width: 38, height: 38, borderRadius: 19, backgroundColor: "#f1f5f9", justifyContent: "center", alignItems: "center" },
+  breadcrumb: { fontSize: 10, color: "#94a3b8", fontWeight: "700" },
+  headerTitle: { fontSize: 22, fontWeight: "800", color: "#1e293b" },
+  headerRight: { flexDirection: "row" },
+  publishBtn: { backgroundColor: "#2563eb", paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10, flexDirection: 'row', alignItems: 'center' },
+  publishText: { color: "white", fontWeight: "700" },
+  discardBtn: { marginRight: 20, paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, borderWidth: 1, borderColor: "#e2e8f0" },
+  discardText: { color: "#64748b", fontWeight: "700" },
+  scrollWrapper: { padding: 40 },
+  desktopLayout: { maxWidth: 1200, alignSelf: "center", width: "100%", flexDirection: "row" },
+  leftColumn: { flex: 2, marginRight: 30 },
+  rightColumn: { flex: 1 },
+  card: { backgroundColor: "#ffffff", borderRadius: 20, padding: 24, borderWidth: 1, borderColor: "#e2e8f0" },
+  cardTitle: { fontSize: 16, fontWeight: "700", marginBottom: 20 },
+  inputLabel: { fontSize: 11, fontWeight: "800", color: "#94a3b8", marginBottom: 8, marginTop: 12 },
+  textInput: { backgroundColor: "#f8fafc", borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 12, padding: 14,outlineStyle: "none" },
+  textArea: { height: 140, textAlignVertical: "top" },
+  row: { flexDirection: "row" },
+  htmlInput: {
+    padding: 12,
     borderRadius: 10,
-    marginBottom: 25,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
   },
-  backButton: { paddingHorizontal: 10 },
-  header: { fontSize: 20, fontWeight: "bold", color: "white", marginLeft: 10 },
-  label: { fontSize: 14, fontWeight: "600", marginBottom: 6, color: "#333" },
-  input: { borderWidth: 1, borderColor: "#d0d7e2", borderRadius: 10, padding: 12, marginBottom: 15, backgroundColor: "white", elevation: 1 },
-  searchInput: { borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10, marginBottom: 10, backgroundColor: "white" },
-  dropdownContainer: { marginBottom: 20 },
-  dropdownButton: { flexDirection: "row", justifyContent: "space-between", borderWidth: 1, borderColor: "#d0d7e2", borderRadius: 10, padding: 12, backgroundColor: "white", elevation: 1 },
-  dropdownButtonText: { fontSize: 14, color: "#333" },
-  checkboxContainer: { backgroundColor: "white", padding: 10, borderRadius: 10, borderWidth: 1, borderColor: "#d0d7e2", marginTop: 5, elevation: 2 },
-  checkboxItem: { flexDirection: "row", alignItems: "center", paddingVertical: 6 },
-  checkboxLabel: { marginLeft: 10, fontSize: 14, color: "#333" },
-  pickerContainer: { borderWidth: 1, borderColor: "#d0d7e2", borderRadius: 10, marginBottom: 15, backgroundColor: "white", elevation: 1 },
-  datePicker: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: "#d0d7e2", borderRadius: 10, padding: 12, marginBottom: 20, backgroundColor: "white", elevation: 1 },
-  dateText: { marginLeft: 10, fontSize: 14, color: "#333" },
-  buttonRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 15 },
-  button: { flex: 1, padding: 15, borderRadius: 10, alignItems: "center", marginHorizontal: 5, elevation: 2 },
-  cancelButton: { backgroundColor: "#f3f4f6" },
-  createButton: { backgroundColor: "#2563eb" },
-  cancelText: { color: "#333", fontWeight: "600" },
-  createText: { color: "white", fontWeight: "600" },
+  pickerContainer: { backgroundColor: "#f8fafc", borderRadius: 12, borderWidth: 1, borderColor: "#e2e8f0" },
+  searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: "#f1f5f9", borderRadius: 10, paddingHorizontal: 12, marginBottom: 16 },
+  searchField: { flex: 1, paddingVertical: 10, marginLeft: 8 },
+  assigneeInput: {
+  backgroundColor: "#f8fafc",
+  borderWidth: 1,
+  borderColor: "#e2e8f0",
+  borderRadius: 12,
+  padding: 12,
+  minHeight: 52,
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "space-between",
+},
+
+placeholderText: {
+  color: "#94a3b8",
+  fontSize: 14,
+},
+
+chipContainer: {
+  flexDirection: "row",
+  flexWrap: "wrap",
+  gap: 8,
+  flex: 1,
+},
+
+chip: {
+  flexDirection: "row",
+  alignItems: "center",
+  backgroundColor: "#e0e7ff",
+  paddingHorizontal: 10,
+  paddingVertical: 6,
+  borderRadius: 20,
+  marginRight: 6,
+},
+
+chipText: {
+  fontSize: 13,
+  fontWeight: "600",
+  color: "#1e293b",
+  marginRight: 6,
+},
+
+assigneeDropdown: {
+  marginTop: 8,
+  backgroundColor: "#ffffff",
+  borderRadius: 14,
+  borderWidth: 1,
+  borderColor: "#e2e8f0",
+  padding: 12,
+  shadowColor: "#000",
+  shadowOpacity: 0.08,
+  shadowRadius: 14,
+  elevation: 5,
+},
+
+dropdownAssignee: {
+  paddingVertical: 12,
+  paddingHorizontal: 10,
+  borderRadius: 10,
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "center",
+},
+
+dropdownAssigneeActive: {
+  backgroundColor: "#eff6ff",
+},
+
+  empName: { fontSize: 14, fontWeight: "700" },
+  empEmail: { fontSize: 12, color: "#64748b" },
 });
+
+export default CreateTaskScreen;

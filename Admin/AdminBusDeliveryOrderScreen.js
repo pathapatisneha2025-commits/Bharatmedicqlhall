@@ -8,14 +8,17 @@ import {
   TouchableOpacity,
   Alert,
    Linking,
+    useWindowDimensions,
+  Platform,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons ,Feather} from "@expo/vector-icons";
 
 export default function AdminBusDeliveredOrdersScreen() {
   const navigation = useNavigation();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+          const [loadingCount, setLoadingCount] = useState(0);
 
   // Popup States
   const [showPopup, setShowPopup] = useState(false);
@@ -23,6 +26,37 @@ export default function AdminBusDeliveredOrdersScreen() {
 
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
+
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+    const MAX_WIDTH = 420;
+    const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
+
+      const isWeb = Platform.OS === "web";
+    
+    const showAlert = (title, message, buttons) => {
+      if (Platform.OS === "web") {
+        if (buttons && buttons.length > 1) {
+          const confirmed = window.confirm(`${title}\n\n${message}`);
+          if (confirmed) {
+            const okBtn = buttons.find(b => b.style !== "cancel");
+            okBtn?.onPress?.();
+          }
+        } else {
+          window.alert(`${title}\n\n${message}`);
+        }
+      } else {
+        Alert.alert(title, message, buttons);
+      }
+    };  
+  
+    useEffect(() => {
+              let interval;
+              if (loading) {
+                setLoadingCount(0);
+                interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+              } else clearInterval(interval);
+              return () => clearInterval(interval);
+            }, [loading]);
 
   const fetchBusOrders = async () => {
     try {
@@ -57,21 +91,21 @@ export default function AdminBusDeliveredOrdersScreen() {
     const result = await res.json();
 
     if (res.ok) {
-      Alert.alert("Success", "Order updated successfully");
+     showAlert("Success", "Order updated successfully");
       fetchBusOrders(); // reload
     } else {
-      Alert.alert("Error", result.error || "Update failed");
+      showAlert("Error", result.error || "Update failed");
     }
   } catch (err) {
     console.log("Update Error:", err);
-    Alert.alert("Error", "Something went wrong");
+   showAlert("Error", "Something went wrong");
   }
 };
 const exportBusOrders = () => {
   const url =
     "https://hospitaldatabasemanagement.onrender.com/order-medicine/bus/export";
 
-  Alert.alert(
+ showAlert(
     "Export Bus Orders",
     "Your file will download in your browser.",
     [
@@ -83,7 +117,7 @@ const exportBusOrders = () => {
 
 
 const handleDelete = async (orderId) => {
-  Alert.alert(
+ showAlert(
     "Delete Order",
     "Are you sure you want to delete this order?",
     [
@@ -101,14 +135,14 @@ const handleDelete = async (orderId) => {
             const result = await res.json();
 
             if (res.ok) {
-              Alert.alert("Success", "Order deleted successfully");
+             showAlert("Success", "Order deleted successfully");
               fetchBusOrders(); // Refresh table
             } else {
-              Alert.alert("Error", result.error || "Delete failed");
+              showAlert("Error", result.error || "Delete failed");
             }
           } catch (err) {
             console.log("Delete Error:", err);
-            Alert.alert("Error", "Something went wrong");
+           showAlert("Error", "Something went wrong");
           }
         },
       },
@@ -116,341 +150,196 @@ const handleDelete = async (orderId) => {
   );
 };
 
-  //------------------------------------------------------
-  // DETAILED VIEW POPUP
-  //------------------------------------------------------
-  const DetailsPopup = () => {
+ const DetailsPopup = () => {
     if (!showDetails || !selectedOrder) return null;
-
     const bus = selectedOrder.busdetails || {};
     const items = selectedOrder.order_summary || [];
 
     return (
       <View style={styles.popupOverlay}>
         <View style={styles.detailsBox}>
-          <Text style={styles.detailsTitle}>Order Details</Text>
+          <View style={styles.modalHeader}>
+            <Text style={styles.detailsTitle}>Order Information</Text>
+            <TouchableOpacity onPress={() => setShowDetails(false)}>
+              <Ionicons name="close" size={24} color="#64748b" />
+            </TouchableOpacity>
+          </View>
 
           <ScrollView style={{ maxHeight: 350 }}>
-            <Text style={styles.detailLine}>Order ID: {selectedOrder.id}</Text>
-            <Text style={styles.detailLine}>Patient ID: {selectedOrder.patient_id}</Text>
-            <Text style={styles.detailLine}>Payment: {selectedOrder.payment_method}</Text>
-            <Text style={styles.detailLine}>Total: ₹{selectedOrder.total}</Text>
-
-            <Text style={styles.detailLine}>Bus Name: {bus.busName || "-"}</Text>
-<Text style={styles.detailLine}>
-  Driver Name: {selectedOrder?.busdetails?.driverName ?? "-"}
-</Text>
-
-
-            <Text style={[styles.detailLine, { fontWeight: "700" }]}>Items:</Text>
-
+            <View style={styles.modalDetailCard}>
+              <Text style={styles.detailLabel}>Order ID</Text>
+              <Text style={styles.detailValue}>#{selectedOrder.id}</Text>
+            </View>
+            <View style={styles.modalDetailCard}>
+              <Text style={styles.detailLabel}>Bus Name</Text>
+              <Text style={styles.detailValue}>{bus.busName || "-"}</Text>
+            </View>
+            <View style={styles.modalDetailCard}>
+              <Text style={styles.detailLabel}>Driver Name</Text>
+              <Text style={styles.detailValue}>{bus.driverName || "-"}</Text>
+            </View>
+            <Text style={styles.sectionHeading}>Items Ordered</Text>
             {items.map((i, idx) => (
-              <Text key={idx} style={styles.itemLine}>
-                • {i.name} (x{i.quantity})
-              </Text>
+              <View key={idx} style={styles.itemRow}>
+                <Feather name="package" size={14} color="#94a3b8" />
+                <Text style={styles.itemText}>{i.name} (x{i.quantity})</Text>
+              </View>
             ))}
           </ScrollView>
 
-        <View style={styles.actionRow}>
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: "#10b981" }]}
+              onPress={() => {
+                handleUpdateBusDelivery(selectedOrder.id, {
+                  deliveryType: "bus",
+                  busDetails: {
+                    busName: selectedOrder?.busdetails?.busName || "RTC Express",
+                    driverName: selectedOrder?.busdetails?.driverName || "Ramu",
+                    arrivalTime: selectedOrder?.busdetails?.arrivalTime || "7:30 PM",
+                  },
+                });
+                setShowDetails(false);
+              }}
+            >
+              <Feather name="edit-3" size={16} color="#fff" />
+              <Text style={styles.actionBtnText}>Update</Text>
+            </TouchableOpacity>
 
-  {/* EDIT */}
-  <TouchableOpacity
-    style={[styles.actionBtn, { backgroundColor: "#5cb85c" }]}
-    onPress={() => {
-      handleUpdateBusDelivery(selectedOrder.id, {
-        deliveryType: "bus",
-        busDetails: {
-          busName: selectedOrder?.busdetails?.busName || "RTC Express",
-          driverName: selectedOrder?.busdetails?.driverName || "Ramu",
-          arrivalTime: selectedOrder?.busdetails?.arrivalTime || "7:30 PM",
-        },
-      });
-
-      setShowDetails(false);
-    }}
-  >
-    <Ionicons name="create-outline" size={18} color="#fff" />
-    <Text style={styles.actionBtnText}>Edit</Text>
-  </TouchableOpacity>
-
-  {/* DELETE */}
-  <TouchableOpacity
-    style={[styles.actionBtn, { backgroundColor: "#d9534f" }]}
-    onPress={() => {
-      setShowDetails(false);
-      handleDelete(selectedOrder.id);
-    }}
-  >
-    <Ionicons name="trash-outline" size={18} color="#fff" />
-    <Text style={styles.actionBtnText}>Delete</Text>
-  </TouchableOpacity>
-
-</View>
-
-        {/* CLOSE */}
-        <TouchableOpacity
-          style={styles.closeBtn}
-          onPress={() => setShowDetails(false)}
-        >
-          <Text style={styles.closeText}>Close</Text>
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: "#ef4444" }]}
+              onPress={() => {
+                setShowDetails(false);
+                handleDelete(selectedOrder.id);
+              }}
+            >
+              <Feather name="trash-2" size={16} color="#fff" />
+              <Text style={styles.actionBtnText}>Delete</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     );
   };
 
-
-
-   if (loading) {
+  if (loading) {
     return (
       <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text style={{ marginTop: 10 }}>Loading orders...</Text>
-      </View>
-    );
-  }
-
-  if (orders.length === 0) {
-    return (
-      <View style={styles.center}>
-        <Text style={{ fontSize: 18 }}>No Bus Delivery Orders Found</Text>
+        <ActivityIndicator size="large" color="#2563eb" />
+        <Text style={{ marginTop: 12, color: "#64748b" }}>Loading orders... {loadingCount}s</Text>
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#eef2f5" }}>
-    
+    <View style={styles.mainContainer}>
       <DetailsPopup />
 
-      {/* HEADER */}
-<View style={styles.topHeader}>
-  <TouchableOpacity onPress={() => navigation.goBack()}>
-    <Ionicons name="arrow-back" size={26} color="#fff" />
-  </TouchableOpacity>
-  <Text style={styles.topHeaderText}>BusDeliveredOrders</Text>
-   <TouchableOpacity style={styles.exportBtn} onPress={exportBusOrders}>
-    <Ionicons name="download-outline" size={20} color="#fff" />
-    <Text style={styles.exportBtnText}>Export</Text>
-  </TouchableOpacity>
-</View>
-
-
-
-
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View style={styles.tableContainer}>
-          {/* HEADER ROW */}
-          <View style={[styles.row, styles.headerRow]}>
-            <Text style={[styles.cell, styles.headerText]}>Order ID</Text>
-            <Text style={[styles.cell, styles.headerText]}>Patient</Text>
-            <Text style={[styles.cell, styles.headerText]}>Payment</Text>
-            <Text style={[styles.cell, styles.headerText]}>Items</Text>
-            <Text style={[styles.cell, styles.headerText]}>Total</Text>
-            <Text style={[styles.cell, styles.headerText]}>Bus</Text>
-            <Text style={[styles.cell, styles.headerText]}>Driver</Text>
-            <Text style={[styles.cell, styles.headerText]}>Action</Text>
+      {/* HEADER SECTION */}
+      <View style={styles.contentHeader}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={22} color="#1e293b" />
+          </TouchableOpacity>
+          <View>
+            <Text style={styles.mainTitle}>Bus Shipments</Text>
+            <Text style={styles.subTitle}>Track and manage medicine bus deliveries</Text>
           </View>
-
-          {/* TABLE ROWS */}
-          {orders.map((item, index) => {
-            const bus = item.busdetails || {};
-            const items = item.order_summary || [];
-
-            return (
-              <View
-                style={[
-                  styles.row,
-                  index % 2 === 0 ? styles.evenRow : styles.oddRow,
-                ]}
-                key={item.id}
-              >
-                <Text style={styles.cell}>{item.id}</Text>
-                <Text style={styles.cell}>{item.patient_id}</Text>
-                <Text style={styles.cell}>{item.payment_method}</Text>
-
-                <Text style={styles.cell}>
-                  {items.map((i) => `${i.name} (x${i.quantity})`).join(", ")}
-                </Text>
-
-                <Text style={styles.cell}>₹{item.total}</Text>
-                <Text style={styles.cell}>{bus.busName || "-"}</Text>
-                <Text style={styles.cell}>{bus.driverName || "-"}</Text>
-
-              {/* ACTION – DIRECT VIEW */}
-<TouchableOpacity
-  style={[styles.cell]}
-  onPress={() => {
-    setSelectedOrder(item);
-    setShowDetails(true);
-  }}
->
-  <Ionicons name="eye-outline" size={26} color="#007aff" />
-</TouchableOpacity>
-
-              </View>
-            );
-          })}
         </View>
-      </ScrollView>
+
+        <TouchableOpacity style={styles.exportBtn} onPress={exportBusOrders}>
+          <Feather name="download" size={18} color="#fff" />
+          <Text style={styles.exportBtnText}>Export CSV</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* TABLE CARD */}
+      <View style={styles.tableCard}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={!isWeb}>
+          <View style={{ minWidth: isWeb ? "100%" : 1000 }}>
+            {/* TABLE HEADER */}
+            <View style={styles.tableHeaderRow}>
+              <Text style={[styles.headerCell, { width: 80 }]}>ID</Text>
+              <Text style={[styles.headerCell, { width: 120 }]}>Patient</Text>
+              <Text style={[styles.headerCell, { width: 120 }]}>Payment</Text>
+              <Text style={[styles.headerCell, { width: 200 }]}>Items Summary</Text>
+              <Text style={[styles.headerCell, { width: 100 }]}>Total</Text>
+              <Text style={[styles.headerCell, { width: 140 }]}>Bus Name</Text>
+              <Text style={[styles.headerCell, { width: 140 }]}>Driver</Text>
+              <Text style={[styles.headerCell, { width: 100, textAlign: "center" }]}>View</Text>
+            </View>
+
+            {/* TABLE BODY */}
+            <ScrollView>
+              {orders.map((item, index) => {
+                const bus = item.busdetails || {};
+                const items = item.order_summary || [];
+                return (
+                  <View key={item.id} style={[styles.bodyRow, index % 2 !== 0 && { backgroundColor: "#f8fafc" }]}>
+                    <Text style={[styles.bodyCell, { width: 80, fontWeight: "600" }]}>#{item.id}</Text>
+                    <Text style={[styles.bodyCell, { width: 120 }]}>{item.patient_id}</Text>
+                    <Text style={[styles.bodyCell, { width: 120 }]}>{item.payment_method}</Text>
+                    <Text style={[styles.bodyCell, { width: 200 }]} numberOfLines={1}>
+                      {items.map((i) => `${i.name} (x${i.quantity})`).join(", ")}
+                    </Text>
+                    <Text style={[styles.bodyCell, { width: 100, fontWeight: "700", color: "#0f172a" }]}>₹{item.total}</Text>
+                    <Text style={[styles.bodyCell, { width: 140 }]}>{bus.busName || "-"}</Text>
+                    <Text style={[styles.bodyCell, { width: 140 }]}>{bus.driverName || "-"}</Text>
+                    <View style={{ width: 100, alignItems: "center" }}>
+                      <TouchableOpacity
+                        style={styles.viewIconCircle}
+                        onPress={() => {
+                          setSelectedOrder(item);
+                          setShowDetails(true);
+                        }}
+                      >
+                        <Feather name="eye" size={18} color="#2563eb" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </ScrollView>
+      </View>
     </View>
   );
 }
 
-//------------------------------------------------------
-// STYLES
-//------------------------------------------------------
 const styles = StyleSheet.create({
-  topHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#007aff",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    elevation: 4,
-    marginTop: 30,
-  },
-  topHeaderText: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#fff",
-    marginLeft: 12,
-  },
+  mainContainer: { flex: 1, backgroundColor: "#F8FAFC", padding: 20 },
+  contentHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 25, marginTop: Platform.OS === 'ios' ? 40 : 10 },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 15 },
+  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#fff", justifyContent: "center", alignItems: "center", elevation: 2, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2 },
+  mainTitle: { fontSize: 22, fontWeight: "800", color: "#1e293b" },
+  subTitle: { color: "#64748b", fontSize: 13, marginTop: 2 },
+  exportBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#2563eb", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10 },
+  exportBtnText: { color: "#fff", fontWeight: "600", marginLeft: 8, fontSize: 14 },
 
-  tableContainer: {
-    backgroundColor: "#fff",
-    margin: 14,
-    borderRadius: 10,
-    paddingBottom: 10,
-    overflow: "hidden",
-    elevation: 3,
-  },
+  tableCard: { backgroundColor: "#fff", borderRadius: 16, borderWidth: 1, borderColor: "#e2e8f0", flex: 1, overflow: "hidden", elevation: 4, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 10 },
+  tableHeaderRow: { flexDirection: "row", backgroundColor: "#f1f5f9", paddingVertical: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#e2e8f0" },
+  headerCell: { fontSize: 12, fontWeight: "700", color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5 },
+  bodyRow: { flexDirection: "row", paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#f1f5f9", alignItems: "center" },
+  bodyCell: { fontSize: 14, color: "#475569" },
+  viewIconCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#eff6ff", justifyContent: "center", alignItems: "center" },
 
-  headerRow: { backgroundColor: "#007aff" },
+  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F8FAFC" },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
 
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderBottomWidth: 0.8,
-    borderColor: "#e2e2e2",
-  },
-
-  evenRow: { backgroundColor: "#f8f9fb" },
-  oddRow: { backgroundColor: "#fff" },
-
-  cell: {
-    width: 140,
-    padding: 12,
-    fontSize: 14,
-    color: "#333",
-  },
-
-  headerText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 15,
-  },
-
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  // POPUP STYLES
-  popupOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.2)",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 999,
-  },
- exportRow: {
-  flexDirection: "row",
-  justifyContent: "flex-end",
-  paddingHorizontal: 16,
-  paddingVertical: 10,
-},
-
-exportBtn: {
-  flexDirection: "row",
-  alignItems: "center",
-  backgroundColor: "#007aff",
-  paddingVertical: 10,
-  paddingHorizontal: 14,
-  borderRadius: 8,
-  elevation: 3,
-},
-
-exportBtnText: {
-  color: "#fff",
-  fontSize: 14,
-  fontWeight: "600",
-  marginLeft: 6,
-},
-
-
-  // DETAILS POPUP
-  detailsBox: {
-    width: "85%",
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 12,
-    elevation: 10,
-  },
-  detailsTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    marginBottom: 12,
-    color: "#007aff",
-  },
-  detailLine: {
-    fontSize: 16,
-    marginBottom: 6,
-    color: "#333",
-  },
-  itemLine: {
-    fontSize: 15,
-    marginLeft: 10,
-    marginBottom: 4,
-    color: "#444",
-  },
-  closeBtn: {
-    marginTop: 15,
-    backgroundColor: "#007aff",
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  closeText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 16,
-  },
-  actionRow: {
-  flexDirection: "row",
-  justifyContent: "space-between",
-  marginTop: 15,
-},
-
-actionBtn: {
-  flexDirection: "row",
-  alignItems: "center",
-  paddingVertical: 10,
-  paddingHorizontal: 15,
-  borderRadius: 8,
-},
-
-actionBtnText: {
-  color: "#fff",
-  fontSize: 16,
-  marginLeft: 6,
-  fontWeight: "600",
-},
-
+  popupOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(15, 23, 42, 0.5)", justifyContent: "center", alignItems: "center", zIndex: 1000 },
+  detailsBox: { width: "90%", maxWidth: 450, backgroundColor: "#fff", padding: 24, borderRadius: 20, elevation: 20 },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
+  detailsTitle: { fontSize: 20, fontWeight: "800", color: "#1e293b" },
+  modalDetailCard: { backgroundColor: "#f8fafc", padding: 12, borderRadius: 10, marginBottom: 10, borderWidth: 1, borderColor: "#f1f5f9" },
+  detailLabel: { fontSize: 11, color: "#64748b", fontWeight: "700", textTransform: "uppercase", marginBottom: 2 },
+  detailValue: { fontSize: 15, color: "#1e293b", fontWeight: "600" },
+  sectionHeading: { fontSize: 14, fontWeight: "700", color: "#1e293b", marginTop: 15, marginBottom: 10 },
+  itemRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6, paddingLeft: 5 },
+  itemText: { fontSize: 14, color: "#475569" },
+  actionRow: { flexDirection: "row", gap: 12, marginTop: 25 },
+  actionBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 12, borderRadius: 10, gap: 8 },
+  actionBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  closeBtn: { marginTop: 12, paddingVertical: 12, alignItems: "center", borderTopWidth: 1, borderTopColor: "#f1f5f9" },
+  closeText: { color: "#64748b", fontWeight: "600", fontSize: 14 },
 });

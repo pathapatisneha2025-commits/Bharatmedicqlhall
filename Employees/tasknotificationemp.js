@@ -1,4 +1,3 @@
-// NotificationScreen.js
 import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
@@ -10,25 +9,23 @@ import {
   TouchableOpacity,
   Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { Swipeable, RectButton } from 'react-native-gesture-handler';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { getEmployeeId } from '../utils/storage'; // AsyncStorage helper
+import { getEmployeeId } from '../utils/storage';
 
-// Updated API Endpoint
-const BASE_API = 'https://hospitalmanagement-gfgx.onrender.com/notifications';
+const BASE_API = 'https://hospitaldatabasemanagement.onrender.com/notifications';
 
 export default function NotificationScreen() {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [employeeId, setEmployeeId] = useState(null);
+
   const navigation = useNavigation();
   const notificationListener = useRef();
   const responseListener = useRef();
 
-  // --- Push Notification Config ---
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
@@ -37,278 +34,260 @@ export default function NotificationScreen() {
     }),
   });
 
+  const showAlert = (title, message, buttons) => {
+    if (Platform.OS === 'web') {
+      if (buttons && buttons.length > 1) {
+        const confirmed = window.confirm(`${title}\n\n${message}`);
+        if (confirmed) {
+          const okBtn = buttons.find(b => b.style !== 'cancel');
+          okBtn?.onPress?.();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
+  };
+
   useEffect(() => {
-    const fetchEmployeeIdAndNotifications = async () => {
+    const initialize = async () => {
       setLoading(true);
       try {
         const id = await getEmployeeId();
         if (!id) {
-          Alert.alert('Error', 'Employee ID not found. Please log in again.');
-          setLoading(false);
+          showAlert('Error', 'Employee ID not found. Please log in again.');
           return;
         }
         setEmployeeId(id);
 
-        // Register for Push Notifications
-        const token = await registerForPushNotificationsAsync();
-        console.log('Expo Push Token:', token);
-
-        // Send push token to your backend to map with employee
-        if (token) {
-          await fetch(`${BASE_API}/register-token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ employeeId: id, pushToken: token }),
-          });
+        if (Platform.OS !== 'web') {
+          const token = await registerForPushNotificationsAsync();
+          if (token) {
+            await fetch(`${BASE_API}/register-token`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ employeeId: id, pushToken: token }),
+            });
+          }
         }
 
         await fetchNotifications(id);
-      } catch (error) {
-        console.error('Error loading employee ID or notifications:', error);
+      } catch (err) {
+        console.error('Init Error:', err);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchEmployeeIdAndNotifications();
+    initialize();
 
-    // Foreground listener
-    notificationListener.current =
-      Notifications.addNotificationReceivedListener((notification) => {
-        console.log('Notification received:', notification);
+    notificationListener.current = Notifications.addNotificationReceivedListener(
+      notification => {
         const newNotif = {
           id: Date.now().toString(),
-          message: notification.request.content.body,
+          message: notification.request.content.body || 'No message',
           created_at: new Date().toISOString(),
         };
-        setNotifications((prev) => [newNotif, ...prev]);
-      });
+        setNotifications(prev => [newNotif, ...prev]);
+      }
+    );
 
-    // When user taps on notification
-    responseListener.current =
-      Notifications.addNotificationResponseReceivedListener((response) => {
-        console.log('Notification response:', response);
-      });
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(
+      async response => {
+        if (employeeId) await fetchNotifications(employeeId);
+      }
+    );
 
     return () => {
-      if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
-      }
-      if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
-      }
+      notificationListener.current?.remove();
+      responseListener.current?.remove();
     };
-  }, []);
+  }, [employeeId]);
 
-  // Fetch notifications from backend
-  const fetchNotifications = async (id) => {
+  const fetchNotifications = async id => {
     try {
-      const url = `${BASE_API}/${id}`;
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) {
-        console.log('Fetch Error:', await response.text());
-        return;
-      }
-
-      const data = await response.json();
-      console.log('Fetched notifications:', data.notifications);
-      if (data.notifications && Array.isArray(data.notifications)) {
-        setNotifications(data.notifications);
-      } else {
+      const res = await fetch(`${BASE_API}/${id}`);
+      if (!res.ok) {
         setNotifications([]);
-      }
-    } catch (error) {
-      console.error('Fetch Notifications Error:', error);
-    }
-  };
-
-  // Delete notification
-  const deleteNotification = async (notificationId) => {
-    if (!employeeId) {
-      Alert.alert('Error', 'Employee ID not found.');
-      return;
-    }
-
-    try {
-      const deleteUrl = `${BASE_API}/${employeeId}/notification/${notificationId}`;
-      console.log('Deleting notification:', deleteUrl);
-
-      const response = await fetch(deleteUrl, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) {
-        const errorMsg = await response.text();
-        console.log('Delete Error:', errorMsg);
-        Alert.alert('Delete Failed', errorMsg);
         return;
       }
-
-      // Optimistic UI update
-      setNotifications((prev) =>
-        prev.filter((notif) => notif.id !== notificationId && notif._id !== notificationId)
-      );
-    } catch (error) {
-      console.error('Delete Notification Error:', error);
-      Alert.alert('Error', 'Unable to delete notification. Please try again.');
+      const data = await res.json();
+      if (Array.isArray(data.notifications)) setNotifications(data.notifications);
+      else setNotifications([]);
+    } catch (err) {
+      console.error(err);
+      setNotifications([]);
     }
   };
 
-  // Swipeable Delete Button
-  const renderRightActions = (itemId) => (
-    <RectButton style={styles.deleteBtn} onPress={() => deleteNotification(itemId)}>
-      <Ionicons name="trash" size={24} color="#fff" />
-    </RectButton>
-  );
+  const deleteNotification = async notificationId => {
+    if (!employeeId) return;
+    try {
+      const res = await fetch(
+        `${BASE_API}/${employeeId}/notification/${notificationId}`,
+        { method: 'DELETE' }
+      );
+      if (res.ok) {
+        setNotifications(prev =>
+          prev.filter(n => (n.id || n._id) !== notificationId)
+        );
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
-  // Render each notification
   const renderItem = ({ item }) => {
     const notificationId = item.id || item._id;
     return (
-      <Swipeable
-        renderRightActions={() => renderRightActions(notificationId)}
-        overshootRight={false}
-      >
-        <View style={styles.card}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.message}>{item.message}</Text>
-            <Text style={styles.timestamp}>
-              {new Date(item.created_at).toLocaleString()}
-            </Text>
+      <View style={styles.notificationCard}>
+        <View style={styles.iconContainer}>
+          <View style={styles.bellCircle}>
+            <Ionicons name="notifications" size={20} color="#2563eb" />
           </View>
-          <TouchableOpacity onPress={() => deleteNotification(notificationId)}>
-            <Ionicons name="trash" size={22} color="#e74c3c" />
-          </TouchableOpacity>
         </View>
-      </Swipeable>
+        
+        <View style={styles.contentContainer}>
+          <Text style={styles.messageText}>{item.message ?? 'New system notification'}</Text>
+          <Text style={styles.timeText}>
+            {item.created_at ? new Date(item.created_at).toLocaleString() : 'Just now'}
+          </Text>
+        </View>
+
+        <TouchableOpacity 
+          style={styles.actionButton} 
+          onPress={() => deleteNotification(notificationId)}
+        >
+          <Feather name="trash-2" size={18} color="#94a3b8" />
+        </TouchableOpacity>
+      </View>
     );
   };
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.headerContainer}>
-        <Ionicons
-          name="arrow-back"
-          size={24}
-          color="#000"
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        />
-        <Text style={styles.header}>Notifications</Text>
+    <View style={styles.mainContainer}>
+      {/* DESKTOP HEADER */}
+      <View style={styles.headerBar}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backCircle}>
+            <Ionicons name="arrow-back" size={20} color="#64748b" />
+          </TouchableOpacity>
+          <View style={{ marginLeft: 16 }}>
+            <Text style={styles.breadcrumb}>DASHBOARD / ALERTS</Text>
+            <Text style={styles.headerTitle}>Notifications</Text>
+          </View>
+        </View>
+
+        <View style={styles.headerRight}>
+          <Text style={styles.countText}>{notifications.length} Total Alerts</Text>
+          {notifications.length > 0 && (
+             <TouchableOpacity style={styles.clearBtn} onPress={() => {/* logic to clear all */}}>
+                <Text style={styles.clearText}>Mark all as read</Text>
+             </TouchableOpacity>
+          )}
+        </View>
       </View>
 
-      {loading ? (
-        <ActivityIndicator size="large" color="#007BFF" />
-      ) : notifications.length === 0 ? (
-        <Text style={styles.noData}>No notifications found.</Text>
-      ) : (
-        <FlatList
-          data={notifications}
-          keyExtractor={(item) => (item.id || item._id).toString()}
-          renderItem={renderItem}
-        />
-      )}
+      {/* CONTENT AREA */}
+      <View style={styles.contentArea}>
+        {loading ? (
+          <View style={styles.centerBox}>
+            <ActivityIndicator size="large" color="#2563eb" />
+            <Text style={styles.loadingText}>Fetching updates...</Text>
+          </View>
+        ) : notifications.length === 0 ? (
+          <View style={styles.centerBox}>
+            <View style={styles.emptyIllustration}>
+              <Feather name="inbox" size={60} color="#e2e8f0" />
+            </View>
+            <Text style={styles.noDataTitle}>All caught up!</Text>
+            <Text style={styles.noDataSub}>You don't have any new notifications at the moment.</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={notifications}
+            keyExtractor={(item, index) => (item.id || item._id || index).toString()}
+            renderItem={renderItem}
+            contentContainerStyle={styles.listPadding}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
+      </View>
     </View>
   );
 }
 
-// --- Register Push Notifications ---
+// --- Push Notification registration ---
 async function registerForPushNotificationsAsync() {
+  if (Platform.OS === 'web') return null;
   let token;
-
   if (Device.isDevice) {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
-
     if (existingStatus !== 'granted') {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
-
-    if (finalStatus !== 'granted') {
-      Alert.alert('Failed to get push token for push notification!');
-      return;
-    }
-
+    if (finalStatus !== 'granted') return null;
     token = (await Notifications.getExpoPushTokenAsync()).data;
-  } else {
-    Alert.alert('Must use physical device for Push Notifications');
   }
-
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#FF231F7C',
-    });
-  }
-
   return token;
 }
 
-// Styles
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f7f7f7',
-    paddingTop: 50,
-    paddingHorizontal: 15,
+  mainContainer: { flex: 1, backgroundColor: "#f8fafc" },
+  
+  // Header Bar
+  headerBar: {
+    height: 80,
+    backgroundColor: "#ffffff",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 40,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
   },
-  headerContainer: {
+  headerLeft: { flexDirection: "row", alignItems: "center" },
+  backCircle: { width: 38, height: 38, borderRadius: 19, backgroundColor: "#f1f5f9", justifyContent: "center", alignItems: "center" },
+  breadcrumb: { fontSize: 10, color: "#94a3b8", fontWeight: "700", letterSpacing: 1 },
+  headerTitle: { fontSize: 22, fontWeight: "800", color: "#1e293b" },
+  
+  headerRight: { flexDirection: "row", alignItems: "center" },
+  countText: { color: "#64748b", fontWeight: "600", marginRight: 20 },
+  clearBtn: { backgroundColor: "#eff6ff", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+  clearText: { color: "#2563eb", fontWeight: "700", fontSize: 13 },
+
+  // Content
+  contentArea: { flex: 1, maxWidth: 1000, width: '100%', alignSelf: 'center', padding: 20 },
+  listPadding: { paddingBottom: 40 },
+  
+  // Notification Cards
+  notificationCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    ...Platform.select({
+      web: { cursor: 'default', transition: '0.2s' }
+    })
   },
-  backButton: {
-    marginRight: 10,
-  },
-  header: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    flex: 1,
-  },
-  card: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: '#fff',
-    padding: 15,
-    marginVertical: 8,
-    borderRadius: 10,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
-  },
-  message: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: 5,
-  },
-  timestamp: {
-    fontSize: 12,
-    color: '#777',
-  },
-  deleteBtn: {
-    backgroundColor: '#e74c3c',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 70,
-    borderRadius: 10,
-    marginVertical: 8,
-  },
-  noData: {
-    textAlign: 'center',
-    marginTop: 20,
-    fontSize: 16,
-    color: '#888',
-  },
+  iconContainer: { marginRight: 16 },
+  bellCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#eff6ff", justifyContent: 'center', alignItems: 'center' },
+  contentContainer: { flex: 1 },
+  messageText: { fontSize: 15, fontWeight: "600", color: "#1e293b", marginBottom: 4 },
+  timeText: { fontSize: 12, color: "#94a3b8" },
+  actionButton: { padding: 8, borderRadius: 8 },
+
+  // States
+  centerBox: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 100 },
+  loadingText: { marginTop: 12, color: "#64748b", fontWeight: "500" },
+  emptyIllustration: { marginBottom: 20 },
+  noDataTitle: { fontSize: 18, fontWeight: "800", color: "#1e293b" },
+  noDataSub: { fontSize: 14, color: "#94a3b8", marginTop: 4, textAlign: 'center' }
 });

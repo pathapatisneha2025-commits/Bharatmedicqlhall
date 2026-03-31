@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   Alert,
   Modal,
+    Platform,
+
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { useNavigation } from "@react-navigation/native"; // ✅ Add this import
@@ -41,6 +43,21 @@ export default function EmployeedeductionsScreen() {
   const handleChange = (key, value) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
+const showAlert = (title, message, buttons) => {
+    if (Platform.OS === "web") {
+      if (buttons && buttons.length > 1) {
+        const confirmed = window.confirm(`${title}\n\n${message}`);
+        if (confirmed) {
+          const okBtn = buttons.find(b => b.style !== "cancel");
+          okBtn?.onPress?.();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
+    };
 
   // ---------------------------------------------
   // Fetch employees
@@ -64,7 +81,7 @@ export default function EmployeedeductionsScreen() {
         }));
       }
     } catch (err) {
-      Alert.alert("Error", "Failed to load employees");
+      showAlert("Error", "Failed to load employees");
     }
   };
 
@@ -77,7 +94,7 @@ export default function EmployeedeductionsScreen() {
       const json = await res.json();
       setDeductions(json);
     } catch (err) {
-      Alert.alert("Error", "Failed to load deductions");
+      showAlert("Error", "Failed to load deductions");
     }
   };
 
@@ -119,13 +136,13 @@ export default function EmployeedeductionsScreen() {
 
       let json = await res.json();
       if (json.success) {
-        Alert.alert("Success", "Deduction added");
+        showAlert("Success", "Deduction added");
         fetchDeductions();
       } else {
-        Alert.alert("Error", json.message ?? "Something went wrong");
+        showAlert("Error", json.message ?? "Something went wrong");
       }
     } catch (err) {
-      Alert.alert("Error", "Failed to submit");
+      showAlert("Error", "Failed to submit");
     }
   };
 
@@ -133,7 +150,7 @@ export default function EmployeedeductionsScreen() {
   // Delete Deduction
   // ---------------------------------------------
   const deleteItem = (id) => {
-    Alert.alert("Confirm", "Delete this item?", [
+   showAlert("Confirm", "Delete this item?", [
       { text: "Cancel" },
       {
         text: "Delete",
@@ -144,7 +161,7 @@ export default function EmployeedeductionsScreen() {
             });
             fetchDeductions();
           } catch (err) {
-            Alert.alert("Error", "Failed to delete");
+           showAlert("Error", "Failed to delete");
           }
         },
       },
@@ -175,161 +192,145 @@ export default function EmployeedeductionsScreen() {
 
       let json = await res.json();
       if (json.success) {
-        Alert.alert("Updated", "Data updated successfully");
+       showAlert("Updated", "Data updated successfully");
         setModalVisible(false);
         fetchDeductions();
       } else {
-        Alert.alert("Error", json.message);
+        showAlert("Error", json.message);
       }
     } catch (err) {
-      Alert.alert("Error", "Failed to update");
+      showAlert("Error", "Failed to update");
     }
   };
 
-  return (
-    <ScrollView contentContainerStyle={styles.container}>
-<View style={styles.headerRow}>
-  <TouchableOpacity onPress={() => navigation.goBack()}>
-    <Text style={styles.backArrow}>←</Text>
-  </TouchableOpacity>
-
-  <Text style={styles.title}>Employee Salary Form</Text>
-</View>
-
-      {/* Dropdown for Employee Name */}
-      <Text style={styles.label}>Select Employee</Text>
-      <View style={styles.pickerContainer}>
-        <Picker
-          selectedValue={formData.employee_name}
-          onValueChange={handleEmployeeChange}
-        >
-          {employees.length > 0 ? (
-            employees.map((emp) => (
-              <Picker.Item
-                key={emp.id}
-                label={emp.full_name || emp.name}
-                value={emp.full_name || emp.name}
-              />
-            ))
-          ) : (
-            <Picker.Item label="No employees found" value="" />
-          )}
-        </Picker>
+ return (
+    <View style={styles.mainContainer}>
+      {/* Header Bar */}
+      <View style={styles.headerRow}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text style={styles.backArrow}>←</Text>
+        </TouchableOpacity>
+        <Text style={styles.title}>Employee Salary Dashboard</Text>
       </View>
 
-      {/* Email (auto-populated) */}
-      <TextInput
-        style={styles.input}
-        placeholder="Employee Email"
-        value={formData.email}
-        editable={false}
-      />
-
-      {/* Salary (auto-populated) */}
-      <TextInput
-        style={styles.input}
-        placeholder="Salary"
-        value={formData.salary}
-        editable={false}
-      />
-
-      {/* Other Fields */}
-      <TextInput
-        style={styles.input}
-        placeholder="Late Penalty"
-        value={formData.late_penalty}
-        onChangeText={(text) => handleChange("late_penalty", text)}
-        keyboardType="numeric"
-      />
-
-      <TextInput
-        style={styles.input}
-        placeholder="Break Penalty"
-        value={formData.break_penalty}
-        onChangeText={(text) => handleChange("break_penalty", text)}
-        keyboardType="numeric"
-      />
-
-    <TextInput
-  style={styles.input}
-  placeholder="Employee Type"
-  value={formData.employee_type}
-  editable={false}
-/>
-
-
-  
-      <TextInput
-        style={styles.input}
-        placeholder="Working Days"
-        value={formData.working_days}
-        onChangeText={(text) => handleChange("working_days", text)}
-        keyboardType="numeric"
-      />
-
-      <TextInput
-        style={styles.input}
-        placeholder="Working Hours"
-        value={formData.working_hours}
-        onChangeText={(text) => handleChange("working_hours", text)}
-        keyboardType="numeric"
-      />
-
-      <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
-        <Text style={styles.submitText}>Submit</Text>
-      </TouchableOpacity>
-
-      {/* Display Deduction List */}
-      <Text style={styles.title}>All Deductions</Text>
-
-      {deductions.map((item) => (
-        <View key={item.id} style={styles.card}>
-          <Text style={{ fontWeight: "bold" }}>{item.employee_name}</Text>
-          <Text>Late: {item.late_penalty}</Text>
-          <Text>Break: {item.break_penalty}</Text>
-          <Text>Salary Deduction: {item.salary_deduction}</Text>
-
-          <View style={styles.row}>
-            <TouchableOpacity onPress={() => openEdit(item)}>
-              <Text style={styles.edit}>Edit</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => deleteItem(item.id)}>
-              <Text style={styles.delete}>Delete</Text>
-            </TouchableOpacity>
+      <View style={styles.splitLayout}>
+        {/* LEFT COLUMN: FORM */}
+        <ScrollView style={styles.leftColumn} showsVerticalScrollIndicator={false}>
+          <Text style={styles.sectionTitle}>Add Deduction</Text>
+          
+          <Text style={styles.label}>Select Employee</Text>
+          <View style={styles.pickerContainer}>
+            <Picker
+              selectedValue={formData.employee_name}
+              onValueChange={handleEmployeeChange}
+            >
+              {employees.length > 0 ? (
+                employees.map((emp) => (
+                  <Picker.Item
+                    key={emp.id}
+                    label={emp.full_name || emp.name}
+                    value={emp.full_name || emp.name}
+                  />
+                ))
+              ) : (
+                <Picker.Item label="No employees found" value="" />
+              )}
+            </Picker>
           </View>
-        </View>
-      ))}
 
-      {/* Edit Modal */}
-      <Modal visible={modalVisible} transparent animationType="slide">
+          <TextInput style={[styles.input, styles.disabledInput]} placeholder="Employee Email" value={formData.email} editable={false} />
+          <TextInput style={[styles.input, styles.disabledInput]} placeholder="Salary" value={formData.salary} editable={false} />
+          <TextInput style={[styles.input, styles.disabledInput]} placeholder="Employee Type" value={formData.employee_type} editable={false} />
+
+          <TextInput
+            style={styles.input}
+            placeholder="Late Penalty"
+            value={formData.late_penalty}
+            onChangeText={(text) => handleChange("late_penalty", text)}
+            keyboardType="numeric"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Break Penalty"
+            value={formData.break_penalty}
+            onChangeText={(text) => handleChange("break_penalty", text)}
+            keyboardType="numeric"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Working Days"
+            value={formData.working_days}
+            onChangeText={(text) => handleChange("working_days", text)}
+            keyboardType="numeric"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Working Hours"
+            value={formData.working_hours}
+            onChangeText={(text) => handleChange("working_hours", text)}
+            keyboardType="numeric"
+          />
+
+          <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
+            <Text style={styles.submitText}>Submit Deduction</Text>
+          </TouchableOpacity>
+        </ScrollView>
+
+        {/* RIGHT COLUMN: LIST */}
+        <View style={styles.rightColumn}>
+          <Text style={styles.sectionTitle}>Deduction History</Text>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {deductions.map((item) => (
+              <View key={item.id} style={styles.card}>
+                <View style={styles.cardHeader}>
+                    <Text style={styles.cardEmpName}>{item.employee_name}</Text>
+                    <Text style={styles.cardDate}>{new Date().toLocaleDateString()}</Text>
+                </View>
+                <View style={styles.cardBody}>
+                    <Text style={styles.cardLabel}>Late Penalty: <Text style={styles.cardValue}>{item.late_penalty}</Text></Text>
+                    <Text style={styles.cardLabel}>Break Penalty: <Text style={styles.cardValue}>{item.break_penalty}</Text></Text>
+                    {/* <Text style={styles.cardLabel}>Salary Deduction: <Text style={[styles.cardValue, {color: '#dc3545'}]}>{item.salary_deduction}</Text></Text> */}
+                </View>
+
+                <View style={styles.cardActions}>
+                  <TouchableOpacity onPress={() => openEdit(item)} style={styles.actionBtn}>
+                    <Text style={styles.edit}>Edit</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => deleteItem(item.id)} style={styles.actionBtn}>
+                    <Text style={styles.delete}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+
+      {/* Edit Modal (Logic Unchanged) */}
+      <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalBox}>
           <View style={styles.modalContent}>
             <Text style={styles.title}>Edit Deduction</Text>
-
-            {editData &&
-              Object.keys(editData).map((key) => {
-                if (["id", "created_at", "updated_at"].includes(key)) return null;
-
-                return (
-                  <TextInput
-                    key={key}
-                    style={styles.input}
-                    value={String(editData[key])}
-                    onChangeText={(v) =>
-                      setEditData({ ...editData, [key]: v })
-                    }
-                    placeholder={key}
-                  />
-                );
-              })}
-
+            <ScrollView>
+                {editData &&
+                Object.keys(editData).map((key) => {
+                    if (["id", "created_at", "updated_at"].includes(key)) return null;
+                    return (
+                    <TextInput
+                        key={key}
+                        style={styles.input}
+                        value={String(editData[key])}
+                        onChangeText={(v) => setEditData({ ...editData, [key]: v })}
+                        placeholder={key}
+                    />
+                    );
+                })}
+            </ScrollView>
             <TouchableOpacity style={styles.submitBtn} onPress={updateData}>
               <Text style={styles.submitText}>Update</Text>
             </TouchableOpacity>
-
             <TouchableOpacity
-              style={[styles.submitBtn, { backgroundColor: "gray" }]}
+              style={[styles.submitBtn, { backgroundColor: "#6c757d", marginTop: 10 }]}
               onPress={() => setModalVisible(false)}
             >
               <Text style={styles.submitText}>Close</Text>
@@ -337,73 +338,120 @@ export default function EmployeedeductionsScreen() {
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </View>
   );
 }
 
-// ----------------- Styles -----------------
 const styles = StyleSheet.create({
-  container: { padding: 20, backgroundColor: "#f4f6f8", flexGrow: 1 },
-  title: { fontSize: 22, fontWeight: "bold", marginVertical: 15 },
-  label: { fontWeight: "bold", marginBottom: 8 },
+  mainContainer: {
+    flex: 1,
+    backgroundColor: "#f8f9fa",
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 20,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    marginTop: Platform.OS === 'web' ? 0 : 30
+  },
+  backArrow: { fontSize: 24, marginRight: 15, color: "#1e90ff" },
+  title: { fontSize: 20, fontWeight: "bold", color: "#2d3436" },
+  
+  splitLayout: {
+    flex: 1,
+    flexDirection: Platform.OS === "web" ? "row" : "column",
+    padding: 20,
+    gap: 20,
+  },
+  
+  // Left side - Form
+  leftColumn: {
+    flex: 1,
+    backgroundColor: "#fff",
+    padding: 20,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    ...Platform.select({
+        web: { maxHeight: 'calc(100vh - 120px)' }
+    })
+  },
+
+  // Right side - List
+  rightColumn: {
+    flex: 1.5,
+    backgroundColor: "#fff",
+    padding: 20,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+  },
+
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 20,
+    color: "#1e90ff",
+    borderBottomWidth: 2,
+    borderBottomColor: "#1e90ff",
+    paddingBottom: 5,
+    alignSelf: 'flex-start'
+  },
+
+  label: { fontWeight: "600", marginBottom: 8, color: "#495057" },
   pickerContainer: {
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#ddd",
     borderRadius: 8,
-    marginBottom: 12,
-    backgroundColor: "#fff",
+    marginBottom: 15,
+    backgroundColor: "#fcfcfc",
   },
   input: {
     backgroundColor: "#fff",
     padding: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#ddd",
     marginBottom: 12,
+    fontSize: 14,
+  },
+  disabledInput: {
+    backgroundColor: "#f1f3f5",
+    color: "#6c757d",
   },
   submitBtn: {
     backgroundColor: "#1e90ff",
-    padding: 14,
+    padding: 15,
     borderRadius: 8,
     alignItems: "center",
-    marginTop: 10,
   },
-  submitText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  submitText: { color: "#fff", fontWeight: "bold" },
 
+  // List Cards
   card: {
     backgroundColor: "#fff",
-    padding: 12,
-    borderRadius: 8,
-    marginVertical: 8,
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 15,
+    borderLeftWidth: 5,
+    borderLeftColor: "#1e90ff",
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#eee",
   },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  cardEmpName: { fontWeight: 'bold', fontSize: 16, color: '#2d3436' },
+  cardDate: { fontSize: 12, color: '#636e72' },
+  cardBody: { marginBottom: 10 },
+  cardLabel: { fontSize: 14, color: '#636e72', marginBottom: 2 },
+  cardValue: { fontWeight: '600', color: '#2d3436' },
+  
+  cardActions: { flexDirection: "row", borderTopWidth: 1, borderTopColor: '#f1f1f1', paddingTop: 10 },
+  actionBtn: { marginRight: 20 },
+  edit: { color: "#28a745", fontWeight: "600" },
+  delete: { color: "#dc3545", fontWeight: "600" },
 
-  row: { flexDirection: "row", justifyContent: "space-between", marginTop: 10 },
-  edit: { color: "green", fontWeight: "bold" },
-  delete: { color: "red", fontWeight: "bold" },
-
-  modalBox: {
-    flex: 1,
-    justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.5)",
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 12,
-  },
-  headerRow: {
-  flexDirection: "row",
-  alignItems: "center",
-  marginBottom: 15,
-},
-
-backArrow: {
-  fontSize: 26,
-  marginRight: 10,
-  fontWeight: "bold",
-},
-
+  modalBox: { flex: 1, justifyContent: "center", backgroundColor: "rgba(0,0,0,0.4)", padding: 40 },
+  modalContent: { backgroundColor: "#fff", padding: 30, borderRadius: 15, width: Platform.OS === 'web' ? '40%' : '100%', alignSelf: 'center' },
 });

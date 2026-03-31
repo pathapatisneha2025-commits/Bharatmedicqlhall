@@ -1,34 +1,65 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   FlatList,
+  ScrollView,
   StyleSheet,
   Alert,
   ActivityIndicator,
-  ScrollView,
+  useWindowDimensions,
+  Platform,
 } from "react-native";
-import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
 import { Picker } from "@react-native-picker/picker";
 import { useNavigation } from "@react-navigation/native";
 
 const BASE_URL = "https://hospitaldatabasemanagement.onrender.com";
 
 export default function DoctorConsultantFeesScreen() {
+  const navigation = useNavigation();
+
   const [doctors, setDoctors] = useState([]);
   const [feesData, setFeesData] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingCount, setLoadingCount] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
   const [selectedDoctorName, setSelectedDoctorName] = useState("");
   const [doctorEmail, setDoctorEmail] = useState("");
   const [fees, setFees] = useState("");
   const [editId, setEditId] = useState(null);
-  const [searchText, setSearchText] = useState("");
-  const [filteredData, setFilteredData] = useState([]);
-  const navigation = useNavigation();
 
-  // Fetch doctors
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+
+  const showAlert = (title, message, buttons) => {
+    if (Platform.OS === "web") {
+      if (buttons && buttons.length > 1) {
+        const confirmed = window.confirm(`${title}\n\n${message}`);
+        if (confirmed) {
+          const okBtn = buttons.find((b) => b.style !== "cancel");
+          okBtn?.onPress?.();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
+  };
+
+  useEffect(() => {
+    let interval;
+    if (loading) {
+      setLoadingCount(0);
+      interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+    } else clearInterval(interval);
+    return () => clearInterval(interval);
+  }, [loading]);
+
+  // Fetch doctors for dropdown
   const fetchDoctors = async () => {
     try {
       const response = await fetch(`${BASE_URL}/doctor/all`);
@@ -36,27 +67,26 @@ export default function DoctorConsultantFeesScreen() {
       setDoctors(result);
 
       if (result.length > 0) {
-        const firstDoctor = result[0];
-        setSelectedDoctorName(firstDoctor.name);
-        setDoctorEmail(firstDoctor.email);
+        const firstDoc = result[0];
+        setSelectedDoctorName(firstDoc.name);
+        setDoctorEmail(firstDoc.email);
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to fetch doctors");
+      showAlert("Error", "Failed to fetch doctors");
     }
   };
 
-  // Fetch all fees
+  // Fetch all fees records
   const fetchFeesData = async () => {
     try {
-      setLoading(true);
+      setRefreshing(true);
       const response = await fetch(`${BASE_URL}/doctorconsultancefee/all`);
       const result = await response.json();
       setFeesData(result);
-      setFilteredData(result);
     } catch (error) {
-      Alert.alert("Error", "Failed to fetch fees data");
+      showAlert("Error", "Failed to fetch fees data");
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -67,15 +97,15 @@ export default function DoctorConsultantFeesScreen() {
 
   const handleDoctorChange = (name) => {
     setSelectedDoctorName(name);
-    const selectedDoc = doctors.find((doc) => doc.name === name);
-    setDoctorEmail(selectedDoc ? selectedDoc.email : "");
+    const doc = doctors.find((d) => d.name === name);
+    setDoctorEmail(doc ? doc.email : "");
   };
 
   const resetForm = () => {
     if (doctors.length > 0) {
-      const firstDoctor = doctors[0];
-      setSelectedDoctorName(firstDoctor.name);
-      setDoctorEmail(firstDoctor.email);
+      const firstDoc = doctors[0];
+      setSelectedDoctorName(firstDoc.name);
+      setDoctorEmail(firstDoc.email);
     } else {
       setSelectedDoctorName("");
       setDoctorEmail("");
@@ -86,7 +116,7 @@ export default function DoctorConsultantFeesScreen() {
 
   const handleSubmit = async () => {
     if (!selectedDoctorName || !doctorEmail || !fees) {
-      Alert.alert("Validation Error", "All fields are required!");
+      showAlert("Validation Error", "All fields are required!");
       return;
     }
 
@@ -98,8 +128,8 @@ export default function DoctorConsultantFeesScreen() {
 
     try {
       setLoading(true);
-      const url = editId
-        ? `${BASE_URL}/doctorconsultancefee/update/${editId}`
+      const url = editId 
+        ? `${BASE_URL}/doctorconsultancefee/update/${editId}` 
         : `${BASE_URL}/doctorconsultancefee/add`;
       const method = editId ? "PUT" : "POST";
 
@@ -108,17 +138,18 @@ export default function DoctorConsultantFeesScreen() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+
       const result = await response.json();
 
       if (response.ok) {
-        Alert.alert("Success", editId ? "Updated successfully" : "Added successfully");
+        showAlert("Success", editId ? "Fees updated successfully" : "Fees added successfully");
         resetForm();
         fetchFeesData();
       } else {
-        Alert.alert("Error", result.error || "Something went wrong");
+        showAlert("Error", result.message || "Something went wrong");
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to save data");
+      showAlert("Error", "Failed to save data");
     } finally {
       setLoading(false);
     }
@@ -132,7 +163,7 @@ export default function DoctorConsultantFeesScreen() {
   };
 
   const handleDelete = async (id) => {
-    Alert.alert("Confirm Delete", "Are you sure you want to delete this record?", [
+    showAlert("Confirm Delete", "Are you sure you want to delete this record?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -140,18 +171,15 @@ export default function DoctorConsultantFeesScreen() {
         onPress: async () => {
           try {
             setLoading(true);
-            const response = await fetch(`${BASE_URL}/doctorconsultancefee/delete/${id}`, {
-              method: "DELETE",
-            });
-            const result = await response.json();
+            const response = await fetch(`${BASE_URL}/doctorconsultancefee/delete/${id}`, { method: "DELETE" });
             if (response.ok) {
-              Alert.alert("Success", "Record deleted successfully");
+              showAlert("Success", "Record deleted successfully");
               fetchFeesData();
             } else {
-              Alert.alert("Error", result.error || "Failed to delete");
+              showAlert("Error", "Failed to delete record");
             }
           } catch (error) {
-            Alert.alert("Error", "Failed to delete data");
+            showAlert("Error", "Failed to delete data");
           } finally {
             setLoading(false);
           }
@@ -160,140 +188,152 @@ export default function DoctorConsultantFeesScreen() {
     ]);
   };
 
-  const handleSearch = () => {
-    const filtered = feesData.filter(
-      (item) =>
-        item.doctor_name.toLowerCase().includes(searchText.toLowerCase()) ||
-        item.doctor_email.toLowerCase().includes(searchText.toLowerCase())
-    );
-    setFilteredData(filtered);
-  };
-  
-  if (loading) {
+  const renderTableRow = ({ item, index }) => (
+    <View style={styles.tableRow}>
+      <Text style={[styles.tableCell, { width: 60 }]}>#{index + 1}</Text>
+      <Text style={[styles.tableCell, { width: 180, fontWeight: '600' }]}>{item.doctor_name}</Text>
+      <Text style={[styles.tableCell, { width: 220 }]}>{item.doctor_email}</Text>
+      <Text style={[styles.tableCell, { width: 120, color: '#2563eb', fontWeight: 'bold' }]}>₹{item.fees}</Text>
+      <View style={styles.actionCell}>
+        <TouchableOpacity style={styles.actionIcon} onPress={() => handleEdit(item)}>
+          <Feather name="edit-2" size={16} color="#2563eb" />
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionIcon, { backgroundColor: '#fee2e2' }]} onPress={() => handleDelete(item.id)}>
+          <Feather name="trash-2" size={16} color="#ef4444" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  if (loading && !refreshing) {
     return (
       <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text style={{ marginTop: 10 }}>Loading doctors...</Text>
+        <ActivityIndicator size="large" color="#2563EB" />
+        <Text style={{ marginTop: 10 }}>Processing... {loadingCount}s</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container}>
-      {/* Header */}
-      <View style={styles.headerContainer}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={28} color="#007BFF" />
-        </TouchableOpacity>
-        <Text style={styles.header}>Doctor Consultant Fees</Text>
-        <View style={{ width: 28 }} />
-      </View>
-
-      {/* Search */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search-outline" size={20} color="#007BFF" style={{ marginLeft: 8 }} />
-        <TextInput
-          placeholder="Search by name or email"
-          value={searchText}
-          onChangeText={setSearchText}
-          style={styles.searchInput}
-        />
-        <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-          <Text style={styles.searchButtonText}>Go</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Form */}
-      <View style={styles.form}>
-        <Text style={styles.label}>Select Doctor</Text>
-        <View style={styles.pickerContainer}>
-          <Picker selectedValue={selectedDoctorName} onValueChange={handleDoctorChange}>
-            {doctors.length > 0
-              ? doctors.map((doc) => <Picker.Item key={doc.id} label={doc.name} value={doc.name} />)
-              : <Picker.Item label="No doctors found" value="" />}
-          </Picker>
-        </View>
-
-        <View style={styles.inputWrapper}>
-          <MaterialIcons name="email" size={20} color="#007BFF" style={{ marginRight: 8 }} />
-          <TextInput style={styles.input} placeholder="Email" value={doctorEmail} editable={false} />
-        </View>
-
-        <View style={styles.inputWrapper}>
-          <Ionicons name="cash-outline" size={20} color="#007BFF" style={{ marginRight: 8 }} />
-          <TextInput
-            style={styles.input}
-            placeholder="Fees"
-            keyboardType="numeric"
-            value={fees}
-            onChangeText={setFees}
-          />
-        </View>
-
-        <TouchableOpacity style={styles.button} onPress={handleSubmit}>
-          <Text style={styles.buttonText}>{editId ? "Update" : "Add"}</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Records List */}
-      <Text style={styles.subHeader}>All Records</Text>
-      {loading ? (
-        <ActivityIndicator size="large" color="#007BFF" style={{ marginTop: 10 }} />
-      ) : (
-        <FlatList
-          data={filteredData}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={({ item }) => (
-            <View style={styles.card}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardText}><Text style={styles.bold}>Name:</Text> {item.doctor_name}</Text>
-                <Text style={styles.cardText}><Text style={styles.bold}>Email:</Text> {item.doctor_email}</Text>
-                <Text style={styles.cardText}><Text style={styles.bold}>Fees:</Text> ₹{item.fees}</Text>
-              </View>
-
-              <View style={styles.iconContainer}>
-                <TouchableOpacity onPress={() => handleEdit(item)}>
-                  <Ionicons name="create-outline" size={24} color="orange" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleDelete(item.id)} style={{ marginLeft: 10 }}>
-                  <Ionicons name="trash-outline" size={24} color="red" />
-                </TouchableOpacity>
-              </View>
+    <View style={styles.webWrapper}>
+      <View style={styles.mainContent}>
+        
+        {/* CONTENT HEADER */}
+        <View style={styles.contentHeader}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+              <Ionicons name="arrow-back" size={22} color="#1e293b" />
+            </TouchableOpacity>
+            <View>
+              <Text style={styles.mainTitle}>Consultant Fees</Text>
+              <Text style={styles.subTitle}>Manage specialist consultation charges and profiles</Text>
             </View>
-          )}
-        />
-      )}
-    </ScrollView>
+          </View>
+        </View>
+
+        <View style={styles.flexRow}>
+          {/* FORM CARD */}
+          <View style={styles.formCard}>
+            <Text style={styles.cardTitle}>{editId ? "Update Consultant Fee" : "Configure Fee Rate"}</Text>
+            
+            <Text style={styles.fieldLabel}>Specialist Name</Text>
+            <View style={styles.pickerWrapper}>
+              <Picker selectedValue={selectedDoctorName} onValueChange={handleDoctorChange}>
+                {doctors.map((doc) => (
+                  <Picker.Item key={doc.id} label={doc.name} value={doc.name} />
+                ))}
+              </Picker>
+            </View>
+
+            <Text style={styles.fieldLabel}>Doctor Email</Text>
+            <View style={styles.disabledInput}>
+              <Feather name="mail" size={18} color="#94a3b8" />
+              <TextInput style={styles.inputStyle} value={doctorEmail} editable={false} />
+            </View>
+
+            <Text style={styles.fieldLabel}>Consultation Fee (INR)</Text>
+            <View style={styles.activeInput}>
+              <Feather name="tag" size={18} color="#2563eb" />
+              <TextInput 
+                style={styles.inputStyle} 
+                placeholder="0.00" 
+                keyboardType="numeric" 
+                value={fees} 
+                onChangeText={setFees} 
+              />
+            </View>
+
+            <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
+              <Text style={styles.submitBtnText}>{editId ? "Update Pricing" : "Save Pricing"}</Text>
+            </TouchableOpacity>
+            
+            {editId && (
+              <TouchableOpacity style={styles.cancelBtn} onPress={resetForm}>
+                <Text style={styles.cancelBtnText}>Cancel Edit</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* TABLE CARD */}
+          <View style={styles.tableCard}>
+            <View style={styles.tableCardHeader}>
+              <Text style={styles.cardTitle}>Fee Directory</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+              <View>
+                <View style={styles.tableHeader}>
+                  <Text style={[styles.headerCell, { width: 60 }]}>S.No</Text>
+                  <Text style={[styles.headerCell, { width: 180 }]}>Doctor</Text>
+                  <Text style={[styles.headerCell, { width: 220 }]}>Email</Text>
+                  <Text style={[styles.headerCell, { width: 120 }]}>Fees</Text>
+                  <Text style={[styles.headerCell, { width: 100, textAlign: 'center' }]}>Actions</Text>
+                </View>
+                <FlatList
+                  data={feesData}
+                  keyExtractor={(item) => item.id.toString()}
+                  renderItem={renderTableRow}
+                  contentContainerStyle={{ paddingBottom: 20 }}
+                />
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: "#F0F4F8" , marginTop: 30},
-  headerContainer: { flexDirection: "row", alignItems: "center", marginBottom: 15 },
-  header: { fontSize: 24, fontWeight: "bold", color: "#007BFF", textAlign: "center", flex: 1 },
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginBottom: 15,
-    elevation: 2,
-  },
-  searchInput: { flex: 1, padding: 8, fontSize: 15 },
-  searchButton: { backgroundColor: "#007BFF", paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8, marginLeft: 5 },
-  searchButtonText: { color: "#fff", fontWeight: "bold" },
-  form: { backgroundColor: "#fff", padding: 16, borderRadius: 12, elevation: 3, marginBottom: 15 },
-  label: { fontWeight: "bold", marginBottom: 8 },
-  pickerContainer: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, marginBottom: 10 },
-  inputWrapper: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: "#ccc", borderRadius: 8, paddingHorizontal: 10, marginBottom: 10, backgroundColor: "#fff" },
-  input: { flex: 1, fontSize: 15, paddingVertical: 8 },
-  button: { backgroundColor: "#007BFF", padding: 12, borderRadius: 8, alignItems: "center", marginTop: 5 },
-  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-  subHeader: { fontSize: 18, fontWeight: "bold", color: "#333", marginBottom: 10 },
-  card: { flexDirection: "row", backgroundColor: "#fff", padding: 12, borderRadius: 12, marginBottom: 10, elevation: 2, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3 },
-  cardText: { fontSize: 15, color: "#333", marginBottom: 4 },
-  bold: { fontWeight: "bold" },
-  iconContainer: { flexDirection: "row", alignItems: "center" },
+  webWrapper: { flex: 1, flexDirection: "row", backgroundColor: "#F8FAFC" },
+  mainContent: { flex: 1, padding: 32 },
+  contentHeader: { marginBottom: 32 },
+  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 3 },
+  mainTitle: { fontSize: 28, fontWeight: "800", color: "#1e293b" },
+  subTitle: { color: "#64748b", marginTop: 4 },
+
+  flexRow: { flexDirection: "row", gap: 24, flex: 1 },
+  formCard: { width: 350, backgroundColor: "#fff", borderRadius: 16, padding: 24, borderWidth: 1, borderColor: "#e2e8f0", alignSelf: 'flex-start' },
+  tableCard: { flex: 1, backgroundColor: "#fff", borderRadius: 16, borderWidth: 1, borderColor: "#e2e8f0", overflow: 'hidden' },
+  tableCardHeader: { padding: 20, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  cardTitle: { fontSize: 18, fontWeight: "700", color: "#1e293b" },
+
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#64748b', marginBottom: 8, marginTop: 16 },
+  pickerWrapper: { borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 10, backgroundColor: "#f8fafc", overflow: 'hidden' },
+  disabledInput: { flexDirection: "row", alignItems: "center", backgroundColor: "#f1f5f9", borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 10, paddingHorizontal: 12 },
+  activeInput: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderWidth: 1, borderColor: "#2563eb", borderRadius: 10, paddingHorizontal: 12 },
+  inputStyle: { flex: 1, height: 45, marginLeft: 10, color: "#1e293b" },
+
+  submitBtn: { backgroundColor: "#2563eb", padding: 15, borderRadius: 10, alignItems: "center", marginTop: 24 },
+  submitBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  cancelBtn: { marginTop: 12, padding: 10, alignItems: "center" },
+  cancelBtnText: { color: "#ef4444", fontWeight: "600" },
+
+  tableHeader: { flexDirection: "row", backgroundColor: "#f8fafc", paddingVertical: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#e2e8f0" },
+  headerCell: { fontSize: 13, fontWeight: "700", color: "#64748b", textTransform: "uppercase" },
+  tableRow: { flexDirection: "row", paddingVertical: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#f1f5f9", alignItems: "center" },
+  tableCell: { fontSize: 14, color: "#334155" },
+  actionCell: { width: 100, flexDirection: "row", justifyContent: "center", gap: 8 },
+  actionIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: "#eff6ff", justifyContent: "center", alignItems: "center" },
+
+  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" }
 });

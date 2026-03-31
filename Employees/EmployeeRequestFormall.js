@@ -9,13 +9,19 @@ import {
   Alert,
   Modal,
   TextInput,
+  Platform,
+  useWindowDimensions,
+  StatusBar,
+  ScrollView,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { getEmployeeId } from "../utils/storage";
 
 export default function EmployeeRequestListScreen({ navigation }) {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingCount, setLoadingCount] = useState(0);
+
   const [employeeId, setEmployeeId] = useState(null);
 
   // Edit modal states
@@ -26,92 +32,69 @@ export default function EmployeeRequestListScreen({ navigation }) {
   const [editDept, setEditDept] = useState("");
   const [editReason, setEditReason] = useState("");
 
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const isDesktop = SCREEN_WIDTH > 768;
+  const MAX_CONTENT_WIDTH = 1000;
+
+  const showAlert = (title, message) => {
+    if (Platform.OS === "web") window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
+
   useEffect(() => {
-  setLoading(true); // 👈 show loader instantly
+    setLoading(true);
+    setLoadingCount(0);
+    let count = 0;
+    const interval = setInterval(() => {
+      count += 1;
+      setLoadingCount(count);
+    }, 500);
 
-  const init = async () => {
-    try {
-      const id = await getEmployeeId();
-
-      if (!id) {
-        Alert.alert("Error", "Employee ID not found");
+    const init = async () => {
+      try {
+        const id = await getEmployeeId();
+        if (!id) {
+          showAlert("Error", "Employee ID not found");
+          setLoading(false);
+          clearInterval(interval);
+          return;
+        }
+        setEmployeeId(id);
+        await fetchRequests(id);
+      } catch (e) {
+        showAlert("Error", "Something went wrong");
+      } finally {
         setLoading(false);
-        return;
+        clearInterval(interval);
       }
+    };
+    init();
+    return () => clearInterval(interval);
+  }, []);
 
-      setEmployeeId(id);
-      fetchRequests(id); // don't await → UI stays responsive
-    } catch (e) {
-      Alert.alert("Error", "Something went wrong");
+  const fetchRequests = async (id) => {
+    try {
+      const response = await fetch(
+        `https://hospitaldatabasemanagement.onrender.com/doctorrequest/employee/${id}`
+      );
+      const data = await response.json();
+      if (response.ok) {
+        setRequests(data.requests || []);
+      } else {
+        showAlert("Error", data.message || "Failed to load");
+      }
+    } catch (error) {
+      showAlert("Error", "Failed to load");
+    } finally {
       setLoading(false);
     }
   };
 
-  init();
-}, []);
-
-
- const fetchRequests = async (id) => {
-  try {
-    const response = await fetch(
-      `https://hospitaldatabasemanagement.onrender.com/doctorrequest/employee/${id}`
-    );
-
-    const data = await response.json();
-    if (response.ok) {
-      setRequests(data);
-    } else {
-      Alert.alert("Error", data.message || "Failed to load");
-    }
-  } catch (error) {
-    Alert.alert("Error", "Failed to load");
-  } finally {
-    setLoading(false); // loader stops here
-  }
-};
-
-
-  const deleteRequest = (id) => {
-    Alert.alert("Confirm Delete", "Delete this request?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            const res = await fetch(
-              `https://hospitaldatabasemanagement.onrender.com/doctorrequest/delete/${id}`,
-              { method: "DELETE" }
-            );
-            const data = await res.json();
-
-            if (res.ok) {
-              Alert.alert("Success", "Request deleted");
-              fetchRequests(employeeId);
-            } else Alert.alert("Error", data.message || "Delete failed");
-          } catch (error) {
-            Alert.alert("Error", "Failed to delete");
-          }
-        },
-      },
-    ]);
-  };
-
-  const openEditModal = (item) => {
-    setSelectedReq(item);
-    setEditName(item.name);
-    setEditEmail(item.email);
-    setEditDept(item.department);
-    setEditReason(item.query_reason);
-    setEditModal(true);
-  };
-
   const updateRequest = async () => {
     if (!editName || !editEmail || !editDept || !editReason) {
-      Alert.alert("Error", "All fields required");
+      showAlert("Error", "All fields required");
       return;
     }
-
     try {
       const res = await fetch(
         `https://hospitaldatabasemanagement.onrender.com/doctorrequest/update/${selectedReq.id}`,
@@ -126,177 +109,192 @@ export default function EmployeeRequestListScreen({ navigation }) {
           }),
         }
       );
-
       const data = await res.json();
-
       if (res.ok) {
-        Alert.alert("Success", "Updated");
+        showAlert("Success", "Updated");
         setEditModal(false);
         fetchRequests(employeeId);
       } else Alert.alert("Error", data.message || "Update failed");
     } catch (error) {
-      Alert.alert("Error", "Failed to update");
+      showAlert("Error", "Failed to update");
     }
   };
- 
 
-  const renderItem = ({ item }) => (
-    <View style={styles.card}>
-      <View style={styles.row}>
-        <Ionicons name="person-outline" size={22} color="#1565C0" />
-        <Text style={styles.nameText}>{item.name}</Text>
+  const getStatusStyle = (status) => {
+    switch (status?.toLowerCase()) {
+      case "approved":
+        return { bg: "#E7F9ED", text: "#28A745", icon: "checkmark-circle" };
+      case "pending":
+        return { bg: "#FFF4E5", text: "#FF9800", icon: "time" };
+      default:
+        return { bg: "#FEECEB", text: "#DC3545", icon: "close-circle" };
+    }
+  };
+
+  const renderItem = ({ item }) => {
+    const status = getStatusStyle(item.status);
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={styles.headerLeft}>
+            <View style={[styles.iconBox, { backgroundColor: "#E8F1FF" }]}>
+              <MaterialCommunityIcons
+                name="clipboard-text-outline"
+                size={22}
+                color="#0D6EFD"
+              />
+            </View>
+            <View style={{ marginLeft: 12 }}>
+              <Text style={styles.cardTitle}>{item.department}</Text>
+              <Text style={styles.cardSub}>ID: #{item.id}</Text>
+            </View>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
+            <Ionicons name={status.icon} size={14} color={status.text} />
+            <Text style={[styles.statusLabel, { color: status.text }]}>
+              {item.status}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.cardBody}>
+          <Text style={styles.bodyLabel}>Requested Items:</Text>
+          {item.items.map((i, idx) => (
+            <View key={idx} style={styles.itemRow}>
+              <Text style={styles.itemName}>{i.name || "General Item"}</Text>
+              <Text style={styles.itemQty}>Qty: {i.quantity}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.cardFooter}>
+          <Text style={styles.dateText}>
+            <Ionicons name="calendar-outline" size={12} />{" "}
+            {new Date(item.created_at).toLocaleDateString()}
+          </Text>
+          <TouchableOpacity
+            onPress={() => {
+              setSelectedReq(item);
+              setEditName(item.name);
+              setEditEmail(item.email);
+              setEditDept(item.department);
+              setEditReason(item.query_reason);
+              setEditModal(true);
+            }}
+            style={styles.detailBtn}
+          >
+            <Text style={styles.detailBtnText}>View Details</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+    );
+  };
 
-      <View style={styles.row}>
-        <Ionicons name="mail-outline" size={20} color="#555" />
-        <Text style={styles.subText}>{item.email}</Text>
-      </View>
-
-      <View style={styles.row}>
-        <Ionicons name="business-outline" size={20} color="#222" />
-        <Text style={styles.department}>{item.department}</Text>
-      </View>
-
-      <View style={[styles.row, { marginTop: 10 }]}>
-        <Ionicons name="document-text-outline" size={20} color="#444" />
-        <Text style={styles.reason}>{item.query_reason}</Text>
-      </View>
-
-      <View style={styles.statusContainer}>
-        <Ionicons
-          name={
-            item.status === "pending"
-              ? "time-outline"
-              : item.status === "complete"
-              ? "checkmark-circle-outline"
-              : "close-circle-outline"
-          }
-          size={18}
-          color={
-            item.status === "pending"
-              ? "orange"
-              : item.status === "complete"
-              ? "green"
-              : "red"
-          }
-        />
-        <Text
-          style={[
-            styles.statusText,
-            item.status === "pending"
-              ? { color: "orange" }
-              : item.status === "complete"
-              ? { color: "green" }
-              : { color: "red" },
-          ]}
-        >
-          {item.status}
-        </Text>
-      </View>
-
-      {/* NEW BUTTON UI */}
-      <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={styles.editBtn}
-          onPress={() => openEditModal(item)}
-        >
-          <Ionicons name="create-outline" size={18} color="#fff" />
-          <Text style={styles.editText}>Edit</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.deleteBtn}
-          onPress={() => deleteRequest(item.id)}
-        >
-          <Ionicons name="trash-outline" size={18} color="#fff" />
-          <Text style={styles.deleteText}>Delete</Text>
-        </TouchableOpacity>
-      </View>
+  const renderLoading = () => (
+    <View style={styles.loadingContainer}>
+      <Text style={styles.loadingCount}>{loadingCount}%</Text>
+      <ActivityIndicator size="large" color="#0D6EFD" />
+      <Text style={styles.loadingText}>Fetching your requests...</Text>
     </View>
   );
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={26} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Requests</Text>
-      </View>
-
-      {loading ? (
-        <ActivityIndicator size="large" color="#2196F3" style={{ marginTop: 40 }} />
-      ) : requests.length === 0 ? (
-        <Text style={styles.noData}>No requests found.</Text>
-      ) : (
-     <FlatList
-  data={requests}
-  keyExtractor={(item) => item.id.toString()}
-  renderItem={renderItem}
-  initialNumToRender={6}
-  maxToRenderPerBatch={6}
-  windowSize={5}
-  removeClippedSubviews={true}
-  contentContainerStyle={{
-    padding: 15,
-    paddingBottom: 80,
-  }}
-/>
-
-
+      {Platform.OS !== "web" && (
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       )}
 
-      {/* EDIT MODAL */}
-      <Modal visible={editModal} transparent animationType="fade">
+      <View style={styles.topNav}>
+        <View>
+          <Text style={styles.pageTitle}>My Requests</Text>
+          <Text style={styles.pageSubtitle}>
+            Track your department requisitions
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+        >
+          <Ionicons name="chevron-back" size={24} color="#666" />
+        </TouchableOpacity>
+      </View>
+
+      <View
+        style={[
+          styles.contentWrapper,
+          { width: isDesktop ? MAX_CONTENT_WIDTH : "100%" },
+        ]}
+      >
+        {loading ? (
+          renderLoading()
+        ) : requests.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="document-text-outline" size={64} color="#DDE0E3" />
+            <Text style={styles.noData}>No requests found for your ID.</Text>
+          </View>
+        ) : (
+          <View style={{ flex: 1 }}>
+            <FlatList
+              data={requests}
+              keyExtractor={(item, idx) =>
+                item.id ? item.id.toString() : idx.toString()
+              }
+              renderItem={renderItem}
+              contentContainerStyle={styles.listPadding}
+              showsVerticalScrollIndicator={false}
+            />
+          </View>
+        )}
+      </View>
+
+      {/* Edit/View Modal */}
+      <Modal visible={editModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
+          <View style={[styles.modalBox, { width: isDesktop ? 500 : "90%" }]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Request</Text>
+              <Text style={styles.modalTitle}>Request Details</Text>
               <TouchableOpacity onPress={() => setEditModal(false)}>
-                <Ionicons name="close" size={26} color="#555" />
+                <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
 
-            <TextInput
-              style={styles.input}
-              placeholder="Name"
-              value={editName}
-              onChangeText={setEditName}
-            />
-
-            <TextInput
-              style={styles.input}
-              placeholder="Email"
-              value={editEmail}
-              onChangeText={setEditEmail}
-            />
-
-            <TextInput
-              style={styles.input}
-              placeholder="Department"
-              value={editDept}
-              onChangeText={setEditDept}
-            />
-
-            <TextInput
-              style={[styles.input, { height: 100 }]}
-              placeholder="Query Reason"
-              multiline
-              value={editReason}
-              onChangeText={setEditReason}
-            />
+            <ScrollView>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Requester Name</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editName}
+                  onChangeText={setEditName}
+                />
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Email Address</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editEmail}
+                  onChangeText={setEditEmail}
+                />
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Reason / Query</Text>
+                <TextInput
+                  style={[styles.input, { height: 80, textAlignVertical: "top" }]}
+                  multiline
+                  value={editReason}
+                  onChangeText={setEditReason}
+                />
+              </View>
+            </ScrollView>
 
             <View style={styles.modalActions}>
               <TouchableOpacity
-                style={styles.cancelBtn}
+                style={[styles.closeBtn, { marginRight: 10 }]}
                 onPress={() => setEditModal(false)}
               >
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Text style={styles.closeBtnText}>Close</Text>
               </TouchableOpacity>
-
               <TouchableOpacity style={styles.saveBtn} onPress={updateRequest}>
-                <Text style={styles.saveText}>Update</Text>
+                <Text style={styles.saveText}>Update Request</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -306,143 +304,81 @@ export default function EmployeeRequestListScreen({ navigation }) {
   );
 }
 
-/* =======================
-      STYLES
-========================== */
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F4F8FB" ,     marginTop:20,},
-
-  header: {
-    backgroundColor: "#2196F3",
-    flexDirection: "row",
+  container: { flex: 1, backgroundColor: "#F8F9FA" },
+  topNav: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
     alignItems: "center",
-    padding: 15,
-    gap: 10,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "ios" ? 50 : 20,
+    paddingBottom: 15,
+    backgroundColor: "#fff",
   },
-  headerTitle: { color: "#fff", fontSize: 20, fontWeight: "bold" },
+  pageTitle: { fontSize: 22, fontWeight: "700", color: "#1A1A1A", textAlign: "right" },
+  pageSubtitle: { fontSize: 13, color: "#666", textAlign: "right" },
+  backBtn: { padding: 8, borderRadius: 10, backgroundColor: "#F0F0F0" },
+
+  contentWrapper: { alignSelf: "center", flex: 1 },
+  listPadding: { padding: 16, paddingBottom: 100 },
 
   card: {
     backgroundColor: "#fff",
-    padding: 18,
-    borderRadius: 15,
-    marginBottom: 14,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: "#e5e5e5",
-  },
-
-  row: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
-  nameText: { fontSize: 18, fontWeight: "700", color: "#1565C0" },
-  subText: { fontSize: 14, color: "#444" },
-  department: { fontSize: 15, color: "#222", fontWeight: "600" },
-  reason: { fontSize: 15, color: "#444", flexShrink: 1 },
-
-  statusContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 20,
-    backgroundColor: "#f0f0f0",
-    marginTop: 12,
-    alignSelf: "flex-start",
-    gap: 6,
-  },
-  statusText: { fontSize: 14, fontWeight: "700", textTransform: "capitalize" },
-
-  /* NEW BUTTON UI */
-  actionRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 18,
-  },
-
-  editBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#1565C0",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    elevation: 2,
-    gap: 6,
-  },
-  editText: { color: "#fff", fontSize: 14, fontWeight: "600" },
-
-  deleteBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#E53935",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    elevation: 2,
-    gap: 6,
-  },
-  deleteText: { color: "#fff", fontSize: 14, fontWeight: "600" },
-
-  noData: {
-    textAlign: "center",
-    marginTop: 40,
-    fontSize: 17,
-    color: "#777",
-  },
-
-  /* MODAL */
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  modalBox: {
-    width: "92%",
-    backgroundColor: "#fff",
-    padding: 20,
     borderRadius: 16,
-    elevation: 10,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#EEF0F2",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
   },
+  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 },
+  headerLeft: { flexDirection: "row", alignItems: "center" },
+  iconBox: { width: 44, height: 44, borderRadius: 12, justifyContent: "center", alignItems: "center" },
+  cardTitle: { fontSize: 16, fontWeight: "700", color: "#333" },
+  cardSub: { fontSize: 12, color: "#999", marginTop: 2 },
 
-  modalHeader: {
+  statusBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  statusLabel: { fontSize: 12, fontWeight: "700", marginLeft: 4, textTransform: "uppercase" },
+
+  cardBody: { backgroundColor: "#F9FAFB", borderRadius: 12, padding: 12, marginBottom: 15 },
+  bodyLabel: { fontSize: 12, fontWeight: "600", color: "#888", marginBottom: 8 },
+  itemRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
+  itemName: { fontSize: 14, color: "#444", fontWeight: "500" },
+  itemQty: { fontSize: 14, color: "#0D6EFD", fontWeight: "700" },
+
+  cardFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F3F5",
   },
+  dateText: { fontSize: 12, color: "#999" },
+  detailBtn: { paddingVertical: 6, paddingHorizontal: 12 },
+  detailBtnText: { color: "#0D6EFD", fontWeight: "700", fontSize: 13 },
 
-  modalTitle: { fontSize: 20, fontWeight: "700", color: "#1565C0" },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loadingCount: { fontSize: 42, fontWeight: "800", color: "#0D6EFD", marginBottom: 10 },
+  loadingText: { fontSize: 14, color: "#666" },
 
-  input: {
-    backgroundColor: "#f1f3f4",
-    padding: 12,
-    borderRadius: 10,
-    fontSize: 15,
-    marginTop: 10,
-    elevation: 1,
-  },
+  emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center", marginTop: 100 },
+  noData: { marginTop: 15, fontSize: 15, color: "#999" },
 
-  modalActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginTop: 15,
-    gap: 10,
-  },
-
-  cancelBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    backgroundColor: "#e0e0e0",
-    borderRadius: 10,
-  },
-  cancelText: { fontSize: 15, color: "#333", fontWeight: "600" },
-
-  saveBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    backgroundColor: "#1565C0",
-    borderRadius: 10,
-  },
-  saveText: { fontSize: 15, color: "#fff", fontWeight: "700" },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
+  modalBox: { backgroundColor: "#fff", padding: 24, borderRadius: 20 },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
+  modalTitle: { fontSize: 18, fontWeight: "700", color: "#333" },
+  inputGroup: { marginBottom: 15 },
+  label: { fontSize: 12, fontWeight: "600", color: "#999", marginBottom: 6, textTransform: "uppercase" },
+  input: { backgroundColor: "#F9FAFB", padding: 14, borderRadius: 12, fontSize: 15, borderWidth: 1, borderColor: "#EEF0F2" },
+  modalActions: { flexDirection: "row", justifyContent: "flex-end", marginTop: 20 },
+  closeBtn: { padding: 14 },
+  closeBtnText: { color: "#666", fontWeight: "600" },
+  saveBtn: { backgroundColor: "#0D6EFD", paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12 },
+  saveText: { color: "#fff", fontWeight: "700" },
 });

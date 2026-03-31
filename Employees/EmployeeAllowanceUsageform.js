@@ -1,25 +1,36 @@
 import React, { useState, useEffect } from "react";
 import { 
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, Dimensions, ActivityIndicator 
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator, Platform, useWindowDimensions
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { getEmployeeId } from "../utils/storage";
 
 export default function AddAllowanceUsageScreen({ navigation }) {
-
   const [empData, setEmpData] = useState({ emp_id: null, emp_name: "", emp_email: "", department: "" });
   const [allowanceAmount, setAllowanceAmount] = useState(0);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingCount, setLoadingCount] = useState({ current: 0, total: 2 }); 
 
   const API_BASE = "https://hospitaldatabasemanagement.onrender.com";
-  const screenWidth = Dimensions.get("window").width;
+
+  // ✅ Responsive Breakpoints
+  const { width: screenWidth } = useWindowDimensions();
+  const isDesktop = screenWidth > 1024;
+  const isTablet = screenWidth > 768;
+
+  const showAlert = (title, message) => {
+    if (Platform.OS === 'web') window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
 
   const fetchEmployeeDetails = async () => {
     try {
       setLoading(true);
+      setLoadingCount({ current: 0, total: 2 });
+
       const empId = await getEmployeeId();
-      if (!empId) return Alert.alert("Error", "Employee ID not found");
+      if (!empId) return showAlert("Error", "Employee ID not found");
 
       const empResponse = await fetch(`${API_BASE}/employee/${empId}`);
       const empJson = await empResponse.json();
@@ -40,7 +51,7 @@ export default function AddAllowanceUsageScreen({ navigation }) {
       setAllowanceAmount(amount);
       setRows([{ amount: amount, amountUsed: "", description: "" }]);
     } catch (err) {
-      Alert.alert("Error", err.message);
+      showAlert("Error", err.message);
     } finally {
       setLoading(false);
     }
@@ -51,7 +62,7 @@ export default function AddAllowanceUsageScreen({ navigation }) {
   const addRow = () => {
     const totalUsed = rows.reduce((sum, r) => sum + (parseFloat(r.amountUsed) || 0), 0);
     const remaining = allowanceAmount - totalUsed;
-    if (remaining <= 0) return Alert.alert("No remaining allowance", "All allowance has been used.");
+    if (remaining <= 0) return showAlert("No remaining allowance", "All allowance has been used.");
     setRows([...rows, { amount: remaining, amountUsed: "", description: "" }]);
   };
 
@@ -61,9 +72,9 @@ export default function AddAllowanceUsageScreen({ navigation }) {
     const usedBefore = updated.slice(0, index).reduce((sum, r) => sum + (parseFloat(r.amountUsed) || 0), 0);
     const remaining = allowanceAmount - usedBefore;
 
-    if (numericValue > remaining) return Alert.alert("Error", "Amount used cannot exceed remaining allowance");
+    if (numericValue > remaining) return showAlert("Error", "Amount exceeds remaining allowance");
 
-    updated[index].amountUsed = numericValue;
+    updated[index].amountUsed = value; // Keep as string for input
     updated[index].amount = remaining;
 
     let cumulativeUsed = usedBefore + numericValue;
@@ -71,7 +82,6 @@ export default function AddAllowanceUsageScreen({ navigation }) {
       updated[i].amount = allowanceAmount - cumulativeUsed;
       cumulativeUsed += parseFloat(updated[i].amountUsed || 0);
     }
-
     setRows(updated);
   };
 
@@ -82,19 +92,21 @@ export default function AddAllowanceUsageScreen({ navigation }) {
   };
 
   const deleteRow = (index) => {
-    Alert.alert(
-      "Confirm Delete",
-      "Are you sure you want to delete this row?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: () => setRows(rows.filter((_, i) => i !== index)) }
-      ]
-    );
+    if (Platform.OS === 'web') {
+        if (window.confirm("Are you sure you want to delete this row?")) {
+            setRows(rows.filter((_, i) => i !== index));
+        }
+    } else {
+        Alert.alert("Confirm Delete", "Are you sure?", [
+            { text: "Cancel", style: "cancel" },
+            { text: "Delete", style: "destructive", onPress: () => setRows(rows.filter((_, i) => i !== index)) }
+        ]);
+    }
   };
 
   const handleAddUsage = async () => {
     for (const row of rows) {
-      if (!row.description.trim()) return Alert.alert("Error", "Description cannot be empty");
+      if (!row.description.trim()) return showAlert("Error", "Description cannot be empty");
     }
 
     const allDescriptions = rows.map(r => r.description.trim()).join(", ");
@@ -118,122 +130,160 @@ export default function AddAllowanceUsageScreen({ navigation }) {
 
       if (!res.ok) throw new Error("Failed to add allowance usage");
 
-      Alert.alert("Success", "Usage details added!");
+      showAlert("Success", "Usage details added!");
       setRows([{ amount: allowanceAmount, amountUsed: "", description: "" }]);
     } catch (err) {
-      Alert.alert("Error", err.message);
+      showAlert("Error", err.message);
     }
   };
 
-  if (loading)
-    return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text>Loading...</Text>
-      </View>
-    );
+  if (loading) return (
+    <View style={styles.loader}>
+      <ActivityIndicator size="large" color="#007bff" />
+      <Text style={styles.loaderText}>Loading... {loadingCount.current} / {loadingCount.total}</Text>
+    </View>
+  );
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 30 }}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.navigate("Dashboard")}>
-          <Ionicons name="arrow-back" size={28} color="#1e90ff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Add Allowance Usage</Text>
-      </View>
-
-      {/* Employee Info */}
-      {[["person-circle-outline", empData.emp_name], ["email", empData.emp_email], ["business-outline", empData.department]].map(([icon, value], idx) => (
-        <View key={idx} style={styles.infoCard}>
-          {icon === "email" ? <MaterialIcons name="email" size={24} color="#1e90ff" /> : <Ionicons name={icon} size={24} color="#1e90ff" />}
-          <View style={styles.infoText}>
-            <Text style={styles.infoValue}>{value || "Loading..."}</Text>
+return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+      <View style={[styles.mainWrapper, isDesktop && styles.desktopWrapper]}>
+        
+        {/* Header Section */}
+        <View style={styles.topNav}>
+          <View style={styles.headerInfo}>
+            <Text style={styles.pageTitle}>Allowance Usage</Text>
+            <Text style={styles.pageSubtitle}>Manage and track your allowance spending</Text>
           </View>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.navigate("Dashboard")}>
+            <Ionicons name="close-outline" size={24} color="#666" />
+          </TouchableOpacity>
         </View>
-      ))}
 
-      {/* Table */}
-      <View style={styles.tableContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator>
-          <View style={{ minWidth: Math.max(650, screenWidth - 40) }}>
-            {/* Header */}
-            <View style={styles.tableHeaderRow}>
-              <Text style={styles.headerCell}>Remaining (₹)</Text>
-              <Text style={styles.headerCell}>Amount Used (₹)</Text>
-              <Text style={[styles.headerCell, { flex: 1 }]}>Description</Text>
-              <Text style={styles.headerCell}>Action</Text>
-            </View>
-
-            {/* Rows */}
-            {rows.map((item, index) => (
-              <View key={index} style={styles.rowCard}>
-                <View style={styles.cellBox}>
-                  <Text style={styles.cell}>{item.amount}</Text>
+        {/* Info Stat Cards */}
+        <View style={[styles.infoGrid, isTablet && styles.infoGridRow]}>
+            <View style={styles.statCard}>
+                <View style={[styles.iconBox, { backgroundColor: '#E8F1FF' }]}>
+                    <Ionicons name="person" size={20} color="#0D6EFD" />
                 </View>
+                <Text style={styles.statLabel}>Employee</Text>
+                <Text style={styles.statValue} numberOfLines={1}>{empData.emp_name || "---"}</Text>
+            </View>
+            <View style={styles.statCard}>
+                <View style={[styles.iconBox, { backgroundColor: '#E7F9ED' }]}>
+                    <Ionicons name="business" size={20} color="#28A745" />
+                </View>
+                <Text style={styles.statLabel}>Department</Text>
+                <Text style={styles.statValue}>{empData.department || "---"}</Text>
+            </View>
+            <View style={styles.statCard}>
+                <View style={[styles.iconBox, { backgroundColor: '#FFF8E6' }]}>
+                    <Ionicons name="wallet" size={20} color="#FFA500" />
+                </View>
+                <Text style={styles.statLabel}>Total Allowance</Text>
+                <Text style={styles.statValue}>₹{allowanceAmount}</Text>
+            </View>
+        </View>
 
-                <TextInput
-                  style={[styles.amountInput, { width: screenWidth > 768 ? 150 : 120 }]}
-                  placeholder="Enter amount"
-                  keyboardType="numeric"
-                  value={item.amountUsed?.toString() || ""}
-                  onChangeText={(text) => updateAmountUsed(text, index)}
-                />
-
-                <TextInput
-                  style={[styles.descriptionInput, { minWidth: screenWidth > 768 ? 300 : 200 }]}
-                  placeholder="Enter usage description..."
-                  multiline
-                  value={item.description}
-                  onChangeText={(text) => updateDescription(text, index)}
-                />
-
-                <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteRow(index)}>
-                  <Ionicons name="trash-outline" size={24} color="#ff4d4d" />
-                </TouchableOpacity>
-              </View>
-            ))}
-
-            {/* Add Row */}
-            <TouchableOpacity style={styles.addRowBtn} onPress={addRow}>
-              <Text style={styles.addRowText}>+ Add Row</Text>
-            </TouchableOpacity>
+        {/* Entry Table Section */}
+        <View style={styles.tableContainer}>
+          <View style={styles.tableHeaderRow}>
+            <Text style={[styles.hCell, { width: 120 }]}>Remaining</Text>
+            <Text style={[styles.hCell, { width: 140 }]}>Amount (₹)</Text>
+            <Text style={[styles.hCell, { flex: 1 }]}>Description / Purpose</Text>
+            <Text style={[styles.hCell, { width: 50 }]}></Text>
           </View>
-        </ScrollView>
-      </View>
 
-      <TouchableOpacity style={styles.button} onPress={handleAddUsage}>
-        <Text style={styles.buttonText}>Submit</Text>
-      </TouchableOpacity>
+          {rows.map((item, index) => (
+            <View key={index} style={styles.entryRow}>
+              <View style={[styles.cell, { width: 120 }]}>
+                <Text style={styles.remainingText}>₹{item.amount}</Text>
+              </View>
+              <TextInput
+                style={[styles.input, { width: 130, fontWeight: '700', color: '#0D6EFD' }]}
+                placeholder="0.00"
+                keyboardType="numeric"
+                value={item.amountUsed?.toString()}
+                onChangeText={(text) => updateAmountUsed(text, index)}
+              />
+              <TextInput
+                style={[styles.input, { flex: 1, minHeight: 45 }]}
+                placeholder="What was this used for?"
+                multiline
+                value={item.description}
+                onChangeText={(text) => updateDescription(text, index)}
+              />
+              <TouchableOpacity style={styles.deleteIcon} onPress={() => deleteRow(index)}>
+                <Ionicons name="trash-bin-outline" size={20} color="#DC3545" />
+              </TouchableOpacity>
+            </View>
+          ))}
+
+          <TouchableOpacity style={styles.addButton} onPress={addRow}>
+            <Ionicons name="add" size={18} color="#0D6EFD" />
+            <Text style={styles.addButtonText}>Add Another Row</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Footer Actions */}
+        <View style={styles.footer}>
+            <TouchableOpacity style={styles.submitBtn} onPress={handleAddUsage}>
+                <Text style={styles.submitBtnText}>Submit Records</Text>
+            </TouchableOpacity>
+        </View>
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#e6f0ff", padding: 20, marginTop: 20 },
-  header: { flexDirection: "row", alignItems: "center", marginBottom: 20 },
-  headerTitle: { fontSize: 20, fontWeight: "700", color: "#1e3c72", marginLeft: 10 },
-  infoCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", padding: 15, borderRadius: 12, marginBottom: 15, elevation: 4 },
-  infoText: { marginLeft: 15 },
-  infoValue: { fontSize: 16, fontWeight: "600", color: "#1e3c72" },
+  container: { flex: 1, backgroundColor: "#F8F9FA" },
+  scrollContent: { paddingVertical: 40, paddingHorizontal: 20, alignItems: 'center' },
+  mainWrapper: { width: '100%' },
+  desktopWrapper: { maxWidth: 1000 },
 
-  tableContainer: { backgroundColor: "#fff", borderRadius: 12, padding: 10, marginBottom: 20, borderWidth: 1, borderColor: "#a0c4ff" },
-  tableHeaderRow: { flexDirection: "row", paddingBottom: 5, borderBottomWidth: 1, borderBottomColor: "#a0c4ff" },
-  headerCell: { fontWeight: "700", fontSize: 16, color: "#1e3c72", paddingHorizontal: 8, minWidth: 100 },
+  topNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 25 },
+  headerInfo: { flex: 1 },
+  pageTitle: { fontSize: 24, fontWeight: '700', color: '#1A1A1A' },
+  pageSubtitle: { fontSize: 14, color: '#666', marginTop: 4 },
+  backBtn: { padding: 8, backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#DDD' },
 
-  rowCard: { flexDirection: "row", alignItems: "flex-start", marginVertical: 5, padding: 12, borderRadius: 10, backgroundColor: "#f2f8ff" },
-  cellBox: { width: 100, justifyContent: "center", alignItems: "center" },
-  cell: { fontSize: 16, color: "#1e3c72" },
+  infoGrid: { gap: 15, marginBottom: 25 },
+  infoGridRow: { flexDirection: 'row' },
+  statCard: { 
+    flex: 1, backgroundColor: "#fff", padding: 18, borderRadius: 12, 
+    borderWidth: 1, borderColor: '#E0E0E0', elevation: 2,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4,
+  },
+  iconBox: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  statLabel: { fontSize: 12, color: '#888', fontWeight: '600', textTransform: 'uppercase' },
+  statValue: { fontSize: 17, fontWeight: '700', color: '#333', marginTop: 4 },
 
-  amountInput: { minHeight: 45, borderWidth: 1, borderColor: "#a0c4ff", borderRadius: 8, paddingHorizontal: 8, textAlignVertical: "center", marginHorizontal: 5 },
-  descriptionInput: { flex: 1, minHeight: 70, borderWidth: 1, borderColor: "#a0c4ff", borderRadius: 8, padding: 8, textAlignVertical: "top", marginHorizontal: 5 },
+  tableContainer: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#E0E0E0', padding: 15, marginBottom: 30 },
+  tableHeaderRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#F0F0F0', paddingBottom: 12, marginBottom: 10 },
+  hCell: { fontSize: 12, fontWeight: '700', color: '#999', textTransform: 'uppercase' },
+  
+  entryRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F8F9FA' },
+  cell: { paddingRight: 10 },
+  remainingText: { fontSize: 15, fontWeight: '600', color: '#666' },
+  input: { 
+    backgroundColor: '#FCFDFF', borderWidth: 1, borderColor: '#E2E8F0', 
+    borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, marginHorizontal: 4 ,outlineStyle: "none"
+  },
+  deleteIcon: { width: 40, alignItems: 'center', justifyContent: 'center' },
 
-  deleteBtn: { width: 80, justifyContent: "center", alignItems: "center", marginHorizontal: 5 },
+  addButton: { 
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', 
+    marginTop: 15, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6, backgroundColor: '#F0F7FF' 
+  },
+  addButtonText: { color: '#0D6EFD', fontWeight: '600', fontSize: 13, marginLeft: 6 },
 
-  addRowBtn: { backgroundColor: "#1e90ff", padding: 10, alignItems: "center", borderRadius: 10, marginTop: 10 },
-  addRowText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  button: { backgroundColor: "#1e90ff", padding: 15, borderRadius: 12, alignItems: "center" },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  footer: { alignItems: 'flex-end' },
+  submitBtn: { 
+    backgroundColor: '#0D6EFD', paddingVertical: 14, paddingHorizontal: 32, borderRadius: 10,
+    shadowColor: "#0D6EFD", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 6,
+  },
+  submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 
-  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loader: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: '#F8F9FA' },
+  loaderText: { marginTop: 12, fontSize: 14, color: "#666" },
 });

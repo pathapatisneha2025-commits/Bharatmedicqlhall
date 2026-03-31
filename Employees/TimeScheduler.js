@@ -36,7 +36,10 @@ const SetReminderScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
 
   const scheduledIdsRef = useRef([]);
-
+ const showAlert = (title, message) => {
+    if (Platform.OS === "web") window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
   /* ---------------- INIT ---------------- */
   useEffect(() => {
     const init = async () => {
@@ -87,7 +90,7 @@ const SetReminderScreen = ({ navigation }) => {
         scheduledIdsRef.current = saved ? JSON.parse(saved) : [];
       } catch (err) {
         console.error(err);
-        Alert.alert("Error", "Initialization failed");
+        showAlert("Error", "Initialization failed");
       }
     };
 
@@ -111,7 +114,7 @@ const SetReminderScreen = ({ navigation }) => {
     if (status !== "granted") {
       const req = await Notifications.requestPermissionsAsync();
       if (req.status !== "granted") {
-        Alert.alert("Permission required", "Notifications are disabled");
+        showAlert("Permission required", "Notifications are disabled");
       }
     }
   };
@@ -262,7 +265,7 @@ const scheduleOneTimeNotifications = async () => {
   /* ---------------- SAVE ---------------- */
   const handleSaveReminder = async () => {
     if (!employeeId) {
-      Alert.alert("Error", "Employee ID not found");
+     showAlert("Error", "Employee ID not found");
       return;
     }
 
@@ -275,7 +278,7 @@ const scheduleOneTimeNotifications = async () => {
     );
 
     if (selectedStart <= new Date()) {
-      Alert.alert("Invalid Time", "Please select a future time");
+      showAlert("Invalid Time", "Please select a future time");
       return;
     }
 
@@ -285,14 +288,14 @@ const scheduleOneTimeNotifications = async () => {
       await scheduleOneTimeNotifications();
       setLoading(false);
 
-      Alert.alert(
+      showAlert(
         "Success",
         "You will get a reminder 5 minutes before and at shift start time"
       );
     } catch (e) {
       console.error(e);
       setLoading(false);
-      Alert.alert("Error", "Failed to set reminder");
+     showAlert("Error", "Failed to set reminder");
     }
   };
 

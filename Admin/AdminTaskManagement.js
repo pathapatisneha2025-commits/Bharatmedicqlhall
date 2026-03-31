@@ -11,15 +11,25 @@ import {
   Alert,
   Platform,
   useWindowDimensions,
+  SafeAreaView,
+  Modal,
+  ScrollView
 } from "react-native";
-import { Pencil, Trash2, ArrowLeft, Search } from "lucide-react-native";
+import { Pencil, Trash2, ArrowLeft, Search , Calendar, Clock, User} from "lucide-react-native";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { Picker } from "@react-native-picker/picker";
+import DateTimePickerModal from "react-native-modal-datetime-picker";
 
 const BASE_URL = "https://hospitaldatabasemanagement.onrender.com";
 const STATUS_COLORS = {
   completed: "#d1fae5",
   pending: "#fef3c7",
   overdue: "#fee2e2",
+};
+const theme = {
+  bg: "#f3f4f6",       // background color for badge
+  text: "#1e293b",     // text color
+  border: "#2563eb",   // border/stripe color
 };
 
 const formatDuration = (start, end) => {
@@ -48,10 +58,78 @@ const TaskAssignment = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [searchText, setSearchText] = useState("");
 const [timeFilter, setTimeFilter] = useState("all"); // "all", "daily", "weekly", "monthly"
+const [editModalVisible, setEditModalVisible] = useState(false);
+const [selectedTask, setSelectedTask] = useState(null);
+// Edit Modal States
+  const [editTaskData, setEditTaskData] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editAssignee, setEditAssignee] = useState("");
+  const [editPriority, setEditPriority] = useState("Low");
+  const [editDueDate, setEditDueDate] = useState("");
+  const [editDueTime, setEditDueTime] = useState("");
 
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const navigation = useNavigation();
   const { width } = useWindowDimensions();
+const isWeb = Platform.OS === "web";
+const openEditModal = (task) => {
+    setEditTaskData(task);
+    setEditTitle(task.title);
+    setEditDescription(task.description);
+    setEditAssignee(task.assignto?.[0] || "");
+    setEditPriority(task.priority);
+    setEditDueDate(task.due_date?.split("T")[0]);
+    setEditDueTime(task.due_time || "");
+    setEditModalVisible(true);
+  };
+    const handleDateConfirm = (date) => {
+  setEditDueDate(date.toISOString().split("T")[0]);
+  setShowDatePicker(false);
+};
 
+const handleTimeConfirm = (time) => {
+  const formatted = time.toTimeString().slice(0, 5);
+  setEditDueTime(formatted);
+  setShowTimePicker(false);
+};
+const showAlert = (title, message, buttons) => {
+    if (Platform.OS === "web") {
+      if (buttons && buttons.length > 1) {
+        const confirmed = window.confirm(`${title}\n\n${message}`);
+        if (confirmed) {
+          const okBtn = buttons.find(b => b.style !== "cancel");
+          okBtn?.onPress?.();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
+    };
+const updateTask = async () => {
+  try {
+    await fetch(`${BASE_URL}/task/update/${editTaskData.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: editTitle,
+        description: editDescription,
+        assignees: [editAssignee],
+        priority: editPriority,
+        due_date: editDueDate,
+        due_time: editDueTime,
+      }),
+    });
+
+    setEditModalVisible(false);
+    fetchTasks();
+  } catch (error) {
+    showAlert("Error", "Failed to update task");
+  }
+};
   const fetchTasks = async () => {
     try {
       if (!refreshing) setLoading(true);
@@ -65,7 +143,7 @@ const [timeFilter, setTimeFilter] = useState("all"); // "all", "daily", "weekly"
         setFilteredTasks([]);
       }
     } catch (e) {
-      Alert.alert("Error", "Failed to fetch tasks");
+      showAlert("Error", "Failed to fetch tasks");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -91,7 +169,7 @@ const [timeFilter, setTimeFilter] = useState("all"); // "all", "daily", "weekly"
   }, [searchText, tasks]);
 
   const deleteTask = (taskId) => {
-    Alert.alert("Delete Task", "Are you sure?", [
+    showAlert("Delete Task", "Are you sure?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -141,6 +219,7 @@ useEffect(() => {
         (t.assignees?.join(", ") || "").toLowerCase().includes(searchText.toLowerCase())
     );
   }
+ 
 
   // Apply the time filter
   updated = applyTimeFilter(updated);
@@ -151,158 +230,349 @@ useEffect(() => {
     const status = (item.status || "pending").toLowerCase();
     const statusColor = STATUS_COLORS[status] || "#f3f4f6";
 
-    return (
-      <View
-        style={[
-          styles.taskItem,
-          {
-            borderLeftColor: statusColor,
-            width: Platform.OS === "web" ? 500 : "100%",
-          },
-        ]}
-      >
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.taskTitle}>{item.title}</Text>
-            <Text style={styles.taskDate}>
+
+return (
+      <View style={[styles.taskCard, isWeb && { width: 600, alignSelf: 'center' }]}>
+        <View style={[styles.statusStripe, { backgroundColor: theme.border }]} />
+        <View style={styles.taskContent}>
+          <View style={styles.taskHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.taskTitle}>{item.title}</Text>
+              <View style={styles.metaRow}>
+                <Calendar size={14} color="#6b7280" />
               Created: {new Date(item.created_at).toLocaleDateString()} by {item.created_by || "N/A"}
-            </Text>
-            <Text style={styles.taskDate}>
-              Due: {item.due_date ? new Date(item.due_date).toLocaleDateString() : "-"} {item.due_time || ""}
-            </Text>
-            {status === "completed" && item.completed_time && (
-              <Text style={styles.taskDate}>
-                Time Taken: {formatDuration(item.created_at, item.completed_time)}
-              </Text>
-            )}
-            <Text style={[styles.statusBadge, { backgroundColor: statusColor }]}>
-              {status.toUpperCase()}
-            </Text>
-            <Text style={styles.assignedText}>
-              Assigned To: {item.assignees?.join(", ") || "N/A"}
-            </Text>
+              </View>
+            </View>
+            <View style={styles.actionButtons}>
+           <TouchableOpacity
+  onPress={() => openEditModal(item)}
+  style={styles.iconBtn}
+>
+  <Pencil size={18} color="#2563eb" />
+</TouchableOpacity>
+
+              <TouchableOpacity onPress={() => deleteTask(item.id)} style={[styles.iconBtn, { backgroundColor: '#fef2f2' }]}>
+                <Trash2 size={18} color="#ef4444" />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <View style={{ flexDirection: "row", marginLeft: 10 }}>
-            <TouchableOpacity onPress={() => Alert.alert("Edit Task", "Edit modal here")}>
-              <Pencil size={20} color="#2563eb" />
-            </TouchableOpacity>
-            <TouchableOpacity style={{ marginLeft: 12 }} onPress={() => deleteTask(item.id)}>
-              <Trash2 size={20} color="#ef4444" />
-            </TouchableOpacity>
+          <View style={styles.detailsBox}>
+            <View style={styles.metaRow}>
+              <Clock size={14} color="#374151" />
+              <Text style={styles.detailLabel}>Due:</Text>
+              <Text style={styles.detailValue}>{item.due_date ? new Date(item.due_date).toLocaleDateString() : "-"} {item.due_time || ""}</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <User size={14} color="#374151" />
+              <Text style={styles.detailLabel}>Assignees:</Text>
+              <Text style={styles.detailValue} numberOfLines={1}>{item.assignees?.join(", ") || "Unassigned"}</Text>
+            </View>
+          </View>
+
+          <View style={styles.footerRow}>
+            <View style={[styles.badge, { backgroundColor: theme.bg }]}>
+              <Text style={[styles.badgeText, { color: theme.text }]}>{status.toUpperCase()}</Text>
+            </View>
+          {status === "completed" && item.completed_time && (
+                      <Text style={styles.taskDate}>
+                        Time Taken: {formatDuration(item.created_at, item.completed_time)}
+                      </Text>
+                    )}
           </View>
         </View>
       </View>
     );
   };
 
-  if (loading)
-    return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text style={{ marginTop: 10 }}>Loading tasks...</Text>
-      </View>
-    );
 
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <ArrowLeft size={24} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Task Assignment</Text>
-        <TouchableOpacity style={styles.createTaskButton} onPress={() => navigation.navigate("CreateTask")}>
-          <Text style={styles.createTaskButtonText}>+ Create Task</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Summary Cards */}
-      <View style={[styles.cardRow, Platform.OS === "web" ? { justifyContent: "center" } : {}]}>
-        <View style={[styles.summaryCard, { backgroundColor: STATUS_COLORS.completed }]}>
-          <Text style={styles.cardTitle}>Completed</Text>
-          <Text style={styles.cardCount}>{completedCount}</Text>
-        </View>
-        <View style={[styles.summaryCard, { backgroundColor: STATUS_COLORS.pending }]}>
-          <Text style={styles.cardTitle}>Pending</Text>
-          <Text style={styles.cardCount}>{pendingCount}</Text>
-        </View>
-        <View style={[styles.summaryCard, { backgroundColor: STATUS_COLORS.overdue }]}>
-          <Text style={styles.cardTitle}>Overdue</Text>
-          <Text style={styles.cardCount}>{overdueCount}</Text>
-        </View>
-      </View>
-
-      {/* Search */}
-      <View style={[styles.filterCard, Platform.OS === "web" ? { width: 520, alignSelf: "center" } : {}]}>
-        <View style={styles.searchContainer}>
-          <Search size={20} color="#6b7280" style={{ marginRight: 10 }} />
-          <TextInput
-            style={[styles.searchInput, Platform.OS === "web" ? { fontSize: 16 } : {}]}
-            placeholder="Search by title or assignee..."
-            placeholderTextColor="#9ca3af"
-            value={searchText}
-            onChangeText={setSearchText}
-          />
-        </View>
-      </View>
-<View style={{ flexDirection: "row", justifyContent: "space-around", marginVertical: 10 }}>
-  {["all", "daily", "weekly", "monthly"].map((f) => (
-    <TouchableOpacity
-      key={f}
-      onPress={() => setTimeFilter(f)}
-      style={{
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        borderRadius: 8,
-        backgroundColor: timeFilter === f ? "#2563eb" : "#f3f4f6",
-      }}
-    >
-      <Text style={{ color: timeFilter === f ? "#fff" : "#111827", fontWeight: "600" }}>
-        {f.charAt(0).toUpperCase() + f.slice(1)}
-      </Text>
-    </TouchableOpacity>
-  ))}
-</View>
-
-{/* Tasks List */}
- {filteredTasks.length === 0 ? (
-        <Text style={styles.noTask}>No tasks found</Text>
-      ) : (
-        <FlatList
-          data={filteredTasks}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={renderTask}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#2563eb"]} />}
-          numColumns={1}
-          contentContainerStyle={{ alignItems: Platform.OS === "web" ? "center" : "stretch", paddingBottom: 30 }}
-        />
-      )}
+return (
+  <SafeAreaView style={styles.container}>
+    {/* Header */}
+    <View style={styles.header}>
+      <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerIcon}>
+        <ArrowLeft size={24} color="#1f2937" />
+      </TouchableOpacity>
+      <Text style={styles.headerTitle}>Task Matrix</Text>
+      <TouchableOpacity style={styles.createBtn} onPress={() => navigation.navigate("CreateTask")}>
+        <Text style={styles.createBtnText}>+ Create</Text>
+      </TouchableOpacity>
     </View>
-  );
+
+    {/* FlatList */}
+    <FlatList
+      data={filteredTasks}
+      keyExtractor={(item) => item.id.toString()}
+      renderItem={renderTask}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#2563eb"]} />}
+      ListHeaderComponent={
+        <View style={isWeb && { width: 600, alignSelf: 'center' }}>
+          {/* Stats */}
+          <View style={styles.statsContainer}>
+            <StatCard label="Completed" value={completedCount} color="#10b981" />
+            <StatCard label="Pending" value={pendingCount} color="#f59e0b" />
+            <StatCard label="Overdue" value={overdueCount} color="#ef4444" />
+          </View>
+
+          {/* Search Bar */}
+          <View style={styles.searchBar}>
+            <Search size={20} color="#94a3b8" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search tasks or team..."
+              value={searchText}
+              onChangeText={setSearchText}
+            />
+          </View>
+
+          {/* Time Filter Tabs */}
+          <View style={styles.filterStrip}>
+            {["all", "daily", "weekly", "monthly"].map((f) => (
+              <TouchableOpacity
+                key={f}
+                onPress={() => setTimeFilter(f)}
+                style={[styles.filterTab, timeFilter === f && styles.activeFilterTab]}
+              >
+                <Text style={[styles.filterTabText, timeFilter === f && styles.activeFilterTabText]}>
+                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      }
+      ListEmptyComponent={<Text style={styles.emptyText}>No tasks found matching your criteria</Text>}
+      contentContainerStyle={{ padding: 16 }}
+    />
+
+    {/* EDIT TASK MODAL */}
+     <Modal visible={editModalVisible} transparent animationType="slide">
+        <View style={styles.modalBackground}>
+          <View style={styles.modalContent}>
+            <ScrollView>
+              <Text style={styles.modalTitle}>Edit Task</Text>
+
+              <TextInput style={styles.input} placeholder="Title" value={editTitle} onChangeText={setEditTitle} />
+              <TextInput
+                style={[styles.input, { height: 80 }]}
+                placeholder="Description"
+                value={editDescription}
+                onChangeText={setEditDescription}
+                multiline
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Assign To (email)"
+                value={editAssignee}
+                onChangeText={setEditAssignee}
+              />
+
+              <Picker selectedValue={editPriority} onValueChange={setEditPriority} style={styles.input}>
+                <Picker.Item label="High" value="High" />
+                <Picker.Item label="Medium" value="Medium" />
+                <Picker.Item label="Low" value="Low" />
+              </Picker>
+
+              {/* Date Picker */}
+              <TouchableOpacity
+                style={[styles.input, { flexDirection: "row", alignItems: "center" }]}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text>{editDueDate || "Select Due Date"}</Text>
+              </TouchableOpacity>
+              <DateTimePickerModal
+                isVisible={showDatePicker}
+                mode="date"
+                onConfirm={handleDateConfirm}
+                onCancel={() => setShowDatePicker(false)}
+              />
+
+              {/* Time Picker */}
+              <TouchableOpacity
+                style={[styles.input, { flexDirection: "row", alignItems: "center" }]}
+                onPress={() => setShowTimePicker(true)}
+              >
+                <Clock size={18} color="#374151" style={{ marginRight: 8 }} />
+                <Text>{editDueTime || "Select Due Time"}</Text>
+              </TouchableOpacity>
+              <DateTimePickerModal
+                isVisible={showTimePicker}
+                mode="time"
+                onConfirm={handleTimeConfirm}
+                onCancel={() => setShowTimePicker(false)}
+                is24Hour={true}
+              />
+
+              <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 10 }}>
+                <TouchableOpacity style={styles.cancelButton} onPress={() => setEditModalVisible(false)}>
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.saveButton} onPress={updateTask}>
+                  <Text style={styles.saveButtonText}>Update</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+  </SafeAreaView>
+);
+
 };
 
+const StatCard = ({ label, value, color }) => (
+  <View style={styles.statCard}>
+    <Text style={[styles.statValue, { color }]}>{value}</Text>
+    <Text style={styles.statLabel}>{label}</Text>
+  </View>
+);
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f9fafb", paddingHorizontal: 10, paddingTop: 30 },
+  container: { flex: 1, backgroundColor: "#f8fafc" },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 16,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+  },
+  headerIcon: { padding: 4 },
+  headerTitle: { fontSize: 20, fontWeight: "800", color: "#1e293b" },
+  createBtn: { backgroundColor: "#2563eb", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+  createBtnText: { color: "#fff", fontWeight: "700" },
+
+  statsContainer: { flexDirection: "row", gap: 12, marginBottom: 20 },
+  statCard: {
+    flex: 1, backgroundColor: "#fff", padding: 16, borderRadius: 12,
+    alignItems: "center", borderWidth: 1, borderColor: "#e2e8f0",
+    shadowColor: "#000", shadowOpacity: 0.02, shadowRadius: 4, elevation: 2,
+  },
+  statValue: { fontSize: 22, fontWeight: "800" },
+  statLabel: { fontSize: 11, color: "#64748b", fontWeight: "600", marginTop: 4, textTransform: 'uppercase' },
+
+  searchBar: {
+    flexDirection: "row", alignItems: "center", backgroundColor: "#fff",
+    paddingHorizontal: 16, borderRadius: 12, height: 50, borderWidth: 1, borderColor: "#e2e8f0",
+    marginBottom: 12,
+  },
+  searchInput: { flex: 1, marginLeft: 12, fontSize: 15, color: "#1e293b" },
+
+  filterStrip: { flexDirection: "row", backgroundColor: "#e2e8f0", padding: 4, borderRadius: 10, marginBottom: 20 },
+  filterTab: { flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: 8 },
+  activeFilterTab: { backgroundColor: "#fff", shadowColor: "#000", shadowOpacity: 0.1, elevation: 2 },
+  filterTabText: { fontSize: 13, fontWeight: "600", color: "#64748b" },
+  activeFilterTabText: { color: "#2563eb" },
+
+  taskCard: {
+    backgroundColor: "#fff", borderRadius: 16, marginBottom: 16,
+    flexDirection: "row", overflow: "hidden", borderWidth: 1, borderColor: "#e2e8f0",
+    shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 10, elevation: 3,
+  },
+  statusStripe: { width: 6 },
+  taskContent: { flex: 1, padding: 16 },
+  taskHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  taskTitle: { fontSize: 17, fontWeight: "700", color: "#1e293b", marginBottom: 4 },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
+  metaText: { fontSize: 12, color: "#64748b" },
+  
+  actionButtons: { flexDirection: "row", gap: 8 },
+  iconBtn: { padding: 8, backgroundColor: "#f1f5f9", borderRadius: 8 },
+
+  detailsBox: { backgroundColor: "#f8fafc", padding: 10, borderRadius: 10, marginVertical: 12 },
+  detailLabel: { fontSize: 12, fontWeight: "700", color: "#475569" },
+  detailValue: { fontSize: 12, color: "#1e293b", flex: 1 },
+
+  footerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
+  badgeText: { fontSize: 11, fontWeight: "800" },
+  durationText: { fontSize: 12, color: "#64748b", fontWeight: "600" },
+
+  emptyText: { textAlign: "center", color: "#94a3b8", marginTop: 40, fontSize: 15 },
   loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
-  backButton: { padding: 8 },
-  headerTitle: { fontSize: 22, fontWeight: "bold", color: "#111827", flex: 1, textAlign: "center" },
-  createTaskButton: { backgroundColor: "#2563eb", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8 },
-  createTaskButtonText: { color: "#fff", fontWeight: "bold", fontSize: 14 },
-  cardRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap" },
-  summaryCard: { flex: 1, padding: 18, borderRadius: 12, marginHorizontal: 6, marginVertical: 8, elevation: 3, alignItems: "center", maxWidth: 220 },
-  cardTitle: { fontSize: 15, color: "#374151", fontWeight: "600", marginBottom: 6 },
-  cardCount: { fontSize: 24, fontWeight: "bold", color: "#111827" },
-  filterCard: { backgroundColor: "#fff", padding: 14, borderRadius: 12, marginBottom: 15, elevation: 3 },
-  searchContainer: { backgroundColor: "#f3f4f6", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, flexDirection: "row", alignItems: "center" },
-  searchInput: { flex: 1, fontSize: 15, color: "#111827", paddingVertical: 6 },
-  taskItem: { backgroundColor: "#fff", padding: 16, borderRadius: 12, marginBottom: 14, elevation: 2, borderLeftWidth: 6 },
-  taskTitle: { fontSize: 17, fontWeight: "bold", color: "#111827", marginBottom: 5 },
-  taskDate: { fontSize: 13, color: "#6b7280" },
-  assignedText: { marginTop: 7, fontSize: 13, color: "#374151" },
-  statusBadge: { marginTop: 6, alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 3, borderRadius: 14, color: "#111827", fontWeight: "bold", fontSize: 13 },
-  noTask: { textAlign: "center", marginTop: 25, fontSize: 16, color: "#6b7280" },
+  modalOverlay: {
+  flex: 1,
+  backgroundColor: "rgba(0,0,0,0.4)",
+  justifyContent: "center",
+  alignItems: "center",
+},
+modalContent: {
+  width: "90%",
+  maxWidth: 400,
+  backgroundColor: "#fff",
+  padding: 20,
+  borderRadius: 12,
+  elevation: 5,
+},
+modalTitle: { fontSize: 18, fontWeight: "700", marginBottom: 12, color: "#1e293b" },
+modalBackground: {
+  flex: 1,
+  backgroundColor: "rgba(0,0,0,0.45)",
+  justifyContent: "center",
+  alignItems: "center",
+},
+
+modalContent: {
+  width: "92%",
+  maxWidth: 450,
+  backgroundColor: "#ffffff",
+  borderRadius: 16,
+  padding: 20,
+  shadowColor: "#000",
+  shadowOpacity: 0.15,
+  shadowRadius: 10,
+  elevation: 8,
+},
+
+modalTitle: {
+  fontSize: 20,
+  fontWeight: "800",
+  color: "#1e293b",
+  marginBottom: 16,
+  textAlign: "center",
+},
+
+input: {
+  borderWidth: 1,
+  borderColor: "#e2e8f0",
+  backgroundColor: "#f8fafc",
+  borderRadius: 10,
+  paddingHorizontal: 12,
+  paddingVertical: 12,
+  marginBottom: 12,
+  fontSize: 14,
+  color: "#1e293b",
+},
+
+cancelButton: {
+  flex: 1,
+  backgroundColor: "#f1f5f9",
+  paddingVertical: 12,
+  borderRadius: 10,
+  alignItems: "center",
+  marginRight: 8,
+},
+
+cancelButtonText: {
+  color: "#475569",
+  fontWeight: "700",
+},
+
+saveButton: {
+  flex: 1,
+  backgroundColor: "#2563eb",
+  paddingVertical: 12,
+  borderRadius: 10,
+  alignItems: "center",
+},
+
+saveButtonText: {
+  color: "#ffffff",
+  fontWeight: "700",
+},
+
+
 });
 
 export default TaskAssignment;

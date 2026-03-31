@@ -10,410 +10,263 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { LinearGradient } from "expo-linear-gradient";
 
-const DOCTOR_REGISTER_API =
-  "https://hospitaldatabasemanagement.onrender.com/doctor/register";
+const DOCTOR_REGISTER_API = "https://hospitaldatabasemanagement.onrender.com/doctor/register";
 
 export default function DoctorRegisterScreen({ navigation }) {
   const [form, setForm] = useState({
-    name: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-    phoneNumber: "",
-    department: "",
-    role: "",
-    gender: "",
-    experience: "", 
-     description: "",   // ✅ NEW FIELD ADDED
-     scheduleIn: "",
-    scheduleOut: "",
+    name: "", email: "", password: "", confirmPassword: "",
+    phoneNumber: "", department: "", role: "", gender: "",
+    experience: "", description: "", scheduleIn: "", scheduleOut: "",
   });
 
   const [loading, setLoading] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState({ field: "", visible: false });
-
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [focusedInput, setFocusedInput] = useState("");
+  const { width } = useWindowDimensions();
+  const isDesktop = width > 1024;
 
-  const handleChange = (key, value) => {
-    setForm({ ...form, [key]: value });
+  const showAlert = (title, message) => {
+    if (Platform.OS === 'web') window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
   };
+
+  const handleChange = (key, value) => setForm({ ...form, [key]: value });
 
   const handleTimeChange = (event, selectedTime) => {
     if (selectedTime) {
       const hours = selectedTime.getHours().toString().padStart(2, "0");
       const minutes = selectedTime.getMinutes().toString().padStart(2, "0");
-      const timeString = `${hours}:${minutes}`;
-      handleChange(showTimePicker.field, timeString);
+      handleChange(showTimePicker.field, `${hours}:${minutes}`);
     }
     setShowTimePicker({ field: "", visible: false });
   };
 
   const handleRegister = async () => {
-    const {
-      name,
-      email,
-      password,
-      confirmPassword,
-      phoneNumber,
-      department,
-      role,
-      gender,
-      experience,
-     description  , // ✅ NEW
-      scheduleIn,
-      scheduleOut,
-    } = form;
-
-    if (
-      !name ||
-      !email ||
-      !password ||
-      !confirmPassword ||
-      !phoneNumber ||
-      !department ||
-      !role ||
-      !gender ||
-      !experience ||
-        !description ||   // ✅ NEW
-         !scheduleIn ||
-      !scheduleOut
-    ) {
-      Alert.alert("Error", "Please fill all the fields.");
+    if (Object.values(form).some(value => !value)) {
+      showAlert("Error", "Please fill all the fields.");
       return;
     }
-
-    if (password !== confirmPassword) {
-      Alert.alert("Error", "Passwords do not match!");
+    if (form.password !== form.confirmPassword) {
+      showAlert("Error", "Passwords do not match!");
       return;
     }
 
     setLoading(true);
-
     try {
       const response = await fetch(DOCTOR_REGISTER_API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-
       const data = await response.json();
-
       if (response.ok) {
-        Alert.alert("Success", "Doctor registered successfully!");
+        showAlert("Success", "Doctor registered successfully!");
         navigation.navigate("DoctorLogin");
       } else {
-        Alert.alert("Error", data.message || "Registration failed!");
+        showAlert("Error", data.message || "Registration failed!");
       }
     } catch (error) {
-      console.error(error);
-      Alert.alert("Error", "Something went wrong. Please try again.");
+      showAlert("Error", "Something went wrong.");
     } finally {
       setLoading(false);
     }
   };
-  if (loading)
-        return (
-          <View style={styles.loader}>
-            <ActivityIndicator size="large" color="#007bff" />
-            <Text>Loading...</Text>
-          </View>
-        );
+
+  const renderInputField = (label, icon, placeholder, key, props = {}) => {
+    const isFocused = focusedInput === key;
+    return (
+      <View style={[styles.inputWrapper, isDesktop && styles.halfWidth]}>
+        <Text style={styles.fieldLabel}>{label}</Text>
+        <View style={[styles.inputContainer, isFocused && styles.inputFocused]}>
+          <TextInput
+            style={styles.input}
+            placeholder={placeholder}
+            placeholderTextColor="#A0AEC0"
+            value={form[key]}
+            onChangeText={(v) => handleChange(key, v)}
+            onFocus={() => setFocusedInput(key)}
+            onBlur={() => setFocusedInput("")}
+            {...props}
+          />
+          {key.includes("password") && (
+            <TouchableOpacity
+              onPress={() => key === "password" ? setShowPassword(!showPassword) : setShowConfirmPassword(!showConfirmPassword)}
+            >
+              <Ionicons name={key === "password" ? (showPassword ? "eye-off-outline" : "eye-outline") : (showConfirmPassword ? "eye-off-outline" : "eye-outline")} size={20} color="#718096" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    );
+  };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: "#fff" }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: "#fff" }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+      <View style={styles.mainContainer}>
         
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={26} color="#333" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Doctor Registration</Text>
-          <View style={{ width: 26 }} />
-        </View>
-
-        {/* Name */}
-        <View style={styles.inputContainer}>
-          <Ionicons name="person-outline" size={20} color="#555" />
-          <TextInput
-            style={styles.input}
-            placeholder="Doctor Name"
-            value={form.name}
-            onChangeText={(v) => handleChange("name", v)}
-          />
-        </View>
-
-        {/* Email */}
-        <View style={styles.inputContainer}>
-          <Ionicons name="mail-outline" size={20} color="#555" />
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            value={form.email}
-            onChangeText={(v) => handleChange("email", v)}
-          />
-        </View>
-
-        {/* Password */}
-        <View style={styles.inputContainer}>
-          <Ionicons name="lock-closed-outline" size={20} color="#555" />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            secureTextEntry={!showPassword}
-            value={form.password}
-            onChangeText={(v) => handleChange("password", v)}
-          />
-          <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-            <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#555" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Confirm Password */}
-        <View style={styles.inputContainer}>
-          <Ionicons name="lock-open-outline" size={20} color="#555" />
-          <TextInput
-            style={styles.input}
-            placeholder="Confirm Password"
-            secureTextEntry={!showConfirmPassword}
-            value={form.confirmPassword}
-            onChangeText={(v) => handleChange("confirmPassword", v)}
-          />
-          <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
-            <Ionicons name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#555" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Phone */}
-        <View style={styles.inputContainer}>
-          <Ionicons name="call-outline" size={20} color="#555" />
-          <TextInput
-            style={styles.input}
-            placeholder="Phone Number"
-            keyboardType="phone-pad"
-            value={form.phoneNumber}
-            onChangeText={(v) => handleChange("phoneNumber", v)}
-          />
-        </View>
-
-        {/* Department */}
-        <View style={styles.inputContainer}>
-          <Ionicons name="medkit-outline" size={20} color="#555" />
-          <TextInput
-            style={styles.input}
-            placeholder="Department"
-            value={form.department}
-            onChangeText={(v) => handleChange("department", v)}
-          />
-        </View>
-
-        {/* Role */}
-        <View style={styles.inputContainer}>
-          <Ionicons name="briefcase-outline" size={20} color="#555" />
-          <TextInput
-            style={styles.input}
-            placeholder="Role (ex: Cardiologist)"
-            value={form.role}
-            onChangeText={(v) => handleChange("role", v)}
-          />
-        </View>
-
-        {/* Experience */}
-        <View style={styles.inputContainer}>
-          <Ionicons name="school-outline" size={20} color="#555" />
-          <TextInput
-            style={styles.input}
-            placeholder="Experience (years)"
-            keyboardType="numeric"
-            value={form.experience}
-            onChangeText={(v) => handleChange("experience", v)}
-          />
-        </View>
-
-        {/* Gender Radio Buttons */}
-        <Text style={{ marginTop: 10, fontSize: 16, fontWeight: "600", color: "#333" }}>
-          Gender
-        </Text>
-
-        <View style={styles.radioGroup}>
-          {["Male", "Female", "Other"].map((g) => (
-            <TouchableOpacity
-              key={g}
-              style={styles.radioOption}
-              onPress={() => handleChange("gender", g)}
-            >
-              <View style={styles.radioCircle}>
-                {form.gender === g && <View style={styles.radioSelected} />}
-              </View>
-              <Text style={styles.radioLabel}>{g}</Text>
+        {/* LEFT SIDE: FORM */}
+        <ScrollView contentContainerStyle={styles.leftScroll} showsVerticalScrollIndicator={false}>
+          <View style={styles.formContent}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+              <Ionicons name="chevron-back" size={16} color="#718096" />
+              <Text style={styles.backText}>Back to role selection</Text>
             </TouchableOpacity>
-          ))}
-        </View>
-{/* Description */}
-<View style={styles.inputContainer}>
-  <Ionicons name="document-text-outline" size={20} color="#555" />
-  <TextInput
-    style={[styles.input, { height: 100, textAlignVertical: "top" }]}
-    placeholder="Description "
-    multiline
-    value={form.description}
-    onChangeText={(v) => handleChange("description", v)}
-  />
-</View>
 
-        {/* Schedule In */}
-        <TouchableOpacity
-          style={styles.inputContainer}
-          onPress={() => setShowTimePicker({ field: "scheduleIn", visible: true })}
-        >
-          <Ionicons name="time-outline" size={20} color="#555" />
-          <Text style={{ flex: 1, marginLeft: 10, color: form.scheduleIn ? "#000" : "#999" }}>
-            {form.scheduleIn || "Schedule In (HH:MM)"}
-          </Text>
-        </TouchableOpacity>
+            <View style={styles.brandContainer}>
+              <View style={styles.brandIcon}><Text style={styles.brandIconText}>BM</Text></View>
+              <Text style={styles.brandName}>Bharat Medical Hall</Text>
+            </View>
 
-        {/* Schedule Out */}
-        <TouchableOpacity
-          style={styles.inputContainer}
-          onPress={() => setShowTimePicker({ field: "scheduleOut", visible: true })}
-        >
-          <Ionicons name="time-outline" size={20} color="#555" />
-          <Text style={{ flex: 1, marginLeft: 10, color: form.scheduleOut ? "#000" : "#999" }}>
-            {form.scheduleOut || "Schedule Out (HH:MM)"}
-          </Text>
-        </TouchableOpacity>
+            <Text style={styles.title}>Doctor Registration</Text>
+            <Text style={styles.subtitle}>Enter your details to create your healthcare account</Text>
 
-        {showTimePicker.visible && (
-          <DateTimePicker
-            value={new Date()}
-            mode="time"
-            display="spinner"
-            onChange={handleTimeChange}
-          />
+            <View style={styles.grid}>
+              {renderInputField("Full Name", "person-outline", "Enter your name", "name")}
+              {renderInputField("Email Address", "mail-outline", "Enter your email", "email", { keyboardType: "email-address", autoCapitalize: "none" })}
+              {renderInputField("Password", "lock-closed-outline", "Create password", "password", { secureTextEntry: !showPassword })}
+              {renderInputField("Confirm Password", "lock-open-outline", "Confirm password", "confirmPassword", { secureTextEntry: !showConfirmPassword })}
+              
+              <View style={[styles.inputWrapper, isDesktop && styles.halfWidth]}>
+                <Text style={styles.fieldLabel}>Phone Number</Text>
+                <View style={[styles.inputContainer, focusedInput === "phoneNumber" && styles.inputFocused]}>
+                  <Text style={styles.prefix}>+91</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Mobile number"
+                    keyboardType="phone-pad"
+                    maxLength={10}
+                    value={form.phoneNumber}
+                    onChangeText={(v) => handleChange("phoneNumber", v.replace(/[^0-9]/g, ""))}
+                    onFocus={() => setFocusedInput("phoneNumber")}
+                    onBlur={() => setFocusedInput("")}
+                  />
+                </View>
+              </View>
+
+              {renderInputField("Department", "medkit-outline", "e.g. Cardiology", "department")}
+              {renderInputField("Role", "briefcase-outline", "e.g. Senior Surgeon", "role")}
+              {renderInputField("Experience", "school-outline", "Years of experience", "experience", { keyboardType: "numeric" })}
+            </View>
+
+            <Text style={[styles.fieldLabel, { marginTop: 10 }]}>Gender</Text>
+            <View style={styles.radioGroup}>
+              {["Male", "Female", "Other"].map((g) => (
+                <TouchableOpacity key={g} style={styles.radioOption} onPress={() => handleChange("gender", g)}>
+                  <View style={[styles.radioCircle, form.gender === g && styles.radioActive]}>
+                    {form.gender === g && <View style={styles.radioInner} />}
+                  </View>
+                  <Text style={styles.radioLabel}>{g}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.grid}>
+                {["scheduleIn", "scheduleOut"].map((field) => (
+                  <View style={[styles.inputWrapper, isDesktop && styles.halfWidth]} key={field}>
+                    <Text style={styles.fieldLabel}>{field === "scheduleIn" ? "Schedule In" : "Schedule Out"}</Text>
+                    {Platform.OS === "web" ? (
+                      <input type="time" value={form[field]} onChange={(e) => handleChange(field, e.target.value)} style={styles.webTime} />
+                    ) : (
+                      <TouchableOpacity style={styles.inputContainer} onPress={() => setShowTimePicker({ field, visible: true })}>
+                        <Text style={{ color: form[field] ? "#333" : "#A0AEC0" }}>{form[field] || "Select time"}</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <Text style={styles.fieldLabel}>Description</Text>
+              <View style={[styles.inputContainer, { height: 100, alignItems: "flex-start", paddingTop: 10 }]}>
+                <TextInput style={[styles.input, { height: "100%" }]} placeholder="Tell us about yourself..." multiline value={form.description} onChangeText={(v) => handleChange("description", v)} />
+              </View>
+            </View>
+
+            <TouchableOpacity onPress={handleRegister} disabled={loading}>
+              <LinearGradient colors={["#0095FF", "#00D1D1"]} start={{x:0, y:0}} end={{x:1, y:0}} style={styles.signInBtn}>
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.signInText}>Register Doctor →</Text>}
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>Already have an account?</Text>
+              <TouchableOpacity onPress={() => navigation.navigate("DoctorLogin")}>
+                <Text style={styles.footerLink}> Sign In</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+
+        {/* RIGHT SIDE: BRANDING PANEL */}
+        {isDesktop && (
+          <View style={styles.bluePanel}>
+            <View style={styles.bigIcon}><Text style={styles.bigIconText}>BM</Text></View>
+            <Text style={styles.welcomeTitle}>Welcome Back</Text>
+            <Text style={styles.welcomeSub}>Access your healthcare management dashboard and stay connected with your medical records.</Text>
+          </View>
         )}
 
-        {/* Register */}
-        <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Register Doctor</Text>}
-        </TouchableOpacity>
-
-        {/* Login */}
-        <View style={styles.loginContainer}>
-          <Text style={styles.loginText}>Already have an account?</Text>
-          <TouchableOpacity onPress={() => navigation.navigate("DoctorLogin")}>
-            <Text style={styles.loginLink}> Login</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+        {showTimePicker.visible && Platform.OS !== "web" && (
+          <DateTimePicker value={new Date()} mode="time" display="spinner" onChange={handleTimeChange} />
+        )}
+      </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 15,
-    justifyContent: "space-between",
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-    backgroundColor: "#f9f9f9",
-    marginTop: 30,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#333",
-  },
-  container: {
-    padding: 20,
-    backgroundColor: "#fff",
-    paddingBottom: 60,
-  },
-  inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    width: "100%",
-    marginVertical: 8,
-    backgroundColor: "#f9f9f9",
-  },
-  input: {
-    flex: 1,
-    marginLeft: 10,
-    fontSize: 16,
-    color: "#333",
-  },
+  mainContainer: { flex: 1, flexDirection: "row" },
+  leftScroll: { flexGrow: 1, backgroundColor: "#fff", paddingVertical: 40 },
+  formContent: { width: "90%", maxWidth: 600, alignSelf: "center" },
+  
+  backBtn: { flexDirection: "row", alignItems: "center", marginBottom: 25 },
+  backText: { color: "#718096", fontSize: 13, marginLeft: 5 },
+  
+  brandContainer: { flexDirection: "row", alignItems: "center", marginBottom: 35 },
+  brandIcon: { backgroundColor: "#007BFF", width: 36, height: 36, borderRadius: 8, justifyContent: "center", alignItems: "center", marginRight: 10 },
+  brandIconText: { color: "#fff", fontWeight: "bold", fontSize: 14 },
+  brandName: { color: "#007BFF", fontWeight: "bold", fontSize: 18 },
 
-  radioGroup: {
-    flexDirection: "row",
-    marginVertical: 10,
-  },
-  radioOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginRight: 20,
-  },
-  radioCircle: {
-    height: 20,
-    width: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: "#2e86de",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  radioSelected: {
-    height: 10,
-    width: 10,
-    backgroundColor: "#2e86de",
-    borderRadius: 5,
-  },
-  radioLabel: {
-    marginLeft: 8,
-    fontSize: 15,
-    color: "#333",
-  },
+  title: { fontSize: 26, fontWeight: "bold", color: "#1A202C" },
+  subtitle: { fontSize: 14, color: "#718096", marginBottom: 25, marginTop: 5 },
 
-  button: {
-    backgroundColor: "#2e86de",
-    borderRadius: 10,
-    paddingVertical: 14,
-    width: "100%",
-    alignItems: "center",
-    marginTop: 20,
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  loginContainer: {
-    flexDirection: "row",
-    justifyContent: "center",
-    marginTop: 15,
-  },
-  loginText: {
-    color: "#333",
-    fontSize: 15,
-  },
-  loginLink: {
-    color: "#2e86de",
-    fontWeight: "bold",
-    fontSize: 15,
-  },
+  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  inputWrapper: { width: "100%", marginBottom: 15 },
+  halfWidth: { width: "48%" },
+  fieldLabel: { fontSize: 14, fontWeight: "600", color: "#2D3748", marginBottom: 8 },
+  
+  inputContainer: { flexDirection: "row", alignItems: "center", backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 10, paddingHorizontal: 15, height: 48 },
+  inputFocused: { borderColor: "#007BFF", backgroundColor: "#fff" },
+  input: { flex: 1, fontSize: 14, color: "#333" ,outlineStyle: "none"},
+  prefix: { marginRight: 10, fontWeight: "600", color: "#4A5568" },
+
+  radioGroup: { flexDirection: "row", marginBottom: 15 },
+  radioOption: { flexDirection: "row", alignItems: "center", marginRight: 20 },
+  radioCircle: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: "#CBD5E0", justifyContent: "center", alignItems: "center" },
+  radioActive: { borderColor: "#007BFF" },
+  radioInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#007BFF" },
+  radioLabel: { marginLeft: 8, color: "#4A5568", fontSize: 14 },
+
+  webTime: { width: "100%", height: 48, backgroundColor: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "0 15px", outline: "none" },
+  
+  signInBtn: { height: 52, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 20 },
+  signInText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  
+  footer: { flexDirection: "row", justifyContent: "center", marginTop: 20 },
+  footerText: { color: "#718096" },
+  footerLink: { color: "#007BFF", fontWeight: "bold" },
+
+  bluePanel: { flex: 0.8, backgroundColor: "#007BFF", justifyContent: "center", alignItems: "center", padding: 60 },
+  bigIcon: { backgroundColor: "rgba(255,255,255,0.15)", width: 100, height: 100, borderRadius: 20, justifyContent: "center", alignItems: "center", marginBottom: 30 },
+  bigIconText: { color: "#fff", fontWeight: "bold", fontSize: 32 },
+  welcomeTitle: { color: "#fff", fontSize: 32, fontWeight: "bold", marginBottom: 15 },
+  welcomeSub: { color: "rgba(255,255,255,0.8)", textAlign: "center", fontSize: 15, lineHeight: 22 },
 });

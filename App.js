@@ -1,3 +1,8 @@
+import 'react-native-gesture-handler'; // MUST be first import
+
+
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
 import React, { useEffect, useState } from "react";
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -179,6 +184,30 @@ import EmployeeAllowanceall from "./Employees/EmployeeAllowanceusageall";
 import AdminEmployeePatientReports from "./Admin/AdminEmployeeBokingPatient";
 import DailyTokensReport from "./Admin/Admindaily token Report";
 import EmpAttendanceScreen from "./Employees/Attendance";
+import AdminForgotPasswordScreen from "./Admin/AdminForgotPassword";
+import SubadminStationaryInventory from "./Department/AddStationarySub";
+import AdminPayslipScreen from "./Admin/AdminPayrollScreen";
+import AdminDeliveryBoyMapScreen from './Admin/AdminDeliveryboys';
+import TrackOrderScreen from './patient/TrackOrder';
+import Patientlivetokens from './Doctor/NurseLivetoken';
+import AdminDoctortimeSlotScreen from './Admin/AdminAddTimeslotsDoctor';
+import AdminManageFieldsScreen from './Admin/AdminAddInventoryFields';
+import AdminPurchaseOrders from './Admin/AdminPurchaseorder';
+import AdminPurchaseOrderFields from './Admin/AdminAddPurchaseOrderFields';
+import AdminAddCreateSalesorderfields from './Admin/AddCreatesalesorderfields';
+import EmployeePickerScreen from './Employees/CreateSalesOrder';
+import TokenGeneratorApp from './Admin/AdminGenerateToken';
+import ItemMasterScreen from './Admin/AdminItemMaster';
+import StockDetailsScreen from './Admin/AdminStockDetailedScreen';
+import CustomerMasterScreen from './Admin/AdminCustomerMasterDataa';
+import EcogreenPurchaseOrderScreen from './Admin/AdminEcogreenPurchaseorder';
+import EcoGreenCreateSalesOrder from './Admin/EcoGreenSalesOrder';
+import SalesOrderStatusScreen from './Admin/EcogreenSalesorderStatus';
+import EmployeeCashHandoverAdmin from './Admin/AdminEmployeeCashHandover';
+import EmployeeBookingPatientReports from './Admin/AdminBookingPatientHistory';
+import PatientnHistory from './Doctor/NursePatiemtHistory';
+import AdminEmployeeHistory from './Admin/AdminEmployeeHistory';
+import DeliveryBoyReportScreen from './Admin/AdminDeliveryboyreportscreen ';
 // 📦 Storage imports
 import {
   getPatientId,
@@ -214,11 +243,11 @@ useEffect(() => {
       let route = "Splash";
 
       if (adminId) {
-        route = "Adminsidebar";
+        route = "AdminDashboard";
       } else if (subadminId) {
-        route = "SubAdmin";
+        route = "DeptDashboard";
       } else if (doctorId) {
-        route = "DoctorsHome";
+        route = "DoctorDashboard";
       } else if (employeeId) {
         console.log("Employee ID exists:", employeeId);
 
@@ -230,22 +259,30 @@ useEffect(() => {
           console.log("Employee fetch data:", data);
 
           const employee = data.employee;
-          if (!employee) {
-            console.log("No employee returned from API");
-          }
+         if (!employee) {
+  console.log("No employee returned from API");
+}
 
-          const role = employee?.role?.replace(/\s+/g, " ").trim().toLowerCase();
-          console.log("Normalized role:", role);
+const role = employee?.role?.replace(/\s+/g, " ").trim().toLowerCase();
+console.log("Normalized role:", role);
 
-          if (role === "hd delivery") {
-      route = "DeliverBoyTabs";
+if (role === "pune") {
 
-    } else if (role === "picker") {   // ✅ NEW CONDITION ADDED
-      route = "PickerTabs";           // <-- Change to your picker navigation screen
+  route = "NurseDashboard";   // ✅ Added Pune Route
 
-    } else {
-      route = "EmpSideBar";
-    }
+} else if (role === "hd delivery") {
+
+  route = "DeliverBoyDashboard";
+
+} else if (role === "picker") {
+
+  route = "PickerDashboardScreen";
+
+} else {
+
+  route = "Dashboard";
+}
+
         } catch (err) {
           console.log("Error fetching employee:", err);
         }
@@ -276,6 +313,8 @@ useEffect(() => {
     );
   }
   return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+
     <NavigationContainer>
     <Stack.Navigator
         initialRouteName={initialRoute}
@@ -347,7 +386,6 @@ useEffect(() => {
          <Stack.Screen name="AdminEmployeeAttendanceRecords" component={AdminEmployeeAttendanceRecords}/>
          <Stack.Screen name="BreakPenaltyScreen" component={BreakPenaltyScreen}/>
          <Stack.Screen name="AdminAddEmployee" component={AdminAddEmployee}/>
-         <Stack.Screen name="AdminUpdateEmployeeScreen" component={ AdminUpdateEmployeeScreen}/>
          <Stack.Screen name="AdminEmpAllowanceScreen" component={ AdminEmpAllowanceScreen}/>
 
         <Stack.Screen name="patienthomescreen" component={HomeScreen}/>
@@ -442,7 +480,7 @@ useEffect(() => {
 
 <Stack.Screen name="PickerTabs" component={PickerTabs}/>
 <Stack.Screen name="AdminBusDeliveredOrdersScreen" component={AdminBusDeliveredOrdersScreen}/>
-<Stack.Screen name=" OrdersDeliverdByDeliveryBoy" component={ OrdersDeliverdByDeliveryBoy}/>
+<Stack.Screen name="OrdersDeliverdByDeliveryBoy" component={OrdersDeliverdByDeliveryBoy}/>
 <Stack.Screen name="SalesOrderForm" component={SalesOrderForm}/>
 <Stack.Screen name="AddressChangeRequestScreen" component={AddressChangeRequestScreen}/>
 <Stack.Screen name="AddressChangeRequests" component={AddressChangeRequests}/>
@@ -465,11 +503,53 @@ useEffect(() => {
 
 <Stack.Screen name="DailyTokensReport" component={DailyTokensReport}/>
 <Stack.Screen name="EmpAttendanceScreen" component={EmpAttendanceScreen}/>
+<Stack.Screen name="AdminForgotPasswordScreen" component={AdminForgotPasswordScreen}/>
+<Stack.Screen name="SubadminStationaryInventory" component={SubadminStationaryInventory}/>
+<Stack.Screen name="AdminPayslipScreen" component={AdminPayslipScreen}/>
+<Stack.Screen name="AdminUpdateEmployeeScreen" component={AdminUpdateEmployeeScreen}/>
+<Stack.Screen name="AdminDeliveryBoyMapScreen" component={AdminDeliveryBoyMapScreen}/>
+<Stack.Screen name="TrackOrderScreen" component={TrackOrderScreen}/>
+<Stack.Screen name="Patientlivetokens" component={Patientlivetokens}/>
+<Stack.Screen name="AdminDoctortimeSlotScreen" component={AdminDoctortimeSlotScreen}/>
+<Stack.Screen name="AdminManageFieldsScreen" component={AdminManageFieldsScreen}/>
+<Stack.Screen name="AdminPurchaseOrders" component={AdminPurchaseOrders}/>
+<Stack.Screen name="AdminPurchaseOrderFields" component={AdminPurchaseOrderFields}/>
+<Stack.Screen name="AdminAddCreateSalesorderfields" component={AdminAddCreateSalesorderfields}/>
+<Stack.Screen name="EmployeePickerScreen" component={EmployeePickerScreen}/>
+<Stack.Screen name="TokenGeneratorApp" component={TokenGeneratorApp}/>
+<Stack.Screen name="ItemMasterScreen" component={ItemMasterScreen}/>
+<Stack.Screen name="StockDetailsScreen" component={StockDetailsScreen}/>
+<Stack.Screen name="CustomerMasterScreen" component={CustomerMasterScreen}/>
+<Stack.Screen name="EcogreenPurchaseOrderScreen" component={EcogreenPurchaseOrderScreen}/>
+<Stack.Screen name="EcoGreenCreateSalesOrder" component={EcoGreenCreateSalesOrder}/>
+<Stack.Screen name="SalesOrderStatusScreen" component={SalesOrderStatusScreen}/>
+<Stack.Screen name="EmployeeCashHandoverAdmin" component={EmployeeCashHandoverAdmin}/>
+<Stack.Screen name="EmployeeBookingPatientReports" component={EmployeeBookingPatientReports}/>
+<Stack.Screen name="PatientnHistory" component={PatientnHistory}/>
+<Stack.Screen name="AdminEmployeeHistory" component={AdminEmployeeHistory}/>
+<Stack.Screen name="DeliveryBoyReportScreen" component={DeliveryBoyReportScreen}/>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
       </Stack.Navigator>
       
     </NavigationContainer>
+      </GestureHandlerRootView>
+
   );
 }

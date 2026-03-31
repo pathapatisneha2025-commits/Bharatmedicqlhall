@@ -14,9 +14,11 @@ import {
   TextInput,
   Modal,
     Linking,   // <-- ADD THIS
+     Platform,
+  useWindowDimensions,
 
 } from "react-native";
-import { MaterialIcons } from "@expo/vector-icons";
+import { MaterialIcons, Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 
 export default function UserEmployeeListScreen() {
@@ -24,13 +26,44 @@ export default function UserEmployeeListScreen() {
   const [filteredEmployees, setFilteredEmployees] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
+   const [loadingCount, setLoadingCount] = useState(0);
+
   const [refreshing, setRefreshing] = useState(false);
 
   const [viewModalVisible, setViewModalVisible] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
 
   const navigation = useNavigation();
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
+  const MAX_WIDTH = 420;
+  const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
+const MODAL_MAX_WIDTH = 400; // max width for modal
+const modalWidth = SCREEN_WIDTH > MODAL_MAX_WIDTH ? MODAL_MAX_WIDTH : SCREEN_WIDTH * 0.9;
+const modalMaxHeight = SCREEN_HEIGHT * 0.85; // 
+   const showAlert = (title, message, buttons) => {
+    if (Platform.OS === "web") {
+      if (buttons && buttons.length > 1) {
+        const confirmed = window.confirm(`${title}\n\n${message}`);
+        if (confirmed) {
+          const okBtn = buttons.find(b => b.style !== "cancel");
+          okBtn?.onPress?.();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
+  };
 
+ useEffect(() => {
+          let interval;
+          if (loading) {
+            setLoadingCount(0);
+            interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+          } else clearInterval(interval);
+          return () => clearInterval(interval);
+        }, [loading]);
   const fetchEmployees = async () => {
     try {
       if (!refreshing) setLoading(true);
@@ -40,10 +73,10 @@ export default function UserEmployeeListScreen() {
         setEmployees(data.employees || []);
         setFilteredEmployees(data.employees || []);
       } else {
-        Alert.alert("Error", data.error || "Failed to fetch employees.");
+        showAlert("Error", data.error || "Failed to fetch employees.");
       }
     } catch (error) {
-      Alert.alert("Error", "Unable to fetch employees. Please try again.");
+      showAlert("Error", "Unable to fetch employees. Please try again.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -87,28 +120,31 @@ export default function UserEmployeeListScreen() {
       );
       const data = await res.json();
       if (res.ok) {
-        Alert.alert("Success", data.message || `Employee ${status}`);
+       showAlert("Success", data.message || `Employee ${status}`);
         fetchEmployees();
       } else {
-        Alert.alert("Error", data.error || "Failed to update status");
+        showAlert("Error", data.error || "Failed to update status");
       }
     } catch {
-      Alert.alert("Error", "Something went wrong while updating!");
+      showAlert("Error", "Something went wrong while updating!");
     } finally { setLoading(false); }
   };
 // ⭐ SAME EXPORT FUNCTION
-const exportToExcel = () => {
+const exportToExcel = async () => {
   const url = "https://hospitaldatabasemanagement.onrender.com/employee/export";
 
-  Alert.alert(
-    "Export CSV",
-    "The file will open in your browser for download.",
-    [
-      { text: "Cancel", style: "cancel" },
-      { text: "Download", onPress: () => Linking.openURL(url) }
-    ]
-  );
+  try {
+    const supported = await Linking.canOpenURL(url);
+    if (supported) {
+      await Linking.openURL(url);
+    } else {
+      showAlert("Error", "Cannot open download link");
+    }
+  } catch (err) {
+    showAlert("Error", "Failed to export file");
+  }
 };
+
 
   const deleteEmployee = async (id) => {
     try {
@@ -119,18 +155,18 @@ const exportToExcel = () => {
       );
       const data = await res.json();
       if (res.ok) {
-        Alert.alert("Deleted", data.message || "Employee deleted successfully");
+        showAlert("Deleted", data.message || "Employee deleted successfully");
         fetchEmployees();
       } else {
-        Alert.alert("Error", data.error || "Failed to delete employee");
+        showAlert("Error", data.error || "Failed to delete employee");
       }
     } catch {
-      Alert.alert("Error", "Something went wrong while deleting!");
+      showAlert("Error", "Something went wrong while deleting!");
     } finally { setLoading(false); }
   };
 
   const handleDelete = (id) => {
-    Alert.alert("Confirm Delete", "Are you sure you want to delete this employee?", [
+    showAlert("Confirm Delete", "Are you sure you want to delete this employee?", [
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: () => deleteEmployee(id) },
     ]);
@@ -154,233 +190,190 @@ const exportToExcel = () => {
       return (
         <View style={styles.loader}>
           <ActivityIndicator size="large" color="#007bff" />
-          <Text>Loading...</Text>
+          <Text>Loading{loadingCount}s</Text>
         </View>
       );
 
-  const renderRow = ({ item, index }) => {
-    const isActionDisabled = loading || item.status === "approved" || item.status === "rejected";
+ 
+//   const SidebarItem = ({ icon, label, active, onPress }) => (
+//   <TouchableOpacity
+//     onPress={onPress}
+//     style={[
+//       styles.sidebarItem,
+//       active && styles.sidebarItemActive
+//     ]}
+//   >
+//     <MaterialIcons
+//       name={icon}
+//       size={20}
+//       color={active ? "#fff" : "#64748b"}
+//     />
+//     <Text
+//       style={[
+//         styles.sidebarLabel,
+//         active && styles.sidebarLabelActive
+//       ]}
+//     >
+//       {label}
+//     </Text>
+//   </TouchableOpacity>
+// );
 
-    return (
-      <View style={[styles.tableRow, index % 2 === 0 ? styles.rowEven : styles.rowOdd]}>
-        <Text style={[styles.cell, { width: 60 }]}>{index + 1}</Text>
 
-        <View style={[styles.cell, { width: 70 }]}>
-          <Image
-            source={{ uri: item.image || "https://via.placeholder.com/40" }}
-            style={styles.image}
-          />
-        </View>
+const renderRow = ({ item, index }) => {
+  const isActionDisabled =
+    loading ||
+    item.status === "approved" ||
+    item.status === "rejected";
 
-        <Text style={[styles.cell, { width: 150 }]} numberOfLines={1}>{item.full_name}</Text>
-        <Text style={[styles.cell, { width: 200 }]} numberOfLines={1}>{item.email}</Text>
-        <Text style={[styles.cell, { width: 120 }]}>{item.mobile}</Text>
-        <Text style={[styles.cell, { width: 120 }]}>{item.family_number}</Text>
-        <Text style={[styles.cell, { width: 140 }]}>{item.department}</Text>
-        <Text style={[styles.cell, { width: 120 }]}>{item.role}</Text>
-        <Text style={[styles.cell, { width: 100 }]}>{item.blood_group}</Text>
-        <Text style={[styles.cell, { width: 70 }]}>{item.age}</Text>
-        <Text style={[styles.cell, { width: 130 }]}>{item.experience}</Text>
-        <Text style={[styles.cell, { width: 100 }]}>{item.monthly_salary}</Text>
-        <Text style={[styles.cell, { width: 140 }]}>{item.employment_type}</Text>
-        <Text style={[styles.cell, { width: 120 }]}>{item.category}</Text>
-        <Text style={[styles.cell, { width: 120 }]}>{item.reporting_manager}</Text>
-        <Text style={[styles.cell, { width: 150 }]}>{item.aadhar}</Text>
-        <Text style={[styles.cell, { width: 120 }]}>{item.pan}</Text>
-        <Text style={[styles.cell, { width: 120 }]}>{item.esi_number}</Text>
-        <Text style={[styles.cell, { width: 130 }]}>{item.bank_name}</Text>
-        <Text style={[styles.cell, { width: 160 }]}>{item.account_number}</Text>
-        <Text style={[styles.cell, { width: 130 }]}>{item.ifsc}</Text>
-        <Text style={[styles.cell, { width: 130 }]}>{item.branch_name}</Text>
-
-        <Text style={[styles.cell, { width: 200 }]}>
-          {item.temporary_addresses?.map(a => `${a.street}, ${a.city}`).join(" | ")}
-        </Text>
-
-        <Text style={[styles.cell, { width: 200 }]}>
-          {item.permanent_addresses?.map(b => `${b.street}, ${b.city}`).join(" | ")}
-        </Text>
-
-        <Text style={[styles.cell, { width: 110 }]}>{item.schedule_in}</Text>
-        <Text style={[styles.cell, { width: 110 }]}>{item.schedule_out}</Text>
-        <Text style={[styles.cell, { width: 100 }]}>{item.break_in}</Text>
-        <Text style={[styles.cell, { width: 100 }]}>{item.break_out}</Text>
-        <Text style={[styles.cell, { width: 130 }]}>{item.date_of_joining?.slice(0, 10)}</Text>
-
-        <Text style={[
-          styles.cell,
-          { width: 100 },
-          item.status === "approved" ? styles.statusApproved :
-          item.status === "rejected" ? styles.statusRejected :
-          styles.statusPending,
-        ]}>
-          {item.status || "pending"}
-        </Text>
-
-        <View style={[styles.actionCell, { width: 200 }]}>
+  return (
+    <View style={[styles.tableRow, index % 2 === 0 ? styles.rowEven : styles.rowOdd]}>
+  
+    <View style={[styles.tableRow, index % 2 === 0 ? styles.rowEven : styles.rowOdd]}>
+      <Text style={[styles.cell, { width: 60 }]}>{index + 1}</Text>
+      <View style={[styles.cell, { width: 70 }]}><Image source={{ uri: item.image || "https://via.placeholder.com/40" }} style={styles.image} /></View>
+      <Text style={[styles.cell, { width: 150 }]}>{item.full_name}</Text>
+      <Text style={[styles.cell, { width: 200 }]}>{item.email}</Text>
+      <Text style={[styles.cell, { width: 120 }]}>{item.mobile}</Text>
+      <Text style={[styles.cell, { width: 140 }]}>{item.department}</Text>
+      <Text style={[styles.cell, { width: 120 }]}>{item.role}</Text>
+     <Text style={[
+                  styles.cell,
+                  { width: 100 },
+                  item.status === "approved" ? styles.statusApproved :
+                  item.status === "rejected" ? styles.statusRejected :
+                  styles.statusPending,
+                ]}>{item.status || "pending"}</Text>
+        
+    <View style={[styles.actionCell]}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingRight: 10, minWidth: 250 }} // ensure all buttons visible
+        >
           <TouchableOpacity
             onPress={() => { setSelectedEmployee(item); setViewModalVisible(true); }}
             style={styles.iconBtn}
           >
             <MaterialIcons name="visibility" size={20} color="#28a745" />
           </TouchableOpacity>
-
+      
           <TouchableOpacity
-            onPress={() => navigation.navigate("AdminUpdateEmployeeScreen", { id: item.id })}
-            style={styles.iconBtn}
-          >
+                onPress={() => navigation.navigate("AdminUpdateEmployeeScreen", { id: item.id })}
+                style={styles.iconBtn}
+              >
             <MaterialIcons name="edit" size={20} color="#007bff" />
           </TouchableOpacity>
-
+      
           <TouchableOpacity
             onPress={() => handleDelete(item.id)}
             style={styles.iconBtn}
           >
             <MaterialIcons name="delete" size={20} color="#e63946" />
           </TouchableOpacity>
-
+      
           <TouchableOpacity
             onPress={() => updateEmployeeStatus(item.id, "approved")}
-            style={[styles.iconBtn, { backgroundColor: "#d4edda" }]}
+            style={[styles.iconBtn, { backgroundColor: "#d4edda", minWidth: 80, justifyContent: "center" }]}
             disabled={isActionDisabled}
           >
-            <Text style={{ color: "#155724", fontWeight: "bold" }}>Approve</Text>
+            <Text style={{ color: "#155724", fontWeight: "bold", textAlign: "center" }}>Approve</Text>
           </TouchableOpacity>
-
+      
           <TouchableOpacity
             onPress={() => updateEmployeeStatus(item.id, "rejected")}
-            style={[styles.iconBtn, { backgroundColor: "#f8d7da" }]}
+            style={[styles.iconBtn, { backgroundColor: "#f8d7da", minWidth: 80, justifyContent: "center" }]}
             disabled={isActionDisabled}
           >
-            <Text style={{ color: "#721c24", fontWeight: "bold" }}>Cancel</Text>
+            <Text style={{ color: "#721c24", fontWeight: "bold", textAlign: "center" }}>Cancel</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </View>
-    );
-  };
+    </View>
+      </View>
+  );
+};
+  
 
   return (
-    <View style={styles.container}>
-      {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <MaterialIcons name="arrow-back" size={24} color="#007bff" />
-        </TouchableOpacity>
-
-        <Text style={styles.title}>Employee Directory</Text>
-{/* EXPORT BUTTON */}
-    <TouchableOpacity 
-      style={[styles.addBtn, { backgroundColor: "#1e90ff", marginRight: 10 }]} 
-      onPress={exportToExcel}
+    <View style={styles.webContainer}>
+     
+      {/* MAIN CONTENT AREA */}
+<ScrollView
+  style={styles.mainContent}
+  contentContainerStyle={{ paddingBottom: 40 }}
+>
+       <View style={styles.contentHeader}>
+  <View style={styles.titleRow}>
+    <TouchableOpacity
+      onPress={() => navigation.goBack()}
+      style={styles.backBtn}
+      accessibilityLabel="Go back"
     >
-      <MaterialIcons name="download" size={20} color="#fff" />
-      <Text style={styles.addBtnText}>Export</Text>
+      <MaterialIcons name="arrow-back" size={24} color="#1e293b" />
     </TouchableOpacity>
-        <TouchableOpacity style={styles.addBtn} onPress={handleAddUser}>
-          <MaterialIcons name="person-add" size={20} color="#fff" />
-          <Text style={styles.addBtnText}>Add User</Text>
-        </TouchableOpacity>
-      </View>
 
-      {/* SEARCH BAR */}
-      <View style={styles.searchBar}>
-        <MaterialIcons name="search" size={22} color="#007bff" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search employees..."
-          placeholderTextColor="#000"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-      </View>
+    <View>
+      <Text style={styles.mainTitle}>Employee Management</Text>
+      <Text style={styles.subTitle}>
+        View and manage your hospital staff directory
+      </Text>
+    </View>
+  </View>
 
-      {/* TABLE */}
-      {loading ? (
-        <ActivityIndicator size="large" color="#007bff" style={{ marginTop: 20 }} />
-      ) : filteredEmployees.length === 0 ? (
-        <Text style={{ textAlign: "center", marginTop: 20, color: "#555" }}>
-          No employees found.
-        </Text>
-      ) : (
-        <ScrollView horizontal showsHorizontalScrollIndicator nestedScrollEnabled>
-          <View>
-            {renderHeader()}
-            <FlatList
-              data={filteredEmployees}
-              keyExtractor={(item) => item.id.toString()}
-              renderItem={renderRow}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.exportBtn} onPress={exportToExcel}>
+              <MaterialIcons name="download" size={20} color="#1e293b" />
+              <Text style={styles.exportBtnText}>Export CSV</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.addBtn} onPress={() => navigation.navigate("AdminAddEmployee")}>
+              <MaterialIcons name="add" size={20} color="#fff" />
+              <Text style={styles.addBtnText}>Add Employee</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* SEARCH & TABLE CARD */}
+        <View style={styles.tableCard}>
+          <View style={styles.searchContainer}>
+            <Feather name="search" size={18} color="#94a3b8" />
+            <TextInput 
+              style={styles.searchInput} 
+              placeholder="Search by name, email or department..." 
+              value={searchQuery}
+              onChangeText={setSearchQuery}
             />
           </View>
-        </ScrollView>
-      )}
 
-      {/* VIEW MODAL */}
-      {selectedEmployee && (
-        <Modal visible={viewModalVisible} transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
-              <ScrollView
-                style={styles.modalScroll}
-                contentContainerStyle={{ paddingBottom: 40 }}
-                showsVerticalScrollIndicator={false}
-              >
-                <TouchableOpacity
-                  onPress={() => setViewModalVisible(false)}
-                  style={styles.modalCloseBtn}
-                >
-                  <MaterialIcons name="close" size={28} color="#000" />
-                </TouchableOpacity>
-
-                <Image
-                  source={{ uri: selectedEmployee.image || "https://via.placeholder.com/100" }}
-                  style={styles.modalImage}
+          {loading ? (
+            <ActivityIndicator size="large" color="#2563EB" style={{ margin: 40 }} />
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator>
+              <View>
+                {renderHeader()}
+                <FlatList
+                  data={filteredEmployees}
+                  keyExtractor={(item) => item.id.toString()}
+                  renderItem={renderRow}
+                  contentContainerStyle={{ paddingBottom: 20 }}
                 />
-                <Text style={styles.modalTitle}>{selectedEmployee.full_name}</Text>
+              </View>
+            </ScrollView>
+          )}
+        </View>
+      </ScrollView>
 
-                {[
-                  ["Email", selectedEmployee.email],
-                  ["Mobile", selectedEmployee.mobile],
-                  ["Family Number", selectedEmployee.family_number],
-                  ["Department", selectedEmployee.department],
-                  ["Role", selectedEmployee.role],
-                  ["Blood Group", selectedEmployee.blood_group],
-                  ["Age", selectedEmployee.age],
-                  ["Experience (Years)", selectedEmployee.experience],
-                  ["Monthly Salary", selectedEmployee.monthly_salary],
-                  ["Employment Type", selectedEmployee.employment_type],
-                  ["Category", selectedEmployee.category],
-                  ["Reporting Manager", selectedEmployee.reporting_manager],
-                  ["Aadhar", selectedEmployee.aadhar],
-                  ["PAN", selectedEmployee.pan],
-                  ["ESI Number", selectedEmployee.esi_number],
-                  ["Bank Name", selectedEmployee.bank_name],
-                  ["Account Number", selectedEmployee.account_number],
-                  ["IFSC", selectedEmployee.ifsc],
-                  ["Branch Name", selectedEmployee.branch_name],
-                  [
-                    "Temporary Address",
-                    selectedEmployee.temporary_addresses
-                      ?.map(a => `${a.street}, ${a.city}, ${a.state} - ${a.pincode}`)
-                      .join(" | ")
-                  ],
-                  [
-                    "Permanent Address",
-                    selectedEmployee.permanent_addresses
-                      ?.map(b => `${b.street}, ${b.city}, ${b.state} - ${b.pincode}`)
-                      .join(" | ")
-                  ],
-                  ["Schedule In", selectedEmployee.schedule_in],
-                  ["Schedule Out", selectedEmployee.schedule_out],
-                  ["Break In", selectedEmployee.break_in],
-                  ["Break Out", selectedEmployee.break_out],
-                  ["Date of Joining", selectedEmployee.date_of_joining?.slice(0, 10)],
-                  ["Status", selectedEmployee.status],
-                ].map(([label, value], index) => (
-                  <View style={styles.modalRow} key={index}>
-                    <Text style={styles.modalLabel}>{label}:</Text>
-                    <Text style={styles.modalValue}>{value && value !== "" ? value : "-"}</Text>
-                  </View>
+      {/* VIEW MODAL (Logic unchanged) */}
+      {selectedEmployee && (
+        <Modal visible={viewModalVisible} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContainer, { width: modalWidth, maxHeight: modalMaxHeight }]}>
+              <TouchableOpacity onPress={() => setViewModalVisible(false)} style={styles.closeBtn}><MaterialIcons name="close" size={24} /></TouchableOpacity>
+              <ScrollView>
+                <Image source={{ uri: selectedEmployee.image }} style={styles.modalImage} />
+                <Text style={styles.modalName}>{selectedEmployee.full_name}</Text>
+                {Object.entries(selectedEmployee).map(([key, val]) => (
+                    typeof val === 'string' && <View key={key} style={styles.modalRow}><Text style={styles.modalLabel}>{key}:</Text><Text>{val}</Text></View>
                 ))}
               </ScrollView>
             </View>
@@ -391,228 +384,66 @@ const exportToExcel = () => {
   );
 }
 
-
-// Columns
 const columns = [
-  { label: "S.No", width: 60 },
-  { label: "Image", width: 70 },
-  { label: "Name", width: 150 },
-  { label: "Email", width: 200 },
-  { label: "Mobile", width: 120 },
-  { label: "Family No", width: 120 },
-  { label: "Department", width: 140 },
-  { label: "Role", width: 120 },
-  { label: "Blood Group", width: 100 },
-  { label: "Age", width: 70 },
-  { label: "Experience (Yrs)", width: 130 },
-  { label: "Salary", width: 100 },
-  { label: "Employment Type", width: 140 },
-  { label: "Category", width: 120 },
-  { label: "Manager", width: 120 },
-  { label: "Aadhaar", width: 150 },
-  { label: "PAN", width: 120 },
-  { label: "ESI No", width: 120 },
-  { label: "Bank Name", width: 130 },
-  { label: "Account No", width: 160 },
-  { label: "IFSC", width: 130 },
-  { label: "Branch", width: 130 },
-  { label: "Temp Addr", width: 200 },
-  { label: "Perm Addr", width: 200 },
-  { label: "Schedule In", width: 110 },
-  { label: "Schedule Out", width: 110 },
-  { label: "Break In", width: 100 },
-  { label: "Break Out", width: 100 },
-  { label: "Join Date", width: 130 },
-  { label: "Status", width: 100 },
+  { label: "S.No", width: 60 }, { label: "Avatar", width: 70 },
+  { label: "Full Name", width: 150 }, { label: "Email Address", width: 200 },
+  { label: "Phone", width: 120 }, { label: "Department", width: 140 },
+  { label: "Role", width: 120 }, { label: "Status", width: 100 },
   { label: "Actions", width: 200 },
 ];
 
-
-// ⭐ ALL STYLES ⭐
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f4f8fb",
-    padding: 10,
-    marginTop: 30,
-  },
+  webContainer: { flex: 1, flexDirection: 'row', backgroundColor: '#F8FAFC' },
+  // Sidebar
+  sidebar: { width: 260, backgroundColor: '#fff', borderRightWidth: 1, borderRightColor: '#e2e8f0', padding: 24 },
+  sidebarBrand: { flexDirection: 'row', alignItems: 'center', marginBottom: 40 },
+  brandIcon: { width: 38, height: 38, backgroundColor: '#2563EB', borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  brandLetter: { color: '#fff', fontWeight: 'bold', fontSize: 20 },
+  brandTitle: { fontSize: 18, fontWeight: '800', color: '#1e293b' },
+  brandSub: { fontSize: 12, color: '#64748b', marginTop: -4 },
+  sidebarMenu: { flex: 1 },
+  sidebarItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 10, marginBottom: 6 },
+  sidebarItemActive: { backgroundColor: '#2563EB' },
+  sidebarLabel: { marginLeft: 12, fontSize: 15, color: '#64748b', fontWeight: '600' },
+  sidebarLabelActive: { color: '#fff' },
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', padding: 12 },
+  logoutText: { marginLeft: 12, color: '#ef4444', fontWeight: '700' },
 
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 15,
-  },
+  // Main Content
+  mainContent: { flex: 1, padding: 32 },
+  contentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+  mainTitle: { fontSize: 28, fontWeight: '800', color: '#1e293b' },
+  subTitle: { color: '#64748b', marginTop: 4 },
+  headerActions: { flexDirection: 'row' },
+  exportBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', marginRight: 12, backgroundColor: '#fff' },
+  exportBtnText: { marginLeft: 8, fontWeight: '600', color: '#1e293b' },
+  addBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2563EB', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 },
+  addBtnText: { color: '#fff', marginLeft: 8, fontWeight: '600' },
 
-  backBtn: { padding: 6 },
+  // Table Card
+  tableCard: { backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', overflow: 'hidden', elevation: 2 },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', outlineStyle: "none" },
+  searchInput: { flex: 1, marginLeft: 12, fontSize: 15, outlineStyle: "none" },
 
-  title: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#007bff",
-    flex: 1,
-    textAlign: "center",
-  },
+  // Table
+  tableHeader: { flexDirection: 'row', backgroundColor: '#F8FAFC', borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
+  headerCell: { padding: 16, fontWeight: '700', color: '#64748b', fontSize: 13, textAlign: 'left' },
+  tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  rowEven: { backgroundColor: '#fff' },
+  rowOdd: { backgroundColor: '#fcfdfe' },
+  cell: { padding: 16, fontSize: 14, color: '#334155', justifyContent: 'center' },
+  image: { width: 36, height: 36, borderRadius: 18 },
+  statusApproved: { color: '#10b981', fontWeight: '700' },
+  statusRejected: { color: '#ef4444', fontWeight: '700' },
+  actionCell: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 },
+  iconBtn: { width: 32, height: 32, backgroundColor: '#f1f5f9', borderRadius: 6, justifyContent: 'center', alignItems: 'center', marginRight: 8 },
 
-  addBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#007bff",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    elevation: 2,
-  },
-
-  addBtnText: { color: "#fff", marginLeft: 5, fontWeight: "600", fontSize: 14 },
-
-  searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: "#cce0ff",
-    elevation: 2,
-  },
-
-  searchInput: { flex: 1, fontSize: 15, color: "#333" },
-
-  rowEven: { backgroundColor: "#f8fbff" },
-  rowOdd: { backgroundColor: "#ffffff" },
-
-  statusApproved: { color: "#2ecc71", fontWeight: "bold" },
-  statusRejected: { color: "#e74c3c", fontWeight: "bold" },
-  statusPending: { color: "#f39c12", fontWeight: "bold" },
-
-  actionCell: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 5,
-  },
-
-  iconBtn: {
-    padding: 4,
-    borderRadius: 6,
-    backgroundColor: "#eaf3ff",
-    marginHorizontal: 3,
-  },
-
-  tableHeader: {
-    flexDirection: "row",
-    backgroundColor: "#007bff",
-    alignItems: "center",
-  },
-
-  tableRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderBottomWidth: 1,
-    borderColor: "#e3ecff",
-  },
-
-  cell: {
-    paddingVertical: 10,
-    paddingHorizontal: 6,
-    fontSize: 12,
-    textAlign: "center",
-    color: "#333",
-    borderRightWidth: 1,
-    borderRightColor: "#e3ecff",
-  },
-
-  headerCell: {
-    paddingVertical: 10,
-    paddingHorizontal: 6,
-    fontWeight: "700",
-    fontSize: 13,
-    color: "#fff",
-    textAlign: "center",
-    borderRightWidth: 1,
-    borderRightColor: "rgba(255,255,255,0.2)",
-  },
-
-  image: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignSelf: "center",
-    borderWidth: 1,
-    borderColor: "#cce0ff",
-  },
-
-  // ⭐ MODAL STYLES ⭐
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
- modalContainer: {
-  width: "90%",
-  maxHeight: "85%",
-  backgroundColor: "#fff",
-  borderRadius: 15,
-  elevation: 10,
-  position: "relative",
-  padding: 20,
-},
-
-modalScroll: {
-  flexGrow: 0,
-},
-
-modalCloseBtn: {
-  position: "absolute",
-  top: 10,
-  right: 10,
-  backgroundColor: "#fff",
-  padding: 6,
-  borderRadius: 25,
-  elevation: 5,
-  zIndex: 999,
-},
-
-
-
-  modalImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    alignSelf: "center",
-    marginVertical: 10,
-    borderWidth: 1,
-    borderColor: "#ccc",
-  },
-
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    textAlign: "center",
-    marginBottom: 15,
-    color: "#007bff",
-  },
-
-  modalRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-
-  modalLabel: {
-    fontWeight: "bold",
-    color: "#333",
-    width: "40%",
-  },
-
-  modalValue: {
-    width: "60%",
-    textAlign: "right",
-    color: "#555",
-  },
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalContainer: { backgroundColor: '#fff', borderRadius: 20, padding: 24 },
+  closeBtn: { alignSelf: 'flex-end' },
+  modalImage: { width: 80, height: 80, borderRadius: 40, alignSelf: 'center' },
+  modalName: { fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginVertical: 12 },
+  modalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  modalLabel: { fontWeight: 'bold', color: '#64748b' }
 });

@@ -5,30 +5,28 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Image,
   useWindowDimensions,
-  Alert,
   Platform,
-  SafeAreaView,
+  Alert,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function HomeScreen() {
   const [selectedRole, setSelectedRole] = useState(null);
   const navigation = useNavigation();
   const { width } = useWindowDimensions();
 
-  // Screen type logic
-  const isLargeScreen = width > 768; // Tablets and Desktop
+  const isDesktop = width > 768;
 
   const roles = [
-    { key: 'patient', label: 'Patient Login', icon: 'person-outline' },
-    { key: 'employee', label: 'Employee Login', icon: 'briefcase-outline' },
-    { key: 'deptAdmin', label: 'Dept. Admin Login', icon: 'business-outline' },
-    { key: 'superAdmin', label: 'Super Admin Login', icon: 'shield-checkmark-outline' },
-    { key: 'doctor', label: 'Doctor Login', icon: 'person-add-outline' },
-    { key: 'delivery', label: 'Delivery Boy Login', icon: 'bicycle-outline' },
+    { key: 'patient', label: 'Patient Login', sub: 'Book appointments, order medicines', icon: 'account-outline' },
+    { key: 'employee', label: 'Employee Login', sub: 'Attendance, tasks, payroll', icon: 'briefcase-outline' },
+    { key: 'deptAdmin', label: 'Dept. Admin Login', sub: 'Department management', icon: 'office-building-outline' },
+    { key: 'superAdmin', label: 'Super Admin Login', sub: 'Full system access', icon: 'shield-check-outline' },
+    { key: 'doctor', label: 'Doctor Login', sub: 'Appointments, patients', icon: 'stethoscope' },
+    { key: 'delivery', label: 'Delivery Boy Login', sub: 'Order deliveries', icon: 'truck-delivery-outline' },
   ];
 
   const handleContinue = () => {
@@ -36,6 +34,7 @@ export default function HomeScreen() {
       Alert.alert('Selection Required', 'Please select a role to continue');
       return;
     }
+
     const routes = {
       patient: 'PatientSignUp',
       employee: 'signuplogin',
@@ -44,58 +43,72 @@ export default function HomeScreen() {
       doctor: 'DoctorRegister',
       delivery: 'DeliverBoyLogin',
     };
+
     navigation.navigate(routes[selectedRole]);
   };
 
   return (
     <SafeAreaView style={styles.screen}>
-      <ScrollView 
-        contentContainerStyle={styles.scrollContainer}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Main Wrapper: 
-            On Mobile: width is 100%
-            On Tablet/Desktop: width is fixed to 450px and centered
-        */}
-        <View style={[styles.mainWrapper, { width: isLargeScreen ? 450 : '100%' }]}>
-          
-          <Image
-            source={require('../assets/Logo.jpg')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
+      <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+        
+        {/* Header Section */}
+<View style={styles.header}>
+  {/* Back Arrow */}
+  <TouchableOpacity 
+    style={styles.backButton} 
+    onPress={() => navigation.goBack()}
+  >
+    <MaterialCommunityIcons name="arrow-left" size={28} color="#0080FF" />
+  </TouchableOpacity>
 
-          <Text style={styles.title}>Bharat Medical Hall</Text>
-          <Text style={styles.subtitle}>Login to Bharat Medical Hall</Text>
-          <Text style={styles.subtext}>Select your role to continue</Text>
+  <Text style={styles.title}>
+    <Text style={{ color: '#0080FF' }}>Bharat Medical</Text> Hall
+  </Text>
+  <Text style={styles.subtitle}>Login to Bharat Medical Hall</Text>
+  <Text style={styles.subtext}>Select your role to continue</Text>
+</View>
 
-          <View style={styles.grid}>
-            {roles.map((role) => (
-              <TouchableOpacity
-                key={role.key}
-                style={[
-                  styles.card,
-                  selectedRole === role.key && styles.cardSelected,
-                ]}
-                onPress={() => setSelectedRole(role.key)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.iconCircle}>
-                  <Ionicons name={role.icon} size={32} color="#333" />
-                </View>
-                <Text style={styles.cardText}>{role.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+        {/* Grid Section */}
+        <View style={[styles.grid, { maxWidth: isDesktop ? 850 : '100%' }]}>
+          {roles.map((role) => (
+            <TouchableOpacity
+              key={role.key}
+              style={[
+                styles.card,
+                selectedRole === role.key && styles.cardSelected,
+                { width: isDesktop ? '48%' : '100%' }
+              ]}
+              onPress={() => setSelectedRole(role.key)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.iconCircle}>
+                <MaterialCommunityIcons 
+                  name={role.icon} 
+                  size={32} 
+                  color={selectedRole === role.key ? '#0080FF' : '#64748B'} 
+                />
+              </View>
+              <Text style={styles.cardLabel}>{role.label}</Text>
+              <Text style={styles.cardSub}>{role.sub}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
+        {/* Continue Button Section */}
+        <View style={[styles.buttonContainer, { width: isDesktop ? 850 : '90%' }]}>
           <TouchableOpacity
-            style={styles.button}
+            style={[
+              styles.continueButton,
+              !selectedRole && styles.buttonDisabled
+            ]}
             onPress={handleContinue}
+            disabled={!selectedRole}
           >
-            <Ionicons name="log-in-outline" size={22} color="#FFF" />
+            <MaterialCommunityIcons name="arrow-right" size={24} color="white" style={styles.buttonIcon} />
             <Text style={styles.buttonText}>Continue</Text>
           </TouchableOpacity>
         </View>
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -104,102 +117,128 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F8FAFC', // Soft light background
+    backgroundColor: '#FFFFFF',
   },
+  
   scrollContainer: {
-    flexGrow: 1,
-    alignItems: 'center',
-    justifyContent: 'center', // Centers the box vertically on Desktop
     paddingVertical: 40,
-  },
-  mainWrapper: {
     alignItems: 'center',
-    paddingHorizontal: 24,
   },
-  logo: {
-    width: 120,
-    height: 100,
-    marginBottom: 20,
-  },
+ // Header
+header: {
+  alignItems: 'center',
+  marginBottom: 40,
+  paddingTop: 40, // add space for the back button / safe area
+  width: '100%',
+  position: 'relative',
+},
+
+// Back button
+backButton: {
+  position: 'absolute',
+  left: 20,
+  top: 40, // move down to avoid overlap
+  padding: 8, // increase touch area
+  zIndex: 10,
+  backgroundColor: 'rgba(0,0,0,0.05)', // optional subtle circle behind arrow
+  borderRadius: 12,
+},
+
   title: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#1565C0',
-    textAlign: 'center',
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#1E293B',
+    marginBottom: 10,
   },
+ 
+
   subtitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
-    color: '#1565C0',
-    marginTop: 8,
-    textAlign: 'center',
+    color: '#0080FF',
+    marginBottom: 5,
   },
   subtext: {
-    fontSize: 15,
-    color: '#64748B',
-    marginBottom: 32,
-    textAlign: 'center',
+    fontSize: 16,
+    color: '#94A3B8',
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    width: '100%',
+    justifyContent: 'center',
+    gap: 20,
+    paddingHorizontal: 20,
   },
   card: {
-    width: '48%', // Grid spacing for 2 columns
-    backgroundColor: '#E3F2FD',
-    borderRadius: 16,
-    paddingVertical: 24,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 24,
+    padding: 24,
     alignItems: 'center',
-    marginBottom: 16,
-    // Native and Web Shadow
+    borderWidth: 2,
+    borderColor: 'transparent',
     ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: { elevation: 3 },
-      web: { boxShadow: '0px 4px 12px rgba(0,0,0,0.08)' }
+      web: { cursor: 'pointer', transition: 'all 0.2s ease' }
     }),
   },
   cardSelected: {
-    borderWidth: 2,
-    borderColor: '#1565C0',
-    backgroundColor: '#D1E9FF',
+    borderColor: '#0080FF',
+    backgroundColor: '#FFFFFF',
+    ...Platform.select({
+      web: { boxShadow: '0px 10px 25px rgba(0, 128, 255, 0.1)' }
+    })
   },
   iconCircle: {
+    width: 64,
+    height: 64,
     backgroundColor: '#FFFFFF',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
-    elevation: 2,
+    marginBottom: 15,
+    ...Platform.select({
+      android: { elevation: 2 },
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 }
+    })
   },
-  cardText: {
-    color: '#1565C0',
-    fontWeight: '600',
+  cardLabel: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  cardSub: {
     fontSize: 14,
+    color: '#64748B',
     textAlign: 'center',
   },
-  button: {
-    flexDirection: 'row',
-    backgroundColor: '#1976D2',
+  buttonContainer: {
+    marginTop: 40,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  continueButton: {
+    backgroundColor: '#72E2E9', // Teal/Cyan gradient color from screenshot
     width: '100%',
-    height: 56,
-    borderRadius: 12,
+    height: 60,
+    borderRadius: 20,
+    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 20,
+    ...Platform.select({
+      web: { cursor: 'pointer' }
+    })
+  },
+  buttonDisabled: {
+    backgroundColor: '#E2E8F0',
+    opacity: 0.7,
+  },
+  buttonIcon: {
+    marginRight: 10,
   },
   buttonText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '600',
-    marginLeft: 10,
+    color: 'white',
+    fontSize: 20,
+    fontWeight: '700',
   },
 });

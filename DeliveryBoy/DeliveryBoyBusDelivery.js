@@ -8,6 +8,9 @@ import {
   TextInput,
   Alert,
   Image,
+  Platform,
+  useWindowDimensions,
+  KeyboardAvoidingView
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -20,6 +23,9 @@ const BASE_URL = "https://hospitaldatabasemanagement.onrender.com";
 export default function BusDeliveryScreen() {
   const route = useRoute();
   const navigation = useNavigation();
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const isDesktop = SCREEN_WIDTH > 800;
+  const CONTENT_MAX_WIDTH = 1100;
 
   const { orderId, deliveryType, orderType } = route.params;
 
@@ -29,71 +35,45 @@ export default function BusDeliveryScreen() {
   const [arrivalTime, setArrivalTime] = useState("");
   const [driverName, setDriverName] = useState("");
   const [phone, setPhone] = useState("");
-
   const [freightAmount, setFreightAmount] = useState("");
   const [freightRef, setFreightRef] = useState("");
-
   const [busPhoto, setBusPhoto] = useState(null);
   const [parcelPhoto, setParcelPhoto] = useState(null);
 
   const [showDeparturePicker, setShowDeparturePicker] = useState(false);
   const [showArrivalPicker, setShowArrivalPicker] = useState(false);
-  const [loading, setLoading] = useState(true);
 
-  // ============================================================
-  // PICK IMAGE
-  // ============================================================
+  const showAlert = (title, message) => {
+    if (Platform.OS === 'web') window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
+
   const pickImage = async (setState) => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.7,
     });
-
     if (!result.canceled) {
       setState(result.assets[0].uri);
     }
   };
 
-  // ============================================================
-  // SUBMIT BUS DELIVERY
-  // ============================================================
   const handleBusDelivery = async () => {
-    if (
-      !busName ||
-      !busRoute ||
-      !departureTime ||
-      !arrivalTime ||
-      !driverName ||
-      !freightAmount ||
-      !busPhoto ||
-      !parcelPhoto
-    ) {
-      Alert.alert("Error", "Please fill all required fields & upload photos");
+    if (!busName || !busRoute || !departureTime || !arrivalTime || !driverName || !freightAmount || !busPhoto || !parcelPhoto) {
+      showAlert("Missing Information", "Please fill all required fields and upload photos.");
       return;
     }
 
     const payload = {
       orderId,
-      deliveryType, // <-- same as IndividualOrderScreen
-      busDetails: {
-        busName,
-        busRoute,
-        departureTime,
-        arrivalTime,
-        driverName,
-        phone,
-        freightAmount,
-        freightRef,
-        busPhoto,
-        parcelPhoto,
-      },
+      deliveryType,
+      busDetails: { busName, busRoute, departureTime, arrivalTime, driverName, phone, freightAmount, freightRef, busPhoto, parcelPhoto },
       status: "pending",
     };
 
-    const apiUrl =
-      orderType === "sales"
-        ? `${BASE_URL}/salesorders/update-busdelivery`
-        : `${BASE_URL}/order-medicine/update-bus-delivery`;
+    const apiUrl = orderType === "sales" 
+      ? `${BASE_URL}/salesorders/update-busdelivery` 
+      : `${BASE_URL}/order-medicine/update-bus-delivery`;
 
     try {
       const res = await fetch(apiUrl, {
@@ -101,279 +81,290 @@ export default function BusDeliveryScreen() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
       const data = await res.json();
-
       if (data.success) {
-        Alert.alert("Success", "Bus delivery details saved successfully!");
+        showAlert("Success", "Bus delivery details saved successfully!");
         navigation.goBack();
       } else {
-        Alert.alert("Error", data.error || "Failed to submit details");
+        showAlert("Error", data.error || "Failed to submit details");
       }
     } catch (e) {
-      console.log(e);
-      Alert.alert("Error", "Something went wrong. Try again.");
+      showAlert("Error", "Server unreachable. Please try again later.");
     }
   };
 
-  // ============================================================
-  // UI
-  // ============================================================
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
-
-        {/* Header */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={26} color="#2196F3" />
-          </TouchableOpacity>
-          <Text style={styles.header}>Bus Delivery</Text>
-          <View style={{ width: 26 }} />
-        </View>
-
-        {/* Bus Info */}
-        <View style={styles.card}>
-          <Text style={styles.title}>Bus Information</Text>
-
-          <Text style={styles.label}>Bus Name *</Text>
-          <TextInput
-            value={busName}
-            onChangeText={setBusName}
-            placeholder="e.g., VRL Travels"
-            style={styles.input}
-          />
-
-          <Text style={styles.label}>Bus Route *</Text>
-          <TextInput
-            value={busRoute}
-            onChangeText={setBusRoute}
-            placeholder="e.g., Bangalore → Mumbai"
-            style={styles.input}
-          />
-
-          <Text style={styles.label}>Departure Time *</Text>
-          <TouchableOpacity
-            style={styles.timeBox}
-            onPress={() => setShowDeparturePicker(true)}
-          >
-            <Text style={styles.timeText}>
-              {departureTime || "Select Time"}
-            </Text>
-            <Ionicons name="time-outline" size={22} color="#555" />
-          </TouchableOpacity>
-
-          {showDeparturePicker && (
-            <DateTimePicker
-              mode="time"
-              value={new Date()}
-              onChange={(e, selected) => {
-                setShowDeparturePicker(false);
-                if (selected) {
-                  const t =
-                    selected.getHours().toString().padStart(2, "0") +
-                    ":" +
-                    selected.getMinutes().toString().padStart(2, "0");
-                  setDepartureTime(t);
-                }
-              }}
-            />
-          )}
-
-          <Text style={styles.label}>Expected Arrival *</Text>
-          <TouchableOpacity
-            style={styles.timeBox}
-            onPress={() => setShowArrivalPicker(true)}
-          >
-            <Text style={styles.timeText}>
-              {arrivalTime || "Select Time"}
-            </Text>
-            <Ionicons name="time-outline" size={22} color="#555" />
-          </TouchableOpacity>
-
-          {showArrivalPicker && (
-            <DateTimePicker
-              mode="time"
-              value={new Date()}
-              onChange={(e, selected) => {
-                setShowArrivalPicker(false);
-                if (selected) {
-                  const t =
-                    selected.getHours().toString().padStart(2, "0") +
-                    ":" +
-                    selected.getMinutes().toString().padStart(2, "0");
-                  setArrivalTime(t);
-                }
-              }}
-            />
-          )}
-        </View>
-
-        {/* Contact Details */}
-        <View style={styles.card}>
-          <Text style={styles.title}>Contact Details</Text>
-
-          <Text style={styles.label}>Driver / Conductor *</Text>
-          <TextInput
-            value={driverName}
-            onChangeText={setDriverName}
-            placeholder="Enter driver name"
-            style={styles.input}
-          />
-
-          <Text style={styles.label}>Phone Number</Text>
-          <TextInput
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-            placeholder="Optional"
-            style={styles.input}
-          />
-        </View>
-
-        {/* Freight Details */}
-        <View style={styles.card}>
-          <Text style={styles.title}>Freight Details</Text>
-
-          <Text style={styles.label}>Freight Amount (₹) *</Text>
-          <TextInput
-            value={freightAmount}
-            onChangeText={setFreightAmount}
-            keyboardType="numeric"
-            placeholder="Enter amount"
-            style={styles.input}
-          />
-
-          <Text style={styles.label}>Freight Reference No</Text>
-          <TextInput
-            value={freightRef}
-            onChangeText={setFreightRef}
-            placeholder="Optional"
-            style={styles.input}
-          />
-        </View>
-
-        {/* Photos */}
-        <View style={styles.card}>
-          <Text style={styles.title}>Upload Photos</Text>
-
-          <Text style={styles.label}>Bus Photo *</Text>
-          <TouchableOpacity
-            style={styles.uploadBtn}
-            onPress={() => pickImage(setBusPhoto)}
-          >
-            <Ionicons name="camera" size={22} color="#fff" />
-            <Text style={styles.uploadText}>Upload Bus Photo</Text>
-          </TouchableOpacity>
-
-          {busPhoto && (
-            <Image source={{ uri: busPhoto }} style={styles.previewImage} />
-          )}
-
-          <Text style={styles.label}>Parcel Photo *</Text>
-          <TouchableOpacity
-            style={styles.uploadBtn}
-            onPress={() => pickImage(setParcelPhoto)}
-          >
-            <Ionicons name="camera" size={22} color="#fff" />
-            <Text style={styles.uploadText}>Upload Parcel Photo</Text>
-          </TouchableOpacity>
-
-          {parcelPhoto && (
-            <Image source={{ uri: parcelPhoto }} style={styles.previewImage} />
-          )}
-        </View>
-
-        {/* Submit */}
-        <TouchableOpacity style={styles.submitBtn} onPress={handleBusDelivery}>
-          <Text style={styles.submitText}>Save Bus Delivery</Text>
+      <View style={styles.topHeader}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={24} color="#1e293b" />
         </TouchableOpacity>
+        <Text style={styles.headerTitle}>Bus Dispatch Info</Text>
+        <View style={{ width: 40 }} />
+      </View>
 
-        <View style={{ height: 50 }} />
-      </ScrollView>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
+      >
+        <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+          <View style={[styles.responsiveWrapper, isDesktop && { maxWidth: CONTENT_MAX_WIDTH, alignSelf: 'center' }]}>
+            
+            {/* Order Identity Card */}
+            <View style={styles.identityCard}>
+               <View>
+                 <Text style={styles.identityLabel}>Order ID</Text>
+                 <Text style={styles.identityValue}>#{orderId}</Text>
+               </View>
+               <View style={styles.badge}>
+                 <Text style={styles.badgeText}>{deliveryType}</Text>
+               </View>
+            </View>
+
+            <View style={[styles.mainLayout, isDesktop && styles.desktopRow]}>
+              {/* Left Column: Logistics */}
+              <View style={[isDesktop ? styles.column : null]}>
+                <View style={styles.card}>
+                  <View style={styles.cardHeader}>
+                    <Ionicons name="bus-outline" size={20} color="#0ea5e9" />
+                    <Text style={styles.cardTitle}>Transport Details</Text>
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Bus Name *</Text>
+                    <TextInput value={busName} onChangeText={setBusName} placeholder="Travels name" style={styles.input} />
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Route *</Text>
+                    <TextInput value={busRoute} onChangeText={setBusRoute} placeholder="Origin → Destination" style={styles.input} />
+                  </View>
+
+                  <View style={styles.inputRow}>
+                   {/* Departure Time */}
+<View style={{ flex: 1 }}>
+  <Text style={styles.inputLabel}>Departure *</Text>
+  {Platform.OS === "web" ? (
+    <input
+      type="time"
+      value={departureTime}
+      onChange={(e) => setDepartureTime(e.target.value)}
+      style={styles.webTimeInput}
+    />
+  ) : (
+    <>
+      <TouchableOpacity style={styles.timeBox} onPress={() => setShowDeparturePicker(true)}>
+        <Text style={styles.timeText}>{departureTime || "00:00"}</Text>
+        <Ionicons name="time-outline" size={18} color="#94a3b8" />
+      </TouchableOpacity>
+      {showDeparturePicker && (
+        <DateTimePicker
+          value={departureTime ? new Date(`1970-01-01T${departureTime}:00`) : new Date()}
+          mode="time"
+          display="spinner"
+          is24Hour={true}
+          onChange={(event, date) => {
+            setShowDeparturePicker(false);
+            if (date) {
+              const h = String(date.getHours()).padStart(2, "0");
+              const m = String(date.getMinutes()).padStart(2, "0");
+              setDepartureTime(`${h}:${m}`);
+            }
+          }}
+        />
+      )}
+    </>
+  )}
+</View>
+
+{/* Arrival Time */}
+<View style={{ flex: 1 }}>
+  <Text style={styles.inputLabel}>Arrival *</Text>
+  {Platform.OS === "web" ? (
+    <input
+      type="time"
+      value={arrivalTime}
+      onChange={(e) => setArrivalTime(e.target.value)}
+      style={styles.webTimeInput}
+    />
+  ) : (
+    <>
+      <TouchableOpacity style={styles.timeBox} onPress={() => setShowArrivalPicker(true)}>
+        <Text style={styles.timeText}>{arrivalTime || "00:00"}</Text>
+        <Ionicons name="time-outline" size={18} color="#94a3b8" />
+      </TouchableOpacity>
+      {showArrivalPicker && (
+        <DateTimePicker
+          value={arrivalTime ? new Date(`1970-01-01T${arrivalTime}:00`) : new Date()}
+          mode="time"
+          display="spinner"
+          is24Hour={true}
+          onChange={(event, date) => {
+            setShowArrivalPicker(false);
+            if (date) {
+              const h = String(date.getHours()).padStart(2, "0");
+              const m = String(date.getMinutes()).padStart(2, "0");
+              setArrivalTime(`${h}:${m}`);
+            }
+          }}
+        />
+      )}
+    </>
+  )}
+</View>
+                  </View>
+                </View>
+
+                <View style={styles.card}>
+                  <View style={styles.cardHeader}>
+                    <Ionicons name="person-outline" size={20} color="#0ea5e9" />
+                    <Text style={styles.cardTitle}>Staff Contact</Text>
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Driver/Conductor *</Text>
+                    <TextInput value={driverName} onChangeText={setDriverName} placeholder="Name" style={styles.input} />
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Phone Number</Text>
+                    <TextInput value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="+91" style={styles.input} />
+                  </View>
+                </View>
+              </View>
+
+              {/* Right Column: Financials & Photos */}
+              <View style={[isDesktop ? styles.column : null]}>
+                <View style={styles.card}>
+                  <View style={styles.cardHeader}>
+                    <Ionicons name="cash-outline" size={20} color="#10b981" />
+                    <Text style={styles.cardTitle}>Freight Expense</Text>
+                  </View>
+                  <View style={styles.inputRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>Amount (₹) *</Text>
+                      <TextInput value={freightAmount} onChangeText={setFreightAmount} keyboardType="numeric" placeholder="0.00" style={styles.input} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>Ref No.</Text>
+                      <TextInput value={freightRef} onChangeText={setFreightRef} placeholder="Optional" style={styles.input} />
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.card}>
+                  <View style={styles.cardHeader}>
+                    <Ionicons name="images-outline" size={20} color="#f59e0b" />
+                    <Text style={styles.cardTitle}>Visual Proof</Text>
+                  </View>
+                  <View style={styles.photoGrid}>
+                    <View style={{ flex: 1 }}>
+                      <TouchableOpacity style={[styles.uploadBtn, busPhoto && styles.uploadBtnActive]} onPress={() => pickImage(setBusPhoto)}>
+                        <Ionicons name={busPhoto ? "checkmark-circle" : "bus"} size={22} color={busPhoto ? "#fff" : "#64748b"} />
+                        <Text style={[styles.uploadText, busPhoto && {color: '#fff'}]}>Bus</Text>
+                      </TouchableOpacity>
+                      {busPhoto && <Image source={{ uri: busPhoto }} style={styles.previewImage} />}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <TouchableOpacity style={[styles.uploadBtn, parcelPhoto && styles.uploadBtnActive]} onPress={() => pickImage(setParcelPhoto)}>
+                        <Ionicons name={parcelPhoto ? "checkmark-circle" : "cube"} size={22} color={parcelPhoto ? "#fff" : "#64748b"} />
+                        <Text style={[styles.uploadText, parcelPhoto && {color: '#fff'}]}>Parcel</Text>
+                      </TouchableOpacity>
+                      {parcelPhoto && <Image source={{ uri: parcelPhoto }} style={styles.previewImage} />}
+                    </View>
+                  </View>
+                </View>
+
+                <TouchableOpacity style={styles.submitBtn} onPress={handleBusDelivery}>
+                  <Text style={styles.submitText}>Complete Dispatch</Text>
+                  <Ionicons name="chevron-forward" size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-// ===================================================================
-// STYLES (Same style language as IndividualOrderScreen)
-// ===================================================================
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#f8f9fa" },
-  container: { padding: 12 },
-
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 15,
-  },
-
-  header: { fontSize: 22, fontWeight: "bold", color: "#2196F3" },
-
-  card: {
-    backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 15,
-    elevation: 3,
-  },
-
-  title: { fontSize: 18, fontWeight: "bold", marginBottom: 8 },
-
-  label: { fontSize: 16, marginTop: 10, color: "#444" },
-
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 16,
-    marginTop: 5,
-  },
-
-  timeBox: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 10,
-    padding: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-
-  timeText: { fontSize: 16, color: "#000" },
-
-  uploadBtn: {
-    backgroundColor: "#2196F3",
-    padding: 12,
-    borderRadius: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 5,
-    gap: 8,
-  },
-
-  uploadText: { color: "#fff", fontWeight: "600", fontSize: 16 },
-
-  previewImage: {
-    width: "100%",
-    height: 180,
-    borderRadius: 10,
-    marginTop: 10,
-  },
-
-  submitBtn: {
-    backgroundColor: "#2196F3",
+  safeArea: { flex: 1, backgroundColor: "#f8fafc" },
+  topHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
     paddingVertical: 15,
-    borderRadius: 10,
-    marginTop: 10,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0'
   },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: '#1e293b' },
+  backBtn: { padding: 5, backgroundColor: '#f1f5f9', borderRadius: 8 },
+  container: { padding: 16, flexGrow: 1 },
+  responsiveWrapper: { width: '100%' },
 
-  submitText: {
-    textAlign: "center",
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "600",
+  identityCard: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 15,
+    marginBottom: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0'
   },
+  identityLabel: { fontSize: 12, color: '#64748b', fontWeight: '600' },
+  identityValue: { fontSize: 18, fontWeight: '800', color: '#0ea5e9' },
+  badge: { backgroundColor: '#f0f9ff', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  badgeText: { fontSize: 12, color: '#0ea5e9', fontWeight: '700', textTransform: 'uppercase' },
+
+  mainLayout: { flexDirection: 'column', gap: 16 },
+  desktopRow: { flexDirection: 'row', gap: 20, alignItems: 'flex-start' },
+  column: { flex: 1 },
+
+  card: { backgroundColor: "#fff", padding: 20, borderRadius: 20, marginBottom: 16, borderWidth: 1, borderColor: '#e2e8f0' },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, gap: 8 },
+  cardTitle: { fontSize: 15, fontWeight: '700', color: '#1e293b' },
+
+  inputGroup: { marginBottom: 15 },
+  inputLabel: { fontSize: 13, fontWeight: '600', color: '#64748b', marginBottom: 6 },
+  input: { borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 12, padding: 12, fontSize: 15, backgroundColor: "#fff", color: '#1e293b' },
+
+  inputRow: { flexDirection: 'row', gap: 12 },
+  timeBox: { borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 12, padding: 12, flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#fff" },
+  timeText: { fontSize: 15, color: "#1e293b", fontWeight: '500' },
+
+  photoGrid: { flexDirection: 'row', gap: 12 },
+  uploadBtn: { 
+    backgroundColor: "#f1f5f9", 
+    padding: 15, 
+    borderRadius: 15, 
+    alignItems: "center", 
+    justifyContent: 'center', 
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderStyle: 'dashed'
+  },
+  uploadBtnActive: { backgroundColor: '#1e293b', borderStyle: 'solid', borderColor: '#1e293b' },
+  uploadText: { color: "#64748b", fontWeight: "700", fontSize: 12 },
+  previewImage: { width: "100%", height: 100, borderRadius: 12, marginTop: 10 },
+
+  submitBtn: { 
+    backgroundColor: "#1e293b", 
+    paddingVertical: 18, 
+    borderRadius: 15, 
+    marginTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: "#1e293b",
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 3
+  },
+  submitText: { color: "#fff", fontSize: 16, fontWeight: "800" },
 });

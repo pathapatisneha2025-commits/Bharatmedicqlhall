@@ -10,41 +10,175 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
+  useWindowDimensions,
+  Platform,
 } from "react-native";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import FontAwesome from "react-native-vector-icons/FontAwesome";
+import { Ionicons, Feather } from "@expo/vector-icons";import { Picker } from "@react-native-picker/picker";
 import { useNavigation } from "@react-navigation/native";
+import { Linking } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const API_URL = "https://hospitaldatabasemanagement.onrender.com/order-medicine/all";
 const UPDATE_STATUS_URL =
   "https://hospitaldatabasemanagement.onrender.com/order-medicine/update-status";
+const EMPLOYEES_URL =
+  "https://hospitaldatabasemanagement.onrender.com/employee/all"; // ✅ Employees API
+const ASSIGN_DELIVERY_URL =
+  "https://hospitaldatabasemanagement.onrender.com/deliveryboy/assign-delivery"; // ✅ hypothetical endpoint
+const ASSIGN_PICKER_URL =
+  "https://hospitaldatabasemanagement.onrender.com/picker/assign-picker";
+const EDIT_ORDER_URL =
+  "https://hospitaldatabasemanagement.onrender.com/order-medicine/update";
+const DELETE_ORDER_URL =
+  "https://hospitaldatabasemanagement.onrender.com/order-medicine/delete";
 
 const ManageOrdersScreen = () => {
   const navigation = useNavigation();
   const [search, setSearch] = useState("");
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+          const [loadingCount, setLoadingCount] = useState(0);
+  
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [deliveryAssignments, setDeliveryAssignments] = useState({});
+  const [deliveryBoys, setDeliveryBoys] = useState([]); // ✅ fetched dynamically
+const [pickers, setPickers] = useState([]);
+const [pickerAssignments, setPickerAssignments] = useState({});
+const [editFields, setEditFields] = useState({
+  patientName: "",
+  mobile: "",
+  flat: "",
+  street: "",
+  landmark: "",
+  city: "",
+  state: "",
+  pincode: "",
+  payment_method: "",
+  payment_status: "",   // new
+  payment_mode: "",     // new
+  amount_received: 0,   // new
+  deliverytype: "",     // new
+});
 
-  // Fetch Orders
+const [editMedicines, setEditMedicines] = useState([]);
+
+const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const MAX_WIDTH = 420;
+  const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
+  const isWeb = Platform.OS === "web";
+
+  const showAlert = (title, message, buttons) => {
+    if (Platform.OS === "web") {
+      if (buttons && buttons.length > 1) {
+        const confirmed = window.confirm(`${title}\n\n${message}`);
+        if (confirmed) {
+          const okBtn = buttons.find(b => b.style !== "cancel");
+          okBtn?.onPress?.();
+        }
+      } else {
+        window.alert(`${title}\n\n${message}`);
+      }
+    } else {
+      Alert.alert(title, message, buttons);
+    }
+  };  
+
+  useEffect(() => {
+            let interval;
+            if (loading) {
+              setLoadingCount(0);
+              interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+            } else clearInterval(interval);
+            return () => clearInterval(interval);
+          }, [loading]);
+  // ✅ Fetch Orders
   const fetchOrders = async () => {
     try {
       const response = await fetch(API_URL);
       const data = await response.json();
       setOrders(data);
     } catch (error) {
-      Alert.alert("Error", "Failed to fetch orders");
+      showAlert("Error", "Failed to fetch orders");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✅ Fetch Delivery Boys
+//   const fetchDeliveryBoys = async () => {
+//     try {
+//       const response = await fetch(EMPLOYEES_URL);
+//       const data = await response.json();
+
+//       // Filter only "Hd delivery" employees
+//       const filtered = data.employees.filter(
+//         (emp) => emp.role?.toLowerCase() === "hd delivery"
+//       );
+
+//       // Format for dropdown
+//       const formatted = filtered.map((emp) => ({
+//         id: emp.id, // employee_id
+//         name: emp.full_name,
+//       }));
+
+//       setDeliveryBoys(formatted);
+//     } catch (error) {
+//       console.error("Error fetching delivery boys:", error);
+//       showAlert("Error", "Failed to fetch delivery boys");
+//     }
+//   };
+//   const fetchPickers = async () => {
+//   try {
+//     const response = await fetch(EMPLOYEES_URL);
+//     const data = await response.json();
+
+//     const filtered = data.employees.filter(
+//       (emp) => emp.role?.toLowerCase() === "picker"
+//     );
+
+//     const formatted = filtered.map((emp) => ({
+//       id: emp.id,
+//       name: emp.full_name,
+//     }));
+
+//     setPickers(formatted);
+//   } catch (error) {
+//     console.error("Error fetching pickers:", error);
+//    showAlert("Error", "Failed to fetch picker employees");
+//   }
+// };
+
+
+ const fetchAllData = async () => {
+    try {
+      setLoading(true);
+      const [ordersRes, employeesRes] = await Promise.all([fetch(API_URL), fetch(EMPLOYEES_URL)]);
+      const ordersData = await ordersRes.json();
+      const employeesData = await employeesRes.json();
+
+      setOrders(ordersData);
+
+      const deliveryBoysData = employeesData.employees.filter((e) => e.role?.toLowerCase() === "hd delivery");
+      setDeliveryBoys(deliveryBoysData.map((e) => ({ id: e.id, name: e.full_name })));
+
+      const pickersData = employeesData.employees.filter((e) => e.role?.toLowerCase() === "picker");
+      setPickers(pickersData.map((e) => ({ id: e.id, name: e.full_name })));
+    } catch (error) {
+      console.error(error);
+      showAlert("Error", "Failed to fetch data");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchOrders();
+    fetchAllData();
   }, []);
 
-  // Update Order Status
+  // ✅ Update Order Status
   const updateOrderStatus = async (orderId, status) => {
     try {
       setLoading(true);
@@ -55,268 +189,430 @@ const ManageOrdersScreen = () => {
       });
       const data = await res.json();
       if (res.ok) {
-        Alert.alert("✅ Success", data.message || `Order marked as ${status}`);
+        showAlert("✅ Success", data.message || `Order marked as ${status}`);
         fetchOrders();
       } else {
-        Alert.alert("❌ Error", data.error || "Failed to update status");
+        showAlert("❌ Error", data.error || "Failed to update status");
       }
     } catch {
-      Alert.alert("Error", "Something went wrong while updating order status.");
+      showAlert("Error", "Something went wrong while updating order status.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Filter orders
+  // ✅ Assign Delivery Boy
+const assignDeliveryBoy = async (orderId, employeeId) => {
+  const selectedBoy = deliveryBoys.find(
+    (b) => String(b.id) === String(employeeId)
+  );
+
+  const boyName = selectedBoy ? selectedBoy.name : "Unknown";
+
+  try {
+    const res = await fetch(ASSIGN_DELIVERY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId, employee_id: employeeId }),
+    });
+
+    const data = await res.json();
+
+    if (res.ok) {
+      setDeliveryAssignments((prev) => ({
+        ...prev,
+        [orderId]: employeeId,
+      }));
+
+      showAlert("✅ Assigned", `Delivery boy assigned: ${boyName}`);
+      fetchOrders();
+    } else {
+      showAlert("❌ Error", data.error || "Failed to assign delivery boy");
+    }
+  } catch (error) {
+    console.error(error);
+    showAlert("Error", "Something went wrong.");
+  }
+};
+
+const assignPicker = async (orderId, employeeId) => {
+  const selectedPicker = pickers.find((p) => p.id === employeeId);
+  const pickerName = selectedPicker ? selectedPicker.name : "Unknown";
+
+  try {
+    const res = await fetch(ASSIGN_PICKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId, employee_id: employeeId }),
+    });
+
+    const data = await res.json();
+
+    if (res.ok) {
+      setPickerAssignments((prev) => ({ ...prev, [orderId]: employeeId }));
+      showAlert("✅ Picker Assigned", `Picker assigned: ${pickerName}`);
+      fetchOrders();
+    } else {
+      showAlert("❌ Error", data.error || "Failed to assign picker");
+    }
+  } catch (error) {
+    console.error("Error assigning picker:", error);
+    showAlert("Error", "Something went wrong while assigning picker.");
+  }
+};
+
+const previewOrder = (order) => {
+  setSelectedOrder(order);
+
+  setEditFields({
+    patientName: order.address?.name || "",
+    mobile: order.address?.mobile || "",
+    flat: order.address?.flat || "",
+    street: order.address?.street || "",
+    landmark: order.address?.landmark || "",
+    city: order.address?.city || "",
+    state: order.address?.state || "",
+    pincode: order.address?.pincode || "",
+    payment_method: order.payment_method || "",
+    payment_status: order.payment_status || "",
+    payment_mode: order.payment_mode || "",
+    amount_received: order.amount_received || 0,
+    deliverytype: order.deliverytype || "",
+  });
+
+  setEditMedicines(
+    order.order_summary?.map((m) => ({
+      id: m.id || Math.random().toString(),
+      name: m.name,
+      quantity: m.quantity,
+    })) || []
+  );
+
+  setModalVisible(true);
+};
+
+  // ✅ Filter Orders
   const filteredOrders = orders.filter(
     (order) =>
       order.address?.name?.toLowerCase().includes(search.toLowerCase()) ||
       order.status?.toLowerCase().includes(search.toLowerCase())
   );
 
-  // Preview modal
-  const previewOrder = (order) => {
-    setSelectedOrder(order);
-    setModalVisible(true);
-  };
+ 
 
-  // Delete (local demo)
-  const deleteOrder = (id) => {
-    Alert.alert("Confirm Delete", "Are you sure?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => {
-          setOrders((prev) => prev.filter((o) => o.id !== id));
-          Alert.alert("Deleted", "Order deleted successfully!");
-        },
+const editOrderAPI = async (orderId, updatedData) => {
+  try {
+    setLoading(true);
+
+    const res = await fetch(`${EDIT_ORDER_URL}/${orderId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updatedData),
+    });
+
+    let data = {};
+    try {
+      data = await res.json();
+    } catch (err) {
+      console.warn("Failed to parse response JSON", err);
+    }
+
+    if (res.ok) {
+      showAlert("✅ Updated", data.message || "Order updated successfully");
+      setModalVisible(false);
+      fetchOrders();
+    } else {
+      showAlert("❌ Error", data.error || "Failed to update order");
+    }
+  } catch (err) {
+    console.error("Edit order error:", err);
+    showAlert("Error", "Something went wrong while editing order");
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+  // ✅ Delete Order (local only)
+ const deleteOrderAPI = (orderId) => {
+  showAlert("Confirm Delete", "Are you sure you want to delete this order?", [
+    { text: "Cancel", style: "cancel" },
+    {
+      text: "Delete",
+      style: "destructive",
+      onPress: async () => {
+        try {
+          setLoading(true);
+
+          const res = await fetch(`${DELETE_ORDER_URL}/${orderId}`, {
+            method: "DELETE",
+          });
+
+          const data = await res.json();
+
+          if (res.ok) {
+           showAlert("🗑️ Deleted", data.message || "Order deleted");
+            setModalVisible(false);
+            fetchOrders(); // 🔄 refresh list
+          } else {
+           showAlert("❌ Error", data.error || "Failed to delete order");
+          }
+        } catch (err) {
+          console.error("Delete order error:", err);
+          showAlert("Error", "Something went wrong while deleting order");
+        } finally {
+          setLoading(false);
+        }
       },
-    ]);
-  };
+    },
+  ]);
+};
+  const exportOrdersExcel = () => {
+  const url =
+    "https://hospitaldatabasemanagement.onrender.com/order-medicine/export";
 
-  // Render each row
-  const renderRow = ({ item, index }) => (
-    <View style={styles.tableRow}>
+  showAlert(
+    "Export Orders",
+    "Your Excel file will download in the browser.",
+    [
+      { text: "Cancel", style: "cancel" },
+      { text: "Download", onPress: () => Linking.openURL(url) },
+    ]
+  );
+};
+ if (loading) {
+    return (
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color="#007bff" />
+        <Text style={{ marginTop: 10 }}>Loading orders{loadingCount}s</Text>
+      </View>
+    );
+  }
+const renderRow = ({ item, index }) => (
+    <View style={[styles.tableRow, index % 2 !== 0 && { backgroundColor: "#f8fafc" }]}>
       <Text style={[styles.cell, styles.colSmall]}>{index + 1}</Text>
-      <Text
-        style={[
-          styles.cell,
-          styles.colMedium,
-          item.status === "processing"
-            ? styles.statusProcessing
-            : item.status === "cancelled"
-            ? styles.statusCancelled
-            : item.status === "inprogress"
-            ? styles.statusInProgress
-            : item.status === "delivered"
-            ? styles.statusDelivered
-            : styles.statusDefault,
-        ]}
-      >
+      <Text style={[styles.cell, styles.colMedium, styles.statusLabel, 
+        item.status === "delivered" ? styles.statusDelivered : 
+        item.status === "cancelled" ? styles.statusCancelled : styles.statusDefault]}>
         {item.status}
       </Text>
-      <Text style={[styles.cell, styles.colLarge]}>{item.address?.name}</Text>
+      <Text style={[styles.cell, styles.colLarge, { fontWeight: "600" }]}>{item.address?.name}</Text>
       <Text style={[styles.cell, styles.colMedium]}>{item.address?.mobile}</Text>
       <Text style={[styles.cell, styles.colXLarge]} numberOfLines={2}>
-        {item.address?.flat}, {item.address?.street}, {item.address?.landmark},{" "}
-        {item.address?.city}, {item.address?.state} - {item.address?.pincode}
+        {item.address?.flat}, {item.address?.street}, {item.address?.city}
       </Text>
       <Text style={[styles.cell, styles.colMedium]}>{item.payment_method}</Text>
-      <Text style={[styles.cell, styles.colSmall]}>₹{item.subtotal}</Text>
-      <Text style={[styles.cell, styles.colSmall]}>₹{item.tax}</Text>
-      <Text style={[styles.cell, styles.colSmall]}>₹{item.delivery_fee}</Text>
-      <Text style={[styles.cell, styles.colSmall]}>₹{item.total}</Text>
+      <Text style={[styles.cell, styles.colSmall, { fontWeight: "700" }]}>₹{item.total}</Text>
       <Text style={[styles.cell, styles.colMedium]}>
         {new Date(item.expected_delivery).toLocaleDateString()}
       </Text>
-      <Text style={[styles.cell, styles.colLarge]} numberOfLines={2}>
-        {item.order_summary?.map((m) => `${m.name} x${m.quantity}`).join(", ")}
-      </Text>
-
-      <View style={[styles.cell, styles.colLarge, styles.statusBtnsContainer]}>
-        <TouchableOpacity
-          style={[styles.statusBtn, { backgroundColor: "#ff9800" }]}
-          onPress={() => updateOrderStatus(item.id, "inprogress")}
-        >
-          <Text style={styles.statusBtnText}>In Progress</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.statusBtn, { backgroundColor: "#4caf50" }]}
-          onPress={() => updateOrderStatus(item.id, "delivered")}
-        >
-          <Text style={styles.statusBtnText}>Delivered</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.statusBtn, { backgroundColor: "#f44336" }]}
-          onPress={() => updateOrderStatus(item.id, "cancelled")}
-        >
-          <Text style={styles.statusBtnText}>Cancelled</Text>
-        </TouchableOpacity>
+      
+      <View style={[styles.cell, styles.colMedium]}>
+        <View style={styles.pickerWrapper}>
+          <Picker
+            selectedValue={deliveryAssignments[item.id] || ""}
+            onValueChange={(value) => assignDeliveryBoy(item.id, value)}
+            style={styles.picker}
+          >
+            <Picker.Item label="Assign Boy" value="" />
+            {deliveryBoys.map((boy) => <Picker.Item key={boy.id} label={boy.name} value={boy.id} />)}
+          </Picker>
+        </View>
       </View>
 
+      <View style={[styles.cell, styles.colMedium]}>
+        <View style={styles.pickerWrapper}>
+          <Picker
+            selectedValue={pickerAssignments[item.id] || ""}
+            onValueChange={(value) => assignPicker(item.id, value)}
+            style={styles.picker}
+          >
+            <Picker.Item label="Assign Picker" value="" />
+            {pickers.map((p) => <Picker.Item key={p.id} label={p.name} value={p.id} />)}
+          </Picker>
+        </View>
+      </View>
+<View style={[styles.cell, styles.colLarge, styles.statusBtnsContainer]}>
+  
+  <TouchableOpacity
+    style={[styles.statusBtn, { backgroundColor: "#3b82f6" }]}
+    onPress={() => updateOrderStatus(item.id, "inprogress")}
+  >
+    <Text style={styles.statusBtnText}>Progress</Text>
+  </TouchableOpacity>
+
+  <TouchableOpacity
+    style={[styles.statusBtn, { backgroundColor: "#10b981" }]}
+    onPress={() => updateOrderStatus(item.id, "delivered")}
+  >
+    <Text style={styles.statusBtnText}>Done</Text>
+  </TouchableOpacity>
+
+  <TouchableOpacity
+    style={[styles.statusBtn, { backgroundColor: "#ef4444" }]}
+    onPress={() => updateOrderStatus(item.id, "cancelled")}
+  >
+    <Text style={styles.statusBtnText}>Cancel</Text>
+  </TouchableOpacity>
+
+</View>
+
+
       <View style={[styles.cell, styles.colSmall, styles.actionCell]}>
-        <TouchableOpacity onPress={() => previewOrder(item)}>
-          <FontAwesome name="eye" size={20} color="#2196F3" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => deleteOrder(item.id)}>
-          <Icon name="delete" size={20} color="red" />
+        <TouchableOpacity onPress={() => previewOrder(item)} style={styles.viewIconBtn}>
+          <Feather name="eye" size={18} color="#2563eb" />
         </TouchableOpacity>
       </View>
     </View>
   );
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: "#fff", marginTop: 10, padding: 10 }}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Icon name="arrow-back" size={24} color="#000" />
+    <SafeAreaView style={styles.mainContainer}>
+      <View style={styles.headerArea}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.circleBack}>
+            <Ionicons name="arrow-back" size={22} color="#1e293b" />
+          </TouchableOpacity>
+          <View>
+            <Text style={styles.headerTitle}>Order Management</Text>
+            <Text style={styles.headerSub}>Control pharmacy shipments</Text>
+          </View>
+        </View>
+
+        <TouchableOpacity style={styles.btnExport} onPress={exportOrdersExcel}>
+          <Feather name="download" size={18} color="#fff" />
+          <Text style={styles.btnExportText}>Export</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>📦 Manage Orders</Text>
       </View>
 
-      {/* Search */}
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Search by patient name or status"
-          value={search}
-          onChangeText={setSearch}
-        />
-        {search.length > 0 && (
-          <TouchableOpacity style={styles.clearButton} onPress={() => setSearch("")}>
-            <Text style={styles.clearText}>Clear</Text>
-          </TouchableOpacity>
-        )}
+      <View style={styles.topActions}>
+        <View style={styles.searchBox}>
+          <Feather name="search" size={18} color="#94a3b8" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search name, mobile or status..."
+            value={search}
+            onChangeText={setSearch}
+          />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch("")}>
+              <Ionicons name="close-circle" size={18} color="#94a3b8" />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#000" />
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color="#2563eb" />
+          <Text style={{ marginTop: 10, color: "#64748b" }}>Syncing... {loadingCount}s</Text>
+        </View>
       ) : (
-        <ScrollView horizontal>
-          <View style={{ flex: 1 }}>
-            {/* Table Header */}
-            <View style={[styles.tableRow, styles.tableHeader]}>
-              <Text style={[styles.headerCell, styles.colSmall]}>#</Text>
-              <Text style={[styles.headerCell, styles.colMedium]}>Status</Text>
-              <Text style={[styles.headerCell, styles.colLarge]}>Name</Text>
-              <Text style={[styles.headerCell, styles.colMedium]}>Mobile</Text>
-              <Text style={[styles.headerCell, styles.colXLarge]}>Address</Text>
-              <Text style={[styles.headerCell, styles.colMedium]}>Payment</Text>
-              <Text style={[styles.headerCell, styles.colSmall]}>Subtotal</Text>
-              <Text style={[styles.headerCell, styles.colSmall]}>Tax</Text>
-              <Text style={[styles.headerCell, styles.colSmall]}>Delivery</Text>
-              <Text style={[styles.headerCell, styles.colSmall]}>Total</Text>
-              <Text style={[styles.headerCell, styles.colMedium]}>Delivery Date</Text>
-              <Text style={[styles.headerCell, styles.colLarge]}>Medicines</Text>
-              <Text style={[styles.headerCell, styles.colLarge]}>Update Status</Text>
-              <Text style={[styles.headerCell, styles.colSmall]}>Actions</Text>
-            </View>
+        <View style={styles.cardTable}>
+       <ScrollView horizontal showsHorizontalScrollIndicator={!isWeb}>
+  <View>
+    <View style={styles.tableHeaderRow}>
+      {/* header cells */}
+    </View>
+    <View style={{ height: 500 }}> {/* fixed height for FlatList */}
+      <FlatList
+        data={filteredOrders}
+        renderItem={renderRow}
+        keyExtractor={(item) => item.id.toString()}
+      />
+    </View>
+  </View>
+</ScrollView>
 
-            <FlatList
-              data={filteredOrders}
-              renderItem={renderRow}
-              keyExtractor={(item) => item.id.toString()}
-            />
-          </View>
-        </ScrollView>
+        </View>
       )}
 
-      {/* Modal */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <ScrollView>
-              <Text style={styles.modalTitle}>📦 Order Details</Text>
-              <Text style={styles.modalText}>Order ID: {selectedOrder?.id}</Text>
-              <Text style={styles.modalText}>Patient: {selectedOrder?.address?.name}</Text>
-              <Text style={styles.modalText}>Mobile: {selectedOrder?.address?.mobile}</Text>
-              <Text style={styles.modalText}>
-                Address: {selectedOrder?.address?.flat}, {selectedOrder?.address?.street},{" "}
-                {selectedOrder?.address?.landmark}, {selectedOrder?.address?.city},{" "}
-                {selectedOrder?.address?.state} - {selectedOrder?.address?.pincode}
-              </Text>
-              <Text style={styles.modalText}>Payment: {selectedOrder?.payment_method}</Text>
-              <Text style={styles.modalText}>Status: {selectedOrder?.status}</Text>
-              <Text style={styles.modalText}>
-                Expected Delivery: {new Date(selectedOrder?.expected_delivery).toDateString()}
-              </Text>
-              <Text style={styles.modalText}>Subtotal: ₹{selectedOrder?.subtotal}</Text>
-              <Text style={styles.modalText}>Tax: ₹{selectedOrder?.tax}</Text>
-              <Text style={styles.modalText}>Delivery Fee: ₹{selectedOrder?.delivery_fee}</Text>
-              <Text style={styles.modalText}>Total: ₹{selectedOrder?.total}</Text>
+      <Modal visible={modalVisible} animationType="fade" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { width: SCREEN_WIDTH > 420 ? 420 : SCREEN_WIDTH - 40 }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>📦 Order Editor</Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#64748b" />
+              </TouchableOpacity>
+            </View>
 
-              <Text style={styles.modalSubtitle}>💊 Medicines:</Text>
-              {selectedOrder?.order_summary?.map((m, i) => (
-                <Text key={i} style={styles.modalText}>
-                  • {m.name} × {m.quantity} (₹{m.price})
-                </Text>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
+              <Text style={styles.modalSubtitle}>Patient Information</Text>
+              <TextInput style={styles.modalInput} value={editFields.patientName} onChangeText={(t) => setEditFields({ ...editFields, patientName: t })} placeholder="Name" />
+              <TextInput style={styles.modalInput} value={editFields.mobile} onChangeText={(t) => setEditFields({ ...editFields, mobile: t })} placeholder="Mobile" keyboardType="phone-pad" />
+
+              <Text style={styles.modalSubtitle}>Medicine List</Text>
+              {editMedicines.map((med, i) => (
+                <View key={med.id} style={styles.medicineRow}>
+                  <TextInput style={[styles.modalInput, { flex: 2 }]} value={med.name} placeholder="Item" onChangeText={(t) => { const u = [...editMedicines]; u[i].name = t; setEditMedicines(u); }} />
+                  <TextInput style={[styles.modalInput, { flex: 1, marginLeft: 5 }]} value={String(med.quantity)} placeholder="Qty" keyboardType="numeric" onChangeText={(t) => { const u = [...editMedicines]; u[i].quantity = parseInt(t) || 0; setEditMedicines(u); }} />
+                </View>
               ))}
             </ScrollView>
 
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setModalVisible(false)}
-            >
-              <Text style={styles.closeButtonText}>Close</Text>
-            </TouchableOpacity>
+            <View style={styles.modalActionRow}>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#10b981" }]} onPress={() => editOrderAPI(selectedOrder.id, { address: { name: editFields.patientName, mobile: editFields.mobile }, order_summary: editMedicines })}>
+                <Text style={styles.modalBtnText}>Save Changes</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ef4444" }]} onPress={() => deleteOrderAPI(selectedOrder.id)}>
+                <Text style={styles.modalBtnText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  header: { flexDirection: "row", alignItems: "center", marginBottom: 20 },
-  headerTitle: { fontSize: 22, fontWeight: "bold", marginLeft: 16,marginTop:20 },
+  mainContainer: { flex: 1, backgroundColor: "#F1F5F9", padding: 16 },
+  headerArea: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
+  circleBack: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#fff", justifyContent: "center", alignItems: "center", elevation: 2 },
+  headerTitle: { fontSize: 24, fontWeight: "800", color: "#1e293b" },
+  headerSub: { color: "#64748b", fontSize: 13 },
+  btnExport: { flexDirection: "row", alignItems: "center", backgroundColor: "#334155", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10 },
+  btnExportText: { color: "#fff", fontWeight: "600", marginLeft: 8 },
 
-  searchContainer: { marginBottom: 10, flexDirection: "row", alignItems: "center" },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 5,
-    padding: 8,
-    flex: 1,
-  },
-  clearButton: {
-    backgroundColor: "black",
-    padding: 8,
-    alignItems: "center",
-    borderRadius: 5,
-    marginLeft: 8,
-  },
-  clearText: { color: "#fff", fontWeight: "bold" },
+  topActions: { marginBottom: 15 },
+  searchBox: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, paddingHorizontal: 12, height: 48, borderWidth: 1, borderColor: "#e2e8f0" },
+  searchInput: { flex: 1, marginLeft: 10, fontSize: 14, color: "#1e293b" ,  outlineStyle: "none",   // ✅ removes web rectangle
+},
 
-  tableHeader: { backgroundColor: "#f1f1f1" },
-  tableRow: { flexDirection: "row", borderBottomWidth: 1, borderColor: "#ddd", alignItems: "center" },
-  headerCell: { padding: 6, fontWeight: "bold", fontSize: 13, textAlign: "center" },
-  cell: { padding: 6, fontSize: 12, textAlign: "center" },
+  cardTable: { backgroundColor: "#fff", borderRadius: 15, borderWidth: 1, borderColor: "#e2e8f0", flex: 1, overflow: "hidden", elevation: 3 },
+  tableHeaderRow: { flexDirection: "row", backgroundColor: "#f8fafc", paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: "#e2e8f0" },
+  headerCell: { fontSize: 11, fontWeight: "700", color: "#64748b", textTransform: "uppercase", textAlign: "center" },
+  tableRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#f1f5f9", alignItems: "center", paddingVertical: 10 },
+  cell: { fontSize: 13, color: "#475569", textAlign: "center" },
 
-  colSmall: { width: 80 },
-  colMedium: { width: 140 },
-  colLarge: { width: 220 },
-  colXLarge: { width: 340 },
+  colSmall: { width: 60 }, colMedium: { width: 150 }, colLarge: { width: 200 }, colXLarge: { width: 280 },
 
-  statusProcessing: { color: "orange", fontWeight: "bold" },
-  statusCancelled: { color: "red", fontWeight: "bold" },
-  statusInProgress: { color: "#ff9800", fontWeight: "bold" },
-  statusDelivered: { color: "#4caf50", fontWeight: "bold" },
-  statusDefault: { color: "blue", fontWeight: "bold" },
+  statusLabel: { fontWeight: "700", fontSize: 11, textTransform: "uppercase" },
+  statusDelivered: { color: "#10b981" }, statusCancelled: { color: "#ef4444" }, statusDefault: { color: "#f59e0b" },
 
-  statusBtnsContainer: { flexDirection: "row", justifyContent: "space-around" },
-  statusBtn: { paddingVertical: 5, paddingHorizontal: 10, borderRadius: 6 },
-  statusBtnText: { color: "#fff", fontSize: 11, fontWeight: "bold" },
-  actionCell: { flexDirection: "row", justifyContent: "space-around" },
+  pickerWrapper: { backgroundColor: "#f8fafc", borderRadius: 8, borderWidth: 1, borderColor: "#e2e8f0", marginHorizontal: 5 },
+  picker: { height: 40, width: "100%" },
 
-  modalContainer: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
-  modalContent: { backgroundColor: "#fff", padding: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "85%" },
-  modalTitle: { fontSize: 22, fontWeight: "bold", marginBottom: 10, textAlign: "center" },
-  modalSubtitle: { fontSize: 18, fontWeight: "bold", marginTop: 15 },
-  modalText: { fontSize: 15, marginVertical: 3 },
-  closeButton: { backgroundColor: "#2196F3", padding: 12, borderRadius: 10, marginTop: 15 },
-  closeButtonText: { color: "#fff", fontWeight: "bold", textAlign: "center", fontSize: 16 },
+  statusBtnsContainer: { flexDirection: "row", gap: 8, justifyContent: "center" },
+  statusBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
+  statusBtnText: { color: "#fff", fontSize: 10, fontWeight: "700" },
+
+  actionCell: { justifyContent: "center", alignItems: "center" },
+  viewIconBtn: { padding: 8, backgroundColor: "#eff6ff", borderRadius: 8 },
+
+  modalOverlay: { flex: 1, backgroundColor: "rgba(15, 23, 42, 0.5)", justifyContent: "center", alignItems: "center" },
+  modalContent: { backgroundColor: "#fff", borderRadius: 24, padding: 24, elevation: 20 },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: "800", color: "#1e293b" },
+  modalSubtitle: { fontSize: 14, fontWeight: "700", color: "#64748b", marginBottom: 10, marginTop: 15 },
+  modalInput: { backgroundColor: "#f8fafc", borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 10, padding: 12, marginBottom: 10 },
+  medicineRow: { flexDirection: "row", marginBottom: 5 },
+  modalActionRow: { flexDirection: "row", gap: 10, marginTop: 20 },
+  modalBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center" },
+  modalBtnText: { color: "#fff", fontWeight: "700" },
+  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" }
 });
 
 export default ManageOrdersScreen;

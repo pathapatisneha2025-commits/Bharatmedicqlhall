@@ -21,8 +21,23 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.snehadatla.snackc4ae6d36daef4ae7a5d09752987da1b1"
+      "package": "com.snehadatla.snackc4ae6d36daef4ae7a5d09752987da1b1",
+      "useNextNotificationsApi": true,
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "WAKE_LOCK"
+      ]
     },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/adaptive-icon.png",
+          "color": "#ffffff"
+        }
+      ]
+    ],
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro",

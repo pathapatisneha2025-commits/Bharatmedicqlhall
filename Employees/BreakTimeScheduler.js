@@ -31,6 +31,11 @@ const BreakTimeScheduler = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const scheduledIdsRef = useRef([]);
 
+
+  const showAlert = (title, message) => {
+      if (Platform.OS === "web") window.alert(`${title}\n\n${message}`);
+      else Alert.alert(title, message);
+    };
   useEffect(() => {
     const init = async () => {
       try {
@@ -86,7 +91,7 @@ const BreakTimeScheduler = ({ navigation }) => {
     if (status !== "granted") {
       const { status: newStatus } = await Notifications.requestPermissionsAsync();
       if (newStatus !== "granted") {
-        Alert.alert("Permission required", "Please enable notifications.");
+        showAlert("Permission required", "Please enable notifications.");
       }
     }
   };
@@ -123,6 +128,7 @@ const BreakTimeScheduler = ({ navigation }) => {
     }
     return { hour, minute };
   };
+  
 
  const scheduleBreakNotifications = async (breakInTime, breakOutTime) => {
   const inStr = fmtHHMM(breakInTime);
@@ -213,7 +219,7 @@ const BreakTimeScheduler = ({ navigation }) => {
 
   const handleSave = async () => {
     if (!employeeId) {
-      Alert.alert("Error", "Employee ID not found.");
+     showAlert("Error", "Employee ID not found.");
       return;
     }
 
@@ -223,11 +229,11 @@ const BreakTimeScheduler = ({ navigation }) => {
       await scheduleBreakNotifications(breakIn, breakOut);
       setLoading(false);
 
-      Alert.alert("Success", "Break reminders have been set successfully!");
+     showAlert("Success", "Break reminders have been set successfully!");
     } catch (err) {
       console.error(err);
       setLoading(false);
-      Alert.alert("Error", "Failed to schedule break reminders.");
+      showAlert("Error", "Failed to schedule break reminders.");
     }
   };
   if (loading)

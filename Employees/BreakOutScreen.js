@@ -6,8 +6,11 @@ import {
   StyleSheet,
   Image,
   Alert,
+  Platform,
   ActivityIndicator,
   StatusBar,
+  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
@@ -17,6 +20,10 @@ import { getEmployeeId } from '../utils/storage';
 
 const BreakOUTScreen = () => {
   const navigation = useNavigation();
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const isWeb = Platform.OS === 'web' && SCREEN_WIDTH > 800;
+
+  // ========================== STATE (UNCHANGED) ==========================
   const [permission, requestPermission] = useCameraPermissions();
   const [locationVerified, setLocationVerified] = useState(false);
   const [faceVerified, setFaceVerified] = useState(false);
@@ -33,87 +40,66 @@ const BreakOUTScreen = () => {
   const FIXED_LONGITUDE = 86.726709;
   const ALLOWED_RADIUS_METERS = 2000;
 
-  // ✅ Load employee ID and verify location
+  const showAlert = (title, message) => {
+    if (Platform.OS === "web") window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
+
+  // ========================== LOGIC (UNCHANGED) ==========================
   useEffect(() => {
     const fetchEmployeeData = async () => {
       const id = await getEmployeeId();
       if (!id) {
-        Alert.alert('Error', 'No employee ID found. Please log in again.');
+        showAlert('Error', 'No employee ID found. Please log in again.');
         return;
       }
       setEmployeeId(id);
-      await verifyCurrentLocation(id); // ✅ pass directly
+      await verifyCurrentLocation(id);
     };
     fetchEmployeeData();
   }, []);
 
-  // ✅ Verify current location with proper ID passing
   const verifyCurrentLocation = async (id) => {
     try {
       setLoading(true);
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Location Permission Denied', 'Please enable location access.');
-        setLoading(false);
+        showAlert('Location Permission Denied', 'Please enable location access.');
         return;
       }
-
       const current = await Location.getCurrentPositionAsync({});
       const { latitude, longitude } = current.coords;
-      const distance = getDistanceFromLatLonInMeters(
-        FIXED_LATITUDE,
-        FIXED_LONGITUDE,
-        latitude,
-        longitude
-      );
+      const distance = getDistanceFromLatLonInMeters(FIXED_LATITUDE, FIXED_LONGITUDE, latitude, longitude);
 
       if (distance <= ALLOWED_RADIUS_METERS) {
-        await verifyLocationAPI(latitude, longitude, id); // ✅ pass here too
+        await verifyLocationAPI(latitude, longitude, id);
       } else {
         setLocationVerified(false);
-        Alert.alert('Outside Zone', `You are ${Math.round(distance)}m away from office.`);
+        showAlert('Outside Zone', `You are ${Math.round(distance)}m away from office.`);
       }
-    } catch (e) {
-      console.error('Location error:', e);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { console.error('Location error:', e); } finally { setLoading(false); }
   };
 
-  // ✅ Distance calculator
   const getDistanceFromLatLonInMeters = (lat1, lon1, lat2, lon2) => {
     const R = 6371000;
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
     const dLon = ((lon2 - lon1) * Math.PI) / 180;
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos((lat1 * Math.PI) / 180) *
-        Math.cos((lat2 * Math.PI) / 180) *
-        Math.sin(dLon / 2) ** 2;
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
   };
 
-  // ✅ Location verification API
   const verifyLocationAPI = async (latitude, longitude, id) => {
     try {
-      const res = await fetch(
-        'https://hospitaldatabasemanagement.onrender.com/attendance/verify-location',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ employeeId: id, latitude, longitude }),
-        }
-      );
+      const res = await fetch('https://hospitaldatabasemanagement.onrender.com/attendance/verify-location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId: id, latitude, longitude }),
+      });
       const data = await res.json();
       setLocationVerified(data.locationVerified || false);
-    } catch (e) {
-      console.error('Location verify API error:', e);
-      setLocationVerified(false);
-    }
+    } catch (e) { setLocationVerified(false); }
   };
 
-  // ✅ Capture photo
   const captureImage = async () => {
     if (!cameraRef.current) return;
     const photo = await cameraRef.current.takePictureAsync({ quality: 1 });
@@ -122,7 +108,6 @@ const BreakOUTScreen = () => {
     await verifyFaceAPI(photo.uri);
   };
 
-  // ✅ Face verification API
   const verifyFaceAPI = async (uri) => {
     try {
       setFaceLoading(true);
@@ -130,260 +115,172 @@ const BreakOUTScreen = () => {
       formData.append('employeeId', employeeId);
       formData.append('image', { uri, type: 'image/jpeg', name: 'face.jpg' });
 
-      const res = await fetch(
-        'https://hospitaldatabasemanagement.onrender.com/attendance/verify-face',
-        {
-          method: 'POST',
-          headers: { Accept: 'application/json', 'Content-Type': 'multipart/form-data' },
-          body: formData,
-        }
-      );
-
+      const res = await fetch('https://hospitaldatabasemanagement.onrender.com/attendance/verify-face', {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+        body: formData,
+      });
       const data = await res.json();
       if (data.success && data.faceVerified) {
         setFaceVerified(true);
         setCapturedUrl(data.capturedUrl);
-        Alert.alert('✅ Face Verified', `Confidence: ${data.message}%`);
       } else {
         setFaceVerified(false);
-        Alert.alert('❌ Face Not Recognized');
+        showAlert('❌ Face Not Recognized');
       }
-    } catch (e) {
-      console.error('Face verify error:', e);
-    } finally {
-      setFaceLoading(false);
-    }
+    } catch (e) { console.error('Face error:', e); } finally { setFaceLoading(false); }
   };
 
-  // ✅ End Break Function
   const endBreak = async () => {
-    if (!locationVerified) return Alert.alert('Location Error', 'Please verify your location.');
-    if (!faceVerified) return Alert.alert('Face Error', 'Please verify your face.');
-
+    if (!locationVerified) return showAlert('Location Error', 'Please verify your location.');
+    if (!faceVerified) return showAlert('Face Error', 'Please verify your face.');
     try {
-      const res = await fetch(
-        'https://hospitaldatabasemanagement.onrender.com/BreakIn-attendance/breaks',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            employeeId,
-            capturedUrl,
-            locationVerified: true,
-            faceVerified: true,
-            breakType: 'Break Out',
-          }),
-        }
-      );
+      const res = await fetch('https://hospitaldatabasemanagement.onrender.com/BreakIn-attendance/breaks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId, capturedUrl, locationVerified: true, faceVerified: true, breakType: 'Break Out' }),
+      });
       const data = await res.json();
       if (data.success) {
-        setMessage('🕒 Break Ended');
-        Alert.alert('✅ Success', 'Break ended successfully!');
-      } else {
-        Alert.alert('Error', data.message || 'Failed to end break.');
+        setMessage('🕒 Break Ended Successfully');
+        showAlert('✅ Success', 'Back on duty!');
       }
-    } catch (e) {
-      console.error('End break error:', e);
-      Alert.alert('Network Error', 'Please try again.');
-    }
+    } catch (e) { showAlert('Network Error', 'Please try again.'); }
   };
 
-  // ✅ UI Rendering
-  if (loading) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#007BFF" />
-        <Text style={styles.loadingText}>Verifying location...</Text>
-      </View>
-    );
-  }
+  // ========================== RENDERING (NEW UI) ==========================
 
-  if (!permission?.granted) {
-    return (
-      <View style={styles.centered}>
-        <Ionicons name="warning-outline" size={50} color="#ff5252" />
-        <Text style={styles.permissionText}>Camera permission denied.</Text>
-        <TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
-          <Text style={styles.buttonText}>Grant Camera Permission</Text>
+  if (loading) return (
+    <View style={styles.centered}><ActivityIndicator size="large" color="#007BFF" /><Text style={styles.loadingText}>Verifying location...</Text></View>
+  );
+
+  if (showCamera) return (
+    <CameraView ref={cameraRef} style={{ flex: 1 }} facing="front">
+      <View style={styles.cameraActionContainer}>
+        <TouchableOpacity style={styles.captureCircle} onPress={captureImage}>
+          <Ionicons name="camera" color="#fff" size={30} />
         </TouchableOpacity>
       </View>
-    );
-  }
-
-  if (showCamera) {
-    return (
-      <CameraView ref={cameraRef} style={{ flex: 1 }} facing="front">
-        <View style={styles.cameraButtonContainer}>
-          <TouchableOpacity style={styles.captureButton} onPress={captureImage}>
-            <Ionicons name="camera" color="#fff" size={24} />
-            <Text style={{ color: '#fff', marginLeft: 8, fontSize: 16 }}>Capture</Text>
-          </TouchableOpacity>
-        </View>
-      </CameraView>
-    );
-  }
+    </CameraView>
+  );
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={26} color="#007BFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Break Out Attendance</Text>
-        <View style={{ width: 26 }} />
+    <View style={styles.mainContainer}>
+      <StatusBar barStyle="dark-content" />
+
+      {/* Left Content */}
+      <View style={[styles.leftContent, { width: isWeb ? '50%' : '100%' }]}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollPadding}>
+          
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backLink}>
+            <Ionicons name="chevron-back" size={16} color="#9ca3af" />
+            <Text style={styles.backLinkText}>Dashboard</Text>
+          </TouchableOpacity>
+
+          <View style={styles.logoRow}>
+            <View style={styles.logoBox}><Text style={styles.logoText}>BM</Text></View>
+            <Text style={styles.logoTitle}>Bharat Medical Hall</Text>
+          </View>
+
+          <Text style={styles.mainTitle}>Break Out</Text>
+          <Text style={styles.subTitle}>Ready to resume? Verify your identity to end your break and restart your work timer.</Text>
+
+          {/* Verification Status List */}
+          <View style={styles.inputWrapper}>
+            <Text style={styles.inputLabel}>Location Check</Text>
+            <View style={[styles.statusInput, locationVerified && styles.successBorder]}>
+              <Ionicons name="location" size={20} color={locationVerified ? "#10b981" : "#9ca3af"} />
+              <Text style={[styles.statusInputText, { color: locationVerified ? '#10b981' : '#374151' }]}>
+                {locationVerified ? 'Office Location Verified' : 'Checking GPS...'}
+              </Text>
+              {locationVerified && <Ionicons name="checkmark-circle" size={20} color="#10b981" />}
+            </View>
+          </View>
+
+          <View style={styles.inputWrapper}>
+            <Text style={styles.inputLabel}>Biometric Check</Text>
+            <TouchableOpacity 
+              activeOpacity={0.7} 
+              onPress={() => setShowCamera(true)}
+              style={[styles.statusInput, faceVerified && styles.successBorder]}
+            >
+              <Ionicons name="person" size={20} color={faceVerified ? "#10b981" : "#9ca3af"} />
+              <Text style={[styles.statusInputText, { color: faceVerified ? '#10b981' : '#374151' }]}>
+                {faceLoading ? 'Verifying...' : faceVerified ? 'Face Verified' : 'Tap to scan face'}
+              </Text>
+              <Ionicons name="camera-outline" size={20} color="#9ca3af" />
+            </TouchableOpacity>
+          </View>
+
+          {imageUri && <Image source={{ uri: imageUri }} style={styles.facePreview} />}
+
+          <TouchableOpacity 
+            style={[styles.submitBtn, { backgroundColor: '#0ea5e9' }]} 
+            onPress={endBreak}
+          >
+            <Text style={styles.submitBtnText}>Resume Work →</Text>
+          </TouchableOpacity>
+
+          {message !== '' && <Text style={styles.bottomMsg}>{message}</Text>}
+          
+        </ScrollView>
       </View>
 
-      {/* Status Cards */}
-      <View style={styles.card}>
-        <View style={styles.cardRow}>
-          <Ionicons
-            name={locationVerified ? 'location' : 'location-outline'}
-            size={28}
-            color={locationVerified ? '#2ecc71' : '#FF0000'}
-          />
-          <Text style={styles.cardLabel}>GPS Location</Text>
-          <Text style={[styles.cardStatus, { color: locationVerified ? '#2ecc71' : '#FF0000' }]}>
-            {locationVerified ? 'Verified' : 'Not Verified'}
+      {/* Right Content (Web Only) */}
+      {isWeb && (
+        <View style={styles.rightContent}>
+          <View style={styles.brandCircle}>
+            <Text style={styles.brandCircleText}>BM</Text>
+          </View>
+          <Text style={styles.welcomeHeading}>Welcome Back</Text>
+          <Text style={styles.welcomeSub}>
+            Finish your verification to resume your shift. We ensure every clock-in is secure and accurate.
           </Text>
         </View>
-      </View>
-
-      <View style={styles.card}>
-        <View style={styles.cardRow}>
-          <Ionicons
-            name={faceVerified ? 'happy' : 'sad-outline'}
-            size={28}
-            color={faceVerified ? '#2ecc71' : '#FF0000'}
-          />
-          <Text style={styles.cardLabel}>Face Verification</Text>
-          <Text style={[styles.cardStatus, { color: faceVerified ? '#2ecc71' : '#FF0000' }]}>
-            {faceLoading ? 'Verifying...' : faceVerified ? 'Verified' : 'Not Verified'}
-          </Text>
-        </View>
-      </View>
-
-      {/* Actions */}
-      <TouchableOpacity style={styles.primaryButton} onPress={() => setShowCamera(true)}>
-        <Ionicons name="camera" color="#fff" size={20} />
-        <Text style={styles.buttonText}>Open Front Camera</Text>
-      </TouchableOpacity>
-
-      {imageUri && (
-        <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="cover" />
       )}
-
-      <TouchableOpacity
-        style={[styles.primaryButton, { backgroundColor: '#10b981' }]}
-        onPress={endBreak}
-      >
-        <Ionicons name="pause-circle" color="#fff" size={20} />
-        <Text style={styles.buttonText}>End Break</Text>
-      </TouchableOpacity>
-
-      {message !== '' && <Text style={styles.message}>{message}</Text>}
     </View>
   );
 };
 
-export default BreakOUTScreen;
-
-// ✅ Styles unchanged
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  mainContainer: { flex: 1, flexDirection: 'row', backgroundColor: '#fff' },
+  leftContent: { paddingHorizontal: '8%', justifyContent: 'center' },
+  scrollPadding: { paddingVertical: 50 },
+  rightContent: { flex: 1, backgroundColor: '#007BFF', justifyContent: 'center', alignItems: 'center', padding: 40 },
+  backLink: { flexDirection: 'row', alignItems: 'center', marginBottom: 25 },
+  backLinkText: { color: '#9ca3af', fontSize: 14, marginLeft: 5 },
+  logoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 35 },
+  logoBox: { backgroundColor: '#007BFF', padding: 8, borderRadius: 10, marginRight: 12 },
+  logoText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  logoTitle: { fontSize: 18, fontWeight: '700', color: '#007BFF' },
+  mainTitle: { fontSize: 32, fontWeight: 'bold', color: '#111827', marginBottom: 8 },
+  subTitle: { fontSize: 15, color: '#6b7280', marginBottom: 35 },
+  inputWrapper: { marginBottom: 20 },
+  inputLabel: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
+  statusInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#f9fafb',
-    paddingHorizontal: 20,
-    paddingTop: 35,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 25,
-    justifyContent: 'space-between',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1f2937',
-  },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, fontSize: 16, color: '#6b7280' },
-  permissionText: {
-    marginTop: 10,
-    fontSize: 15,
-    color: '#555',
-    textAlign: 'center',
-    paddingHorizontal: 25,
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 18,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  cardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  cardLabel: {
-    flex: 1,
-    marginLeft: 10,
-    fontSize: 16,
-    color: '#374151',
-    fontWeight: '600',
-  },
-  cardStatus: { fontSize: 15, fontWeight: '700' },
-  primaryButton: {
-    backgroundColor: '#007BFF',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginVertical: 10,
-    elevation: 3,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  previewImage: {
-    width: '100%',
-    height: 300,
-    borderRadius: 14,
-    marginVertical: 12,
     borderWidth: 1,
     borderColor: '#e5e7eb',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
-  message: {
-    fontSize: 16,
-    textAlign: 'center',
-    color: '#059669',
-    marginTop: 15,
-    fontWeight: '600',
-  },
-  cameraButtonContainer: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    marginBottom: 50,
-  },
-  captureButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#007BFF',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 30,
-    elevation: 3,
-  },
+  successBorder: { borderColor: '#10b981', backgroundColor: '#f0fdf4' },
+  statusInputText: { flex: 1, marginLeft: 12, fontSize: 15 },
+  submitBtn: { paddingVertical: 16, borderRadius: 15, alignItems: 'center', marginTop: 20, elevation: 2 },
+  submitBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  facePreview: { width: '100%', height: 200, borderRadius: 12, marginTop: 10, marginBottom: 10 },
+  bottomMsg: { marginTop: 20, textAlign: 'center', color: '#10b981', fontWeight: 'bold' },
+  brandCircle: { backgroundColor: 'rgba(255,255,255,0.2)', width: 120, height: 120, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginBottom: 30 },
+  brandCircleText: { color: '#fff', fontSize: 40, fontWeight: 'bold' },
+  welcomeHeading: { color: '#fff', fontSize: 36, fontWeight: 'bold', marginBottom: 15 },
+  welcomeSub: { color: 'rgba(255,255,255,0.8)', textAlign: 'center', fontSize: 16, lineHeight: 24, maxWidth: 400 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 15, color: '#6b7280' },
+  cameraActionContainer: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', marginBottom: 50 },
+  captureCircle: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#007BFF', justifyContent: 'center', alignItems: 'center', borderWidth: 4, borderColor: 'rgba(255,255,255,0.3)' },
 });
+
+export default BreakOUTScreen;

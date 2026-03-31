@@ -9,9 +9,10 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+ useWindowDimensions,
   Platform,
 } from "react-native";
-import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
 import { Picker } from "@react-native-picker/picker";
 import { useNavigation } from "@react-navigation/native";
 
@@ -23,13 +24,41 @@ export default function SubAdminEmpAllowanceScreen() {
   const [employees, setEmployees] = useState([]);
   const [allowances, setAllowances] = useState([]);
   const [loading, setLoading] = useState(false);
+          const [loadingCount, setLoadingCount] = useState(0);
+  
   const [refreshing, setRefreshing] = useState(false);
 
   const [selectedEmployeeName, setSelectedEmployeeName] = useState("");
   const [employeeEmail, setEmployeeEmail] = useState("");
   const [allowanceAmount, setAllowanceAmount] = useState("");
   const [editId, setEditId] = useState(null);
-
+   const { width: SCREEN_WIDTH } = useWindowDimensions();
+  
+ const MAX_WIDTH = 420;
+  const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
+  const showAlert = (title, message, buttons) => {
+      if (Platform.OS === "web") {
+        if (buttons && buttons.length > 1) {
+          const confirmed = window.confirm(`${title}\n\n${message}`);
+          if (confirmed) {
+            const okBtn = buttons.find(b => b.style !== "cancel");
+            okBtn?.onPress?.();
+          }
+        } else {
+          window.alert(`${title}\n\n${message}`);
+        }
+      } else {
+        Alert.alert(title, message, buttons);
+      }
+    };  
+     useEffect(() => {
+                let interval;
+                if (loading) {
+                  setLoadingCount(0);
+                  interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+                } else clearInterval(interval);
+                return () => clearInterval(interval);
+              }, [loading]);
   // Fetch employees for dropdown
   const fetchEmployees = async () => {
     try {
@@ -44,7 +73,7 @@ export default function SubAdminEmpAllowanceScreen() {
         setEmployeeEmail(firstEmp.email || "");
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to fetch employees");
+      showAlert("Error", "Failed to fetch employees");
     }
   };
 
@@ -56,7 +85,7 @@ export default function SubAdminEmpAllowanceScreen() {
       const result = await response.json();
       setAllowances(result);
     } catch (error) {
-      Alert.alert("Error", "Failed to fetch allowances");
+      showAlert("Error", "Failed to fetch allowances");
     } finally {
       setRefreshing(false);
     }
@@ -89,7 +118,7 @@ export default function SubAdminEmpAllowanceScreen() {
 
   const handleSubmit = async () => {
     if (!selectedEmployeeName || !employeeEmail || !allowanceAmount) {
-      Alert.alert("Validation Error", "All fields are required!");
+      showAlert("Validation Error", "All fields are required!");
       return;
     }
 
@@ -113,14 +142,14 @@ export default function SubAdminEmpAllowanceScreen() {
       const result = await response.json();
 
       if (response.ok) {
-        Alert.alert("Success", editId ? "Updated successfully" : "Added successfully");
+       showAlert("Success", editId ? "Updated successfully" : "Added successfully");
         resetForm();
         fetchAllowances();
       } else {
-        Alert.alert("Error", result.message || "Something went wrong");
+        showAlert("Error", result.message || "Something went wrong");
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to save data");
+      showAlert("Error", "Failed to save data");
     } finally {
       setLoading(false);
     }
@@ -133,8 +162,28 @@ export default function SubAdminEmpAllowanceScreen() {
     setEditId(item.id);
   };
 
-  const handleDelete = async (id) => {
-    Alert.alert("Confirm Delete", "Are you sure you want to delete this record?", [
+ const handleDelete = async (id) => {
+  if (Platform.OS === "web") {
+    const confirmed = window.confirm("Are you sure you want to delete this record?");
+    if (!confirmed) return;
+    try {
+      setLoading(true);
+      const response = await fetch(`${BASE_URL}/employeeallowances/delete/${id}`, { method: "DELETE" });
+      const result = await response.json();
+      if (response.ok) {
+        alert("Record deleted successfully");
+        fetchAllowances();
+      } else {
+        alert(result.message || "Failed to delete");
+      }
+    } catch (error) {
+      alert("Failed to delete data");
+    } finally {
+      setLoading(false);
+    }
+  } else {
+    // Mobile alert logic remains the same
+    showAlert("Confirm Delete", "Are you sure you want to delete this record?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -145,113 +194,200 @@ export default function SubAdminEmpAllowanceScreen() {
             const response = await fetch(`${BASE_URL}/employeeallowances/delete/${id}`, { method: "DELETE" });
             const result = await response.json();
             if (response.ok) {
-              Alert.alert("Success", "Record deleted successfully");
+              showAlert("Success", "Record deleted successfully");
               fetchAllowances();
-            } else Alert.alert("Error", result.message || "Failed to delete");
+            } else showAlert("Error", result.message || "Failed to delete");
           } catch (error) {
-            Alert.alert("Error", "Failed to delete data");
+            showAlert("Error", "Failed to delete data");
           } finally {
             setLoading(false);
           }
         },
       },
     ]);
-  };
+  }
+};
+
+ if (loading) {
+    return (
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color="#007bff" />
+        <Text style={{ marginTop: 10 }}>Loading employee allowanceloadingCount</Text>
+      </View>
+    );
+  }
+const renderTableRow = ({ item, index }) => (
+    <View style={styles.tableRow}>
+      <Text style={[styles.tableCell, { width: 60 }]}>#{index + 1}</Text>
+      <Text style={[styles.tableCell, { width: 150, fontWeight: '600' }]}>{item.emp_name}</Text>
+      <Text style={[styles.tableCell, { width: 220 }]}>{item.emp_email}</Text>
+      <Text style={[styles.tableCell, { width: 120, color: '#10b981', fontWeight: 'bold' }]}>₹{item.allowance_amount}</Text>
+      <View style={styles.actionCell}>
+        <TouchableOpacity style={styles.actionIcon} onPress={() => handleEdit(item)}>
+          <Feather name="edit-2" size={16} color="#2563eb" />
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionIcon, { backgroundColor: '#fee2e2' }]} onPress={() => handleDelete(item.id)}>
+          <Feather name="trash-2" size={16} color="#ef4444" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  if (loading && !refreshing) {
+    return (
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color="#2563EB" />
+        <Text style={{ marginTop: 10 }}>Processing... {loadingCount}s</Text>
+      </View>
+    );
+  }
 
   return (
-    <ScrollView style={styles.container}>
-      {/* Header */}
-      <View style={styles.headerContainer}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={28} color="#007BFF" />
-        </TouchableOpacity>
-        <Text style={styles.header}>Employee Allowances</Text>
-        <View style={{ width: 28 }} /> {/* Spacer */}
-      </View>
+    <View style={styles.webWrapper}>
+   
+      {/* MAIN CONTENT */}
+      <View style={styles.mainContent}>
+        <View style={styles.contentHeader}>
+         <View style={styles.contentHeader}>
+  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+    
+    {/* BACK ARROW */}
+    <TouchableOpacity
+      onPress={() => navigation.goBack()}
+      style={styles.backBtn}
+      activeOpacity={0.7}
+    >
+      <Ionicons name="arrow-back" size={22} color="#1e293b" />
+    </TouchableOpacity>
 
-      {/* Form */}
-      <View style={styles.form}>
-        <Text style={styles.label}>Select Employee</Text>
-        <View style={styles.pickerContainer}>
-          <Picker selectedValue={selectedEmployeeName} onValueChange={handleEmployeeChange}>
-            {employees.length > 0
-              ? employees.map((emp) => (
-                  <Picker.Item
-                    key={emp.id}
-                    label={emp.full_name || emp.name}
-                    value={emp.full_name || emp.name}
-                  />
-                ))
-              : <Picker.Item label="No employees found" value="" />}
-          </Picker>
+    {/* TITLE */}
+    <View>
+      <Text style={styles.mainTitle}>Allowance Management</Text>
+      <Text style={styles.subTitle}>
+        Manage and track employee monthly allowances
+      </Text>
+    </View>
+
+  </View>
+</View>
+
         </View>
 
-        <View style={styles.inputWrapper}>
-          <MaterialIcons name="email" size={20} color="#007BFF" style={{ marginRight: 8 }} />
-          <TextInput style={styles.input} placeholder="Email" value={employeeEmail} editable={false} />
-        </View>
-
-        <View style={styles.inputWrapper}>
-          <Ionicons name="cash-outline" size={20} color="#007BFF" style={{ marginRight: 8 }} />
-          <TextInput
-            style={styles.input}
-            placeholder="Allowance Amount"
-            keyboardType="numeric"
-            value={allowanceAmount}
-            onChangeText={setAllowanceAmount}
-          />
-        </View>
-
-        <TouchableOpacity style={styles.button} onPress={handleSubmit}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{editId ? "Update" : "Add"}</Text>}
-        </TouchableOpacity>
-      </View>
-
-      {/* Records List */}
-      <Text style={styles.subHeader}>All Records</Text>
-      {loading ? (
-        <ActivityIndicator size="large" color="#007BFF" style={{ marginTop: 10 }} />
-      ) : (
-        <FlatList
-          data={allowances}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={({ item }) => (
-            <View style={styles.card}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardText}><Text style={styles.bold}>Name:</Text> {item.emp_name}</Text>
-                <Text style={styles.cardText}><Text style={styles.bold}>Email:</Text> {item.emp_email}</Text>
-                <Text style={styles.cardText}><Text style={styles.bold}>Amount:</Text> ₹{item.allowance_amount}</Text>
-              </View>
-              <View style={styles.iconContainer}>
-                <TouchableOpacity onPress={() => handleEdit(item)}>
-                  <Ionicons name="create-outline" size={24} color="orange" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleDelete(item.id)} style={{ marginLeft: 10 }}>
-                  <Ionicons name="trash-outline" size={24} color="red" />
-                </TouchableOpacity>
-              </View>
+        <View style={styles.flexRow}>
+          {/* FORM CARD */}
+          <View style={styles.formCard}>
+            <Text style={styles.cardTitle}>{editId ? "Update Allowance" : "Add New Allowance"}</Text>
+            
+            <Text style={styles.fieldLabel}>Employee Name</Text>
+            <View style={styles.pickerWrapper}>
+              <Picker selectedValue={selectedEmployeeName} onValueChange={handleEmployeeChange}>
+                {employees.map((emp) => (
+                  <Picker.Item key={emp.id} label={emp.full_name || emp.name} value={emp.full_name || emp.name} />
+                ))}
+              </Picker>
             </View>
-          )}
-        />
-      )}
-    </ScrollView>
+
+            <Text style={styles.fieldLabel}>Employee Email</Text>
+            <View style={styles.disabledInput}>
+              <Feather name="mail" size={18} color="#94a3b8" />
+              <TextInput style={styles.inputStyle} value={employeeEmail} editable={false} />
+            </View>
+
+            <Text style={styles.fieldLabel}>Amount (INR)</Text>
+            <View style={styles.activeInput}>
+              <Feather name="dollar-sign" size={18} color="#2563eb" />
+              <TextInput 
+                style={styles.inputStyle} 
+                placeholder="0.00" 
+                keyboardType="numeric" 
+                value={allowanceAmount} 
+                onChangeText={setAllowanceAmount} 
+              />
+            </View>
+
+            <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
+              <Text style={styles.submitBtnText}>{editId ? "Update Record" : "Save Allowance"}</Text>
+            </TouchableOpacity>
+            {editId && (
+              <TouchableOpacity style={styles.cancelBtn} onPress={resetForm}>
+                <Text style={styles.cancelBtnText}>Cancel Edit</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* TABLE CARD */}
+          <View style={styles.tableCard}>
+             <View style={styles.tableCardHeader}>
+                <Text style={styles.cardTitle}>Recent Records</Text>
+             </View>
+             <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+                <View>
+                   <View style={styles.tableHeader}>
+                      <Text style={[styles.headerCell, { width: 60 }]}>S.No</Text>
+                      <Text style={[styles.headerCell, { width: 150 }]}>Name</Text>
+                      <Text style={[styles.headerCell, { width: 220 }]}>Email</Text>
+                      <Text style={[styles.headerCell, { width: 120 }]}>Amount</Text>
+                      <Text style={[styles.headerCell, { width: 100, textAlign: 'center' }]}>Actions</Text>
+                   </View>
+                   <FlatList
+                      data={allowances}
+                      keyExtractor={(item) => item.id.toString()}
+                      renderItem={renderTableRow}
+                      contentContainerStyle={{ paddingBottom: 20 }}
+                   />
+                </View>
+             </ScrollView>
+          </View>
+        </View>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: "#F0F4F8" },
-  headerContainer: { flexDirection: "row", alignItems: "center", marginBottom: 15 },
-  header: { flex: 1, fontSize: 24, fontWeight: "bold", color: "#007BFF", textAlign: "center" },
-  form: { backgroundColor: "#fff", padding: 16, borderRadius: 12, elevation: 3, marginBottom: 15 },
-  label: { fontWeight: "bold", marginBottom: 8 },
-  pickerContainer: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, marginBottom: 10 },
-  inputWrapper: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: "#ccc", borderRadius: 8, paddingHorizontal: 10, marginBottom: 10, backgroundColor: "#fff" },
-  input: { flex: 1, fontSize: 15, paddingVertical: 8 },
-  button: { backgroundColor: "#007BFF", padding: 12, borderRadius: 8, alignItems: "center", marginTop: 5 },
-  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-  subHeader: { fontSize: 18, fontWeight: "bold", color: "#333", marginBottom: 10 },
-  card: { flexDirection: "row", backgroundColor: "#fff", padding: 12, borderRadius: 12, marginBottom: 10, elevation: 2 },
-  cardText: { fontSize: 15, color: "#333", marginBottom: 4 },
-  bold: { fontWeight: "bold" },
-  iconContainer: { flexDirection: "row", alignItems: "center" },
+  webWrapper: { flex: 1, flexDirection: "row", backgroundColor: "#F8FAFC" },
+  sidebar: { width: 260, backgroundColor: "#fff", borderRightWidth: 1, borderRightColor: "#e2e8f0", padding: 24 },
+  sidebarBrand: { flexDirection: "row", alignItems: "center", marginBottom: 40 },
+  brandIcon: { width: 38, height: 38, backgroundColor: "#2563EB", borderRadius: 8, justifyContent: "center", alignItems: "center", marginRight: 12 },
+  brandLetter: { color: "#fff", fontWeight: "bold", fontSize: 20 },
+  brandTitle: { fontSize: 18, fontWeight: "800", color: "#1e293b" },
+  brandSub: { fontSize: 12, color: "#64748b", marginTop: -4 },
+  sidebarMenu: { flex: 1 },
+  sidebarItem: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 10, marginBottom: 6 },
+  sidebarItemActive: { backgroundColor: "#2563EB" },
+  sidebarLabel: { marginLeft: 12, fontSize: 15, color: "#64748b", fontWeight: "600" },
+  sidebarLabelActive: { color: "#fff" },
+  logoutBtn: { flexDirection: "row", alignItems: "center", padding: 12 },
+  logoutText: { marginLeft: 12, color: "#ef4444", fontWeight: "700" },
+
+  mainContent: { flex: 1, padding: 32 },
+  contentHeader: { marginBottom: 32 },
+  mainTitle: { fontSize: 28, fontWeight: "800", color: "#1e293b" },
+  subTitle: { color: "#64748b", marginTop: 4 },
+
+  flexRow: { flexDirection: "row", gap: 24, flex: 1 },
+  formCard: { width: 350, backgroundColor: "#fff", borderRadius: 16, padding: 24, borderWidth: 1, borderColor: "#e2e8f0", alignSelf: 'flex-start' },
+  tableCard: { flex: 1, backgroundColor: "#fff", borderRadius: 16, borderWidth: 1, borderColor: "#e2e8f0", overflow: 'hidden' },
+  tableCardHeader: { padding: 20, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  cardTitle: { fontSize: 18, fontWeight: "700", color: "#1e293b", marginBottom: 16 },
+
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#64748b', marginBottom: 8 },
+  pickerWrapper: { borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 10, marginBottom: 16, backgroundColor: "#f8fafc", overflow: 'hidden' },
+  disabledInput: { flexDirection: "row", alignItems: "center", backgroundColor: "#f1f5f9", borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 10, paddingHorizontal: 12, marginBottom: 16 },
+  activeInput: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderWidth: 1, borderColor: "#2563eb", borderRadius: 10, paddingHorizontal: 12, marginBottom: 20 },
+  inputStyle: { flex: 1, height: 45, marginLeft: 10, color: "#1e293b", outlineStyle: 'none' },
+
+  submitBtn: { backgroundColor: "#2563eb", padding: 15, borderRadius: 10, alignItems: "center" },
+  submitBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  cancelBtn: { marginTop: 12, padding: 10, alignItems: "center" },
+  cancelBtnText: { color: "#ef4444", fontWeight: "600" },
+
+  tableHeader: { flexDirection: "row", backgroundColor: "#f8fafc", paddingVertical: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#e2e8f0" },
+  headerCell: { fontSize: 13, fontWeight: "700", color: "#64748b", textTransform: "uppercase" },
+  tableRow: { flexDirection: "row", paddingVertical: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#f1f5f9", alignItems: "center" },
+  tableCell: { fontSize: 14, color: "#334155" },
+  actionCell: { width: 100, flexDirection: "row", justifyContent: "center", gap: 8 },
+  actionIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: "#eff6ff", justifyContent: "center", alignItems: "center" },
+
+  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" }
 });

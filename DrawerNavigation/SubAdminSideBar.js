@@ -7,6 +7,8 @@ import {
   StyleSheet,
   SafeAreaView,
   ScrollView,
+    useWindowDimensions,
+
 } from "react-native";
 import { Ionicons, AntDesign } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -21,6 +23,10 @@ const handleLogout = async () => {
       routes: [{ name: "SelectRole" }],
     });
   };
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  
+    const MAX_WIDTH = 420;
+    const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
   // ✅ Grouped Sidebar Sections
   const sections = [
     {
@@ -36,13 +42,13 @@ const handleLogout = async () => {
         { name: "Attendance View", icon: "time-outline", screen: "attendanceall" },
          { name: "Break View", icon: "time-outline", screen: "BreakLogsScreen" },
          { name: "EmployeeAttendancetracker", icon: "time-outline", screen: "EmployeeAtendanceTracker" },
-        { name: "Leave Policy", icon: "calendar-outline", screen: "LeavePolicy" },
+        // { name: "Leave Policy", icon: "calendar-outline", screen: "LeavePolicy" },
         { name: "Leave Management", icon: "calendar-outline", screen: "subAdminleavestatus" },
         { name: "Task Assignment", icon: "checkmark-done-outline", screen: "taskScreen" },
         { name: "Department Name", icon: "business-outline", screen: "department" },
         { name: "Role Name", icon: "person-circle-outline", screen: "rolename" },
         { name: "Payslip", icon: "document-text-outline", screen: "subadminpayslip" },
-        { name: "Employee Booking Appointment", icon: "bar-chart-outline", screen: "DoctorAppointment" },
+        // { name: "Employee Booking Appointment", icon: "bar-chart-outline", screen: "BookedAppointment" },
       { name: "SubAdminEmployeeAllowances", icon: "cash-outline", screen: "SubAdminEmpAllowanceScreen" },
 
       ],
@@ -51,7 +57,9 @@ const handleLogout = async () => {
       title: "Sales",
       items: [
         { name: "Inventory Management", icon: "bar-chart-outline", screen: "Addmedicine" },
-        { name: "Doctors Fee", icon: "settings-outline", screen: "Doctorfeeadding" },
+         { name: "Stationary Management", icon: "bar-chart-outline", screen: "SubadminStationaryInventory" },
+
+        // { name: "Doctors Fee", icon: "settings-outline", screen: "Doctorfeeadding" },
         { name: "Department Chart", icon: "bar-chart-outline", screen: "Departmentchart" }
         ,{ name: "Doctor Tokens", icon: "settings-outline", screen: "subadminDoctorTokenBookingScreen" },
           { name: "DoctorsConsultanceFee", icon: "settings-outline", screen: "SubAdminConsultantFeesScreen" },
@@ -71,6 +79,11 @@ const handleLogout = async () => {
 
   return (
     <SafeAreaView style={styles.container}>
+       {/* <View
+                                     style={{
+                                    width: containerWidth,
+                                   alignSelf: "center", flex: 1, }}
+                                                                     > */}
       {/* 🔙 Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -107,6 +120,7 @@ const handleLogout = async () => {
         <AntDesign name="logout" size={22} color="#ff4d4d" style={styles.icon} />
         <Text style={styles.logoutText}>Logout</Text>
       </TouchableOpacity>
+      {/* </View> */}
     </SafeAreaView>
   );
 };

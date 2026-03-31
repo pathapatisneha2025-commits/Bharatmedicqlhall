@@ -1,4 +1,3 @@
-// screens/EmployeeUpdateScreen.js
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -10,7 +9,10 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Platform,
+  useWindowDimensions,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
@@ -35,27 +37,27 @@ export default function EmployeeUpdateScreen({ navigation }) {
     permanentAddresses: [{ street: "", state: "", pincode: "", city: "" }], dateOfJoining: new Date(),
   });
 
-  const [showDobPicker, setShowDobPicker] = useState(false);
-  const [showDojPicker, setShowDojPicker] = useState(false);
-  const [showScheduleInPicker, setShowScheduleInPicker] = useState(false);
-  const [showScheduleOutPicker, setShowScheduleOutPicker] = useState(false);
-  const [showBreakInPicker, setShowBreakInPicker] = useState(false);
-  const [showBreakOutPicker, setShowBreakOutPicker] = useState(false);
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const isDesktop = SCREEN_WIDTH > 800;
+  const containerWidth = isDesktop ? 900 : SCREEN_WIDTH;
 
-  // Fetch employee ID
+  const showAlert = (title, message) => {
+    if (Platform.OS === 'web') window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
+
   useEffect(() => {
     const fetchStoredEmployeeId = async () => {
       const storedId = await getEmployeeId();
       if (storedId) setEmployeeId(storedId);
       else {
-        Alert.alert("Error", "No employee ID found. Please log in again.");
+        showAlert("Error", "No employee ID found. Please log in again.");
         navigation.goBack();
       }
     };
     fetchStoredEmployeeId();
   }, []);
 
-  // Fetch department & role options
   useEffect(() => {
     const fetchOptions = async () => {
       try {
@@ -72,7 +74,6 @@ export default function EmployeeUpdateScreen({ navigation }) {
     fetchOptions();
   }, []);
 
-  // Fetch existing employee details
   useEffect(() => {
     if (!employeeId) return;
     const fetchEmployee = async () => {
@@ -101,28 +102,26 @@ export default function EmployeeUpdateScreen({ navigation }) {
             dateOfJoining: emp.date_of_joining ? new Date(emp.date_of_joining) : new Date(),
           });
           setImage(emp.image ? { uri: emp.image } : null);
-        } else { Alert.alert("Error", data.message || "Failed to fetch employee details"); }
-      } catch (error) { Alert.alert("Error", "Failed to fetch employee details"); }
+        } else { showAlert("Error", data.message || "Failed to fetch employee details"); }
+      } catch (error) { showAlert("Error", "Failed to fetch employee details"); }
       finally { setLoading(false); }
     };
     fetchEmployee();
   }, [employeeId]);
 
-  // Pick image
   const pickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permissionResult.granted) {
-      Alert.alert("Permission Denied", "Camera roll access is required.");
+      showAlert("Permission Denied", "Camera roll access is required.");
       return;
     }
     const galleryResult = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.7 });
     if (!galleryResult.canceled) setImage(galleryResult.assets[0]);
   };
 
-  // Handle update
   const handleUpdateEmployee = async () => {
-    if (!employeeId) { Alert.alert("Error", "Employee ID not found."); return; }
-    if (form.password && form.password !== form.confirmPassword) { Alert.alert("Validation Error", "Passwords do not match."); return; }
+    if (!employeeId) { showAlert("Error", "Employee ID not found."); return; }
+    if (form.password && form.password !== form.confirmPassword) { showAlert("Validation Error", "Passwords do not match."); return; }
 
     const formData = new FormData();
     Object.entries(form).forEach(([key, value]) => {
@@ -139,89 +138,197 @@ export default function EmployeeUpdateScreen({ navigation }) {
 
     try {
       setLoading(true);
-      const response = await fetch(`${BASE_URL}/employee/update/${employeeId}`, { method: "PUT", headers: { "Content-Type": "multipart/form-data" }, body: formData });
+      const response = await fetch(`${BASE_URL}/employee/update/${employeeId}`, {
+        method: "PUT",
+        body: formData,
+      });      
       const result = await response.json();
       if (response.ok && result.success) {
-        Alert.alert("Success", "Employee updated successfully");
-        navigation.navigate("ProfileScreen", { refresh: true });
-      } else { Alert.alert("Update Failed", result.message || "Something went wrong"); }
-    } catch (error) { Alert.alert("Error", "Failed to update employee"); }
+        showAlert("Success", "Employee updated successfully");
+        navigation.navigate("DeliverBoyProfileScreen", { refresh: true });
+      } else { showAlert("Update Failed", result.message || "Something went wrong"); }
+    } catch (error) { showAlert("Error", "Failed to update employee"); }
     finally { setLoading(false); }
   };
 
   if (loading && !form.fullName) return (
-    <View style={styles.loader}><ActivityIndicator size="large" color="#007BFF" /></View>
+    <View style={styles.loader}>
+      <ActivityIndicator size="large" color="#0ea5e9" />
+      <Text style={styles.loaderText}>Fetching Records...</Text>
+    </View>
+  );
+
+  const InputField = ({ placeholder, value, keyName, icon, keyboardType, secureTextEntry }) => (
+    <View style={[styles.inputWrapper, isDesktop && styles.desktopInput]}>
+      <View style={styles.iconContainer}>
+        <Ionicons name={icon} size={18} color="#0ea5e9" />
+      </View>
+      <TextInput
+        style={styles.input}
+        placeholder={placeholder}
+        value={value}
+        secureTextEntry={secureTextEntry}
+        keyboardType={keyboardType || "default"}
+        onChangeText={(text) => setForm({ ...form, [keyName]: text })}
+        placeholderTextColor="#94a3b8"
+      />
+    </View>
   );
 
   return (
-    <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Back Button */}
-      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-        <Ionicons name="arrow-back" size={24} color="#007BFF" />
-      </TouchableOpacity>
+    <SafeAreaView style={styles.container}>
+      {/* Header Bar */}
+      <View style={styles.topHeader}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <Ionicons name="chevron-back" size={24} color="#1e293b" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Update Details</Text>
+        <View style={{ width: 40 }} />
+      </View>
 
-      <Text style={styles.title}>Update Employee</Text>
+      <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+        <View style={[styles.mainWrapper, { width: containerWidth, alignSelf: "center" }]}>
+          
+          {/* Profile Header Card */}
+          <View style={styles.profileCard}>
+            <TouchableOpacity style={styles.imageWrapper} onPress={pickImage}>
+              {image ? (
+                <Image source={{ uri: image.uri }} style={styles.image} />
+              ) : (
+                <Ionicons name="camera" size={40} color="#94a3b8" />
+              )}
+              <View style={styles.editBadge}>
+                <Ionicons name="pencil" size={14} color="#fff" />
+              </View>
+            </TouchableOpacity>
+            <Text style={styles.imageHint}>Tap to change profile picture</Text>
+          </View>
 
-      {/* Profile Image */}
-      <TouchableOpacity style={styles.imageContainer} onPress={pickImage}>
-        {image ? <Image source={{ uri: image.uri }} style={styles.image} /> : <Ionicons name="camera" size={50} color="#777" />}
-      </TouchableOpacity>
+          {/* Form Sections */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Identity & Contact</Text>
+            </View>
+            <View style={styles.grid}>
+                <InputField placeholder="Full Name" value={form.fullName} keyName="fullName" icon="person-outline" />
+                <InputField placeholder="Email" value={form.email} keyName="email" keyboardType="email-address" icon="mail-outline" />
+                <InputField placeholder="Mobile" value={form.mobile} keyName="mobile" keyboardType="phone-pad" icon="call-outline" />
+                <InputField placeholder="Family Contact" value={form.familyNumber} keyName="familyNumber" keyboardType="phone-pad" icon="people-outline" />
+                <InputField placeholder="Aadhar Number" value={form.aadhar} keyName="aadhar" keyboardType="numeric" icon="card-outline" />
+                <InputField placeholder="PAN Number" value={form.pan} keyName="pan" icon="document-text-outline" />
+            </View>
+          </View>
 
-      {/* Form Inputs */}
-      {[
-        { placeholder: "Full Name", value: form.fullName, key: "fullName", icon: "person-outline" },
-        { placeholder: "Email", value: form.email, key: "email", keyboardType: "email-address", icon: "mail-outline" },
-        { placeholder: "Password", value: form.password, key: "password", secureTextEntry: true, icon: "lock-closed-outline" },
-        { placeholder: "Confirm Password", value: form.confirmPassword, key: "confirmPassword", secureTextEntry: true, icon: "lock-closed-outline" },
-        { placeholder: "Mobile", value: form.mobile, key: "mobile", keyboardType: "phone-pad", icon: "call-outline" },
-        { placeholder: "Family Contact", value: form.familyNumber, key: "familyNumber", keyboardType: "phone-pad", icon: "call-outline" },
-        { placeholder: "Age", value: form.age, key: "age", keyboardType: "numeric", icon: "calendar-outline" },
-        { placeholder: "Experience", value: form.experience, key: "experience", icon: "school-outline" },
-        { placeholder: "Aadhar Number", value: form.aadhar, key: "aadhar", keyboardType: "numeric", icon: "card-outline" },
-        { placeholder: "PAN Number", value: form.pan, key: "pan", icon: "document-text-outline" },
-        { placeholder: "ESI Number", value: form.esiNumber, key: "esiNumber", icon: "barcode-outline" },
-        { placeholder: "Reporting Manager", value: form.reportingManager, key: "reportingManager", icon: "people-outline" },
-        { placeholder: "IFSC", value: form.ifsc, key: "ifsc", icon: "key-outline" },
-        { placeholder: "Bank Name", value: form.bankName, key: "bankName", icon: "card-outline" },
-        { placeholder: "Branch Name", value: form.branchName, key: "branchName", icon: "location-outline" },
-        { placeholder: "Account Number", value: form.accountNumber, key: "accountNumber", keyboardType: "numeric", icon: "card-outline" },
-        { placeholder: "Monthly Salary", value: form.monthlySalary, key: "monthlySalary", keyboardType: "numeric", icon: "cash-outline" },
-        { placeholder: "Job Description", value: form.jobDescription, key: "jobDescription", icon: "document-text-outline" },
-      ].map((item, idx) => (
-        <View key={idx} style={styles.inputWrapper}>
-          <Ionicons name={item.icon} size={20} color="#007BFF" style={{ marginRight: 10 }} />
-          <TextInput
-            style={styles.input}
-            placeholder={item.placeholder}
-            value={item.value}
-            secureTextEntry={item.secureTextEntry || false}
-            keyboardType={item.keyboardType || "default"}
-            onChangeText={(text) => setForm({ ...form, [item.key]: text })}
-          />
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Job & Experience</Text>
+            </View>
+            <View style={styles.grid}>
+                <InputField placeholder="Age" value={form.age} keyName="age" keyboardType="numeric" icon="calendar-outline" />
+                <InputField placeholder="Experience" value={form.experience} keyName="experience" icon="school-outline" />
+                <InputField placeholder="Reporting Manager" value={form.reportingManager} keyName="reportingManager" icon="person-circle-outline" />
+                <InputField placeholder="Salary (Monthly)" value={form.monthlySalary} keyName="monthlySalary" keyboardType="numeric" icon="cash-outline" />
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Banking Information</Text>
+            </View>
+            <View style={styles.grid}>
+                <InputField placeholder="Bank Name" value={form.bankName} keyName="bankName" icon="business-outline" />
+                <InputField placeholder="Account Number" value={form.accountNumber} keyName="accountNumber" keyboardType="numeric" icon="card-outline" />
+                <InputField placeholder="IFSC Code" value={form.ifsc} keyName="ifsc" icon="key-outline" />
+                <InputField placeholder="Branch Name" value={form.branchName} keyName="branchName" icon="location-outline" />
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Security</Text>
+            </View>
+            <View style={styles.grid}>
+                <InputField placeholder="New Password" value={form.password} keyName="password" secureTextEntry={true} icon="lock-closed-outline" />
+                <InputField placeholder="Confirm Password" value={form.confirmPassword} keyName="confirmPassword" secureTextEntry={true} icon="lock-closed-outline" />
+            </View>
+          </View>
+
+          {/* Update Button */}
+          <TouchableOpacity style={styles.updateButton} onPress={handleUpdateEmployee} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : (
+              <>
+                <Ionicons name="save-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.updateButtonText}>Save Changes</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
         </View>
-      ))}
-
-      {/* Dropdowns, date pickers, addresses etc. (similar styling) */}
-
-      {/* Update Button */}
-      <TouchableOpacity style={styles.updateButton} onPress={handleUpdateEmployee} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.updateButtonText}>Update Employee</Text>}
-      </TouchableOpacity>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, padding: 20, backgroundColor: "#f4f6f9" },
-  backButton: { position: "absolute", top: 25, left: 20, zIndex: 10, backgroundColor: "#fff", padding: 8, borderRadius: 20, elevation: 5 },
-  title: { fontSize: 24, fontWeight: "bold", marginBottom: 20, textAlign: "center", marginTop: 40 },
-  imageContainer: { alignSelf: "center", width: 120, height: 120, borderRadius: 60, backgroundColor: "#e1e4e8", justifyContent: "center", alignItems: "center", marginBottom: 20, overflow: "hidden", elevation: 3 },
+  container: { flex: 1, backgroundColor: "#f8fafc" },
+  topHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingVertical: 15, backgroundColor: '#fff',
+    borderBottomWidth: 1, borderBottomColor: '#e2e8f0'
+  },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: '#1e293b' },
+  backBtn: { padding: 8, backgroundColor: '#f1f5f9', borderRadius: 10 },
+  
+  mainWrapper: { padding: 16 },
+  profileCard: {
+    backgroundColor: '#fff', borderRadius: 20, padding: 25, alignItems: 'center',
+    marginBottom: 20, borderWidth: 1, borderColor: '#e2e8f0',
+    shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 10, elevation: 2
+  },
+  imageWrapper: { 
+    width: 100, height: 100, borderRadius: 50, backgroundColor: "#f1f5f9", 
+    justifyContent: "center", alignItems: "center", overflow: "hidden",
+    borderWidth: 2, borderColor: '#0ea5e9', position: 'relative'
+  },
   image: { width: "100%", height: "100%" },
-  inputWrapper: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 10, paddingHorizontal: 10, marginBottom: 15, borderWidth: 1, borderColor: "#d1d5db" },
-  input: { flex: 1, paddingVertical: 12, fontSize: 15 },
-  picker: { backgroundColor: "#fff", borderWidth: 1, borderColor: "#d1d5db", borderRadius: 10, height: 50, marginBottom: 15, paddingHorizontal: 10 },
-  datePicker: { backgroundColor: "#fff", padding: 12, borderRadius: 10, borderWidth: 1, borderColor: "#d1d5db", marginBottom: 15 },
-  updateButton: { backgroundColor: "#007BFF", padding: 15, borderRadius: 12, alignItems: "center", marginTop: 10 },
-  updateButtonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
+  editBadge: {
+    position: 'absolute', bottom: 0, right: 0, backgroundColor: '#0ea5e9',
+    width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: '#fff'
+  },
+  imageHint: { fontSize: 12, color: '#94a3b8', marginTop: 10, fontWeight: '500' },
+
+  section: { 
+    backgroundColor: '#fff', borderRadius: 20, padding: 20, marginBottom: 20,
+    borderWidth: 1, borderColor: '#e2e8f0'
+  },
+  sectionHeader: { 
+    borderLeftWidth: 4, borderLeftColor: '#0ea5e9', 
+    paddingLeft: 10, marginBottom: 20 
+  },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#1e293b' },
+  
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  inputWrapper: { 
+    flexDirection: "row", alignItems: "center", backgroundColor: "#f8fafc", 
+    borderRadius: 12, paddingHorizontal: 12, marginBottom: 15, 
+    borderWidth: 1, borderColor: "#e2e8f0", width: '100%'
+  },
+  desktopInput: { width: '48.5%' },
+  iconContainer: {
+    width: 32, height: 32, borderRadius: 8, backgroundColor: '#fff',
+    justifyContent: 'center', alignItems: 'center', marginRight: 10,
+    borderWidth: 1, borderColor: '#e2e8f0'
+  },
+  input: { flex: 1, paddingVertical: 12, fontSize: 14, color: '#1e293b', fontWeight: '500' },
+
+  updateButton: { 
+    backgroundColor: "#1e293b", padding: 18, borderRadius: 15, 
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+    shadowColor: "#0ea5e9", shadowOpacity: 0.2, shadowRadius: 10, elevation: 5
+  },
+  updateButtonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  
+  loader: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: '#fff' },
+  loaderText: { marginTop: 10, color: '#64748b', fontWeight: '600' }
 });

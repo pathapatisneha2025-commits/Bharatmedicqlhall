@@ -8,36 +8,66 @@ import {
   TouchableOpacity,
   Alert,
   TextInput,
-   Linking
+  Linking,
+  FlatList,
+  Modal,
+  Platform,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, Feather } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system";
+import * as Sharing from "expo-sharing";
 
 export default function AdminDeliveryBoyOrdersScreen() {
   const navigation = useNavigation();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
   const [showDetails, setShowDetails] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [loadingCount, setLoadingCount] = useState(0);
 
-  // Edit Modal State
   const [showEditModal, setShowEditModal] = useState(false);
   const [editData, setEditData] = useState({
     amount_received: "",
     payment_status: "",
   });
+   const showAlert = (title, message, buttons) => {
+      if (Platform.OS === "web") {
+        if (buttons && buttons.length > 1) {
+          const confirmed = window.confirm(`${title}\n\n${message}`);
+          if (confirmed) {
+            const okBtn = buttons.find(b => b.style !== "cancel");
+            okBtn?.onPress?.();
+          }
+        } else {
+          window.alert(`${title}\n\n${message}`);
+        }
+      } else {
+        Alert.alert(title, message, buttons);
+      }
+    };
+  
+    useEffect(() => {
+      let interval;
+      if (loading) {
+        setLoadingCount(0);
+        interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+      } else clearInterval(interval);
+      return () => clearInterval(interval);
+    }, [loading]);
 
   const fetchDeliveryBoyOrders = async () => {
     try {
+      setLoading(true);
       const response = await fetch(
         "https://hospitaldatabasemanagement.onrender.com/order-medicine/deliveredby-delivryboy"
       );
-
       const data = await response.json();
       setOrders(data.orders || []);
     } catch (error) {
-      console.log("Fetch Delivery Boy Orders Error:", error);
+      console.log("Fetch Error:", error);
     } finally {
       setLoading(false);
     }
@@ -47,11 +77,14 @@ export default function AdminDeliveryBoyOrdersScreen() {
     fetchDeliveryBoyOrders();
   }, []);
 
-  // =======================
-  //   DELETE ORDER
-  // =======================
+  const filteredOrders = orders.filter(
+    (item) =>
+      item.id.toString().includes(search) ||
+      (item.deliveryboy_name && item.deliveryboy_name.toLowerCase().includes(search.toLowerCase()))
+  );
+
   const handleDelete = async (orderId) => {
-    Alert.alert("Delete Order", "Are you sure you want to delete this order?", [
+    showAlert("Delete Order", "Are you sure you want to delete this order?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -62,47 +95,18 @@ export default function AdminDeliveryBoyOrdersScreen() {
               `https://hospitaldatabasemanagement.onrender.com/order-medicine/delete/${orderId}`,
               { method: "DELETE" }
             );
-
             const data = await res.json();
-
             if (data.success) {
-              Alert.alert("Success", "Order deleted successfully");
-
               setOrders((prev) => prev.filter((o) => o.id !== orderId));
-            } else {
-              Alert.alert("Error", data.message || "Failed to delete");
             }
           } catch (error) {
-            console.log("Delete Error:", error);
-            Alert.alert("Error", "Something went wrong");
+            showAlert("Error", "Something went wrong");
           }
         },
       },
     ]);
   };
-  const exportDeliveryBoyOrders = () => {
-  const url =
-    "https://hospitaldatabasemanagement.onrender.com/order-medicine/export-deliveryboy";
 
-  Alert.alert(
-    "Export Orders",
-    "Your export file will start downloading.",
-    [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Download",
-        onPress: () => {
-          Linking.openURL(url);
-        },
-      },
-    ]
-  );
-};
-
-
-  // =======================
-  //        UPDATE ORDER
-  // =======================
   const handleUpdate = async () => {
     try {
       const res = await fetch(
@@ -113,426 +117,320 @@ export default function AdminDeliveryBoyOrdersScreen() {
           body: JSON.stringify(editData),
         }
       );
-
       const data = await res.json();
-
       if (data.success) {
-        Alert.alert("Updated", "Order updated successfully");
-
         setOrders((prev) =>
-          prev.map((o) =>
-            o.id === selectedOrder.id ? { ...o, ...editData } : o
-          )
+          prev.map((o) => (o.id === selectedOrder.id ? { ...o, ...editData } : o))
         );
-
         setShowEditModal(false);
-      } else {
-        Alert.alert("Error", data.message || "Update failed");
+       showAlert("Success", "Order updated");
       }
     } catch (error) {
-      console.log("Update Error:", error);
-      Alert.alert("Error", "Something went wrong during update");
+      showAlert("Error", "Update failed");
     }
   };
-  if (loading)
-      return (
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color="#007bff" />
-          <Text>Loading...</Text>
-        </View>
-      );
 
-  // =======================
-  // VIEW DETAILS POPUP
-  // =======================
-  const DetailsPopup = () => {
-    if (!showDetails || !selectedOrder) return null;
-
-    const items = selectedOrder.order_summary || [];
-    const boy = selectedOrder.deliveryboydetails || {};
-    const address = selectedOrder.address || {};
-
-    return (
-      <View style={styles.popupOverlay}>
-        <View style={styles.detailsBox}>
-          <Text style={styles.detailsTitle}>Order Details</Text>
-
-          <ScrollView style={{ maxHeight: 400 }}>
-            <Text style={styles.detailLine}>Order ID: {selectedOrder.id}</Text>
-            <Text style={styles.detailLine}>
-              Patient ID: {selectedOrder.patient_id}
-            </Text>
-
-            <Text style={styles.detailLine}>
-              Payment Method: {selectedOrder.payment_method}
-            </Text>
-            <Text style={styles.detailLine}>
-              Payment Mode: {selectedOrder.payment_mode}
-            </Text>
-            <Text style={styles.detailLine}>
-              Payment Status: {selectedOrder.payment_status}
-            </Text>
-            <Text style={styles.detailLine}>
-              Amount Received: ₹{selectedOrder.amount_received}
-            </Text>
-            <Text style={styles.detailLine}>
-              Payment Collected At:{" "}
-              {selectedOrder.payment_collected_at?.substring(0, 10)}
-            </Text>
-
-            <Text style={styles.detailLine}>
-              Delivery Boy: {boy.name || "-"}
-            </Text>
-            <Text style={styles.detailLine}>
-              Phone: {boy.mobile || "-"}
-            </Text>
-
-            <Text style={styles.detailLine}>
-              Delivery Type: {selectedOrder.deliverytype}
-            </Text>
-
-            <Text style={[styles.detailLine, { fontWeight: "700" }]}>
-              Address:
-            </Text>
-            <Text style={styles.itemLine}>Name: {address.name}</Text>
-            <Text style={styles.itemLine}>Phone: {address.mobile}</Text>
-            <Text style={styles.itemLine}>
-              {address.flat}, {address.street}, {address.city}
-            </Text>
-            <Text style={styles.itemLine}>Pincode: {address.pincode}</Text>
-
-            <Text style={[styles.detailLine, { fontWeight: "700" }]}>
-              Items:
-            </Text>
-            {items.map((i, idx) => (
-              <Text key={idx} style={styles.itemLine}>
-                • {i.name} – ₹{i.price} (x{i.quantity})
-              </Text>
-            ))}
-          </ScrollView>
-
-          {/* Action Buttons */}
-          <View style={styles.actionRow}>
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: "#28a745" }]}
-              onPress={() => {
-                setShowDetails(false);
-                setEditData({
-                  amount_received: selectedOrder.amount_received || "",
-                  payment_status: selectedOrder.payment_status || "",
-                });
-                setShowEditModal(true);
-              }}
-            >
-              <Ionicons name="create-outline" size={18} color="#fff" />
-              <Text style={styles.actionBtnText}>Edit</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: "#d9534f" }]}
-              onPress={() => {
-                setShowDetails(false);
-                handleDelete(selectedOrder.id);
-              }}
-            >
-              <Ionicons name="trash-outline" size={18} color="#fff" />
-              <Text style={styles.actionBtnText}>Delete</Text>
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity
-            style={styles.closeBtn}
-            onPress={() => setShowDetails(false)}
-          >
-            <Text style={styles.closeText}>Close</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
+  const exportDeliveryBoyOrders = () => {
+    const url = "https://hospitaldatabasemanagement.onrender.com/order-medicine/export-deliveryboy";
+    Linking.openURL(url);
   };
+  const exportDeliveryBoyOrdersCSV = async () => {
+  try {
+    if (!filteredOrders.length) {
+      showAlert("No Data", "No orders available to export");
+      return;
+    }
 
-  // =======================
-  // EDIT MODAL
-  // =======================
-  const EditModal = () => {
-    if (!showEditModal || !selectedOrder) return null;
+    // CSV headers
+    const headers = [
+      "Order ID",
+      "Patient ID",
+      "Payment Method",
+      "Items",
+      "Subtotal",
+      "Amount Received",
+      "Payment Status",
+      "Delivery Boy",
+    ];
 
-    return (
-      <View style={styles.popupOverlay}>
-        <View style={styles.detailsBox}>
-          <Text style={styles.detailsTitle}>Edit Order</Text>
+    // CSV rows
+    const rows = filteredOrders.map((o) => [
+      o.id,
+      o.patient_id,
+      o.payment_method,
+      (o.order_summary || [])
+        .map((i) => `${i.name} x${i.quantity}`)
+        .join(" | "),
+      o.subtotal,
+      o.amount_received || "",
+      o.payment_status || "",
+      o.deliveryboy_name || "",
+    ]);
 
-          <Text style={styles.inputLabel}>Amount Received</Text>
-          <TextInput
-            style={styles.inputBox}
-            placeholder="Enter amount"
-            keyboardType="numeric"
-            value={editData.amount_received.toString()}
-            onChangeText={(v) =>
-              setEditData({ ...editData, amount_received: v })
-            }
-          />
+    // Build CSV string
+    const csvContent =
+      [headers, ...rows]
+        .map((row) =>
+          row
+            .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+            .join(",")
+        )
+        .join("\n");
 
-          <Text style={styles.inputLabel}>Payment Status</Text>
-          <TextInput
-            style={styles.inputBox}
-            placeholder="Paid / Pending"
-            value={editData.payment_status}
-            onChangeText={(v) =>
-              setEditData({ ...editData, payment_status: v })
-            }
-          />
+    // WEB
+    if (Platform.OS === "web") {
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
 
-          <View style={styles.actionRow}>
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: "#28a745" }]}
-              onPress={handleUpdate}
-            >
-              <Ionicons name="checkmark-outline" size={18} color="#fff" />
-              <Text style={styles.actionBtnText}>Save</Text>
-            </TouchableOpacity>
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `delivery_orders_${Date.now()}.csv`;
+      link.click();
 
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: "#d9534f" }]}
-              onPress={() => setShowEditModal(false)}
-            >
-              <Ionicons name="close-outline" size={18} color="#fff" />
-              <Text style={styles.actionBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    );
-  };
+      URL.revokeObjectURL(url);
+      return;
+    }
 
-  // =======================
-  // MAIN UI
-  // =======================
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#007aff" />
-      </View>
-    );
+    // MOBILE
+    const fileUri = FileSystem.documentDirectory + "delivery_orders.csv";
+    await FileSystem.writeAsStringAsync(fileUri, csvContent, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
+
+    await Sharing.shareAsync(fileUri);
+  } catch (error) {
+    console.log(error);
+    showAlert("Error", "CSV export failed");
   }
+};
 
-  if (orders.length === 0) {
-    return (
-      <View style={styles.center}>
-        <Text style={{ fontSize: 18 }}>No Delivery Boy Orders Found</Text>
+
+  const renderRow = ({ item, index }) => (
+    <View style={styles.tableBodyRow}>
+      <Text style={[styles.bodyCell, { width: 80 }]}>#{item.id}</Text>
+      <Text style={[styles.bodyCell, { width: 120, fontWeight: "600" }]}>{item.patient_id}</Text>
+      <Text style={[styles.bodyCell, { width: 120 }]}>{item.payment_method}</Text>
+      <Text style={[styles.bodyCell, { width: 180 }]} numberOfLines={1}>
+        {(item.order_summary || []).map((i) => `${i.name} (x${i.quantity})`).join(", ")}
+      </Text>
+      <Text style={[styles.bodyCell, { width: 100, fontWeight: "700" }]}>₹{item.subtotal}</Text>
+      <Text style={[styles.bodyCell, { width: 140 }]}>{item.deliveryboy_name || "-"}</Text>
+      <View style={[styles.actionCellWeb, { width: 120 }]}>
+        <TouchableOpacity 
+          style={styles.iconCircle} 
+          onPress={() => { setSelectedOrder(item); setShowDetails(true); }}
+        >
+          <Feather name="eye" size={16} color="#0ea5e9" />
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.iconCircle, { backgroundColor: "#fee2e2" }]} 
+          onPress={() => handleDelete(item.id)}
+        >
+          <Feather name="trash-2" size={16} color="#ef4444" />
+        </TouchableOpacity>
       </View>
-    );
-  }
+    </View>
+  );
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#eef2f5" }}>
-      <DetailsPopup />
-      <EditModal />
-
-      <View style={styles.topHeader}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={26} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.topHeaderText}>DeliveryBoyOrders</Text>
-        <TouchableOpacity
-  onPress={exportDeliveryBoyOrders}
-  style={{ marginLeft: "auto" }}
+    <View style={styles.webWrapper}>
+      <View style={styles.mainContent}>
+        
+        {/* HEADER SECTION */}
+        <View style={styles.contentHeader}>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+              <Ionicons name="arrow-back" size={22} color="#1e293b" />
+            </TouchableOpacity>
+            <View>
+              <Text style={styles.mainTitle}>Delivery Records</Text>
+              <Text style={styles.subTitle}>Manage and track delivery boy order history</Text>
+            </View>
+          </View>
+<TouchableOpacity
+  onPress={exportDeliveryBoyOrdersCSV}
+  style={styles.exportBtn}
 >
-  <Ionicons name="download-outline" size={26} color="#fff" />
+  <Feather name="download" size={20} color="#fff" />
+  <Text style={styles.exportBtnText}>Export CSV</Text>
 </TouchableOpacity>
 
-      </View>
+        </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View style={styles.tableContainer}>
-          <View style={[styles.row, styles.headerRow]}>
-            <Text style={[styles.cell, styles.headerText]}>Order ID</Text>
-            <Text style={[styles.cell, styles.headerText]}>Patient</Text>
-            <Text style={[styles.cell, styles.headerText]}>Payment</Text>
-            <Text style={[styles.cell, styles.headerText]}>Items</Text>
-            <Text style={[styles.cell, styles.headerText]}>Total</Text>
-            <Text style={[styles.cell, styles.headerText]}>Delivery Boy</Text>
-            <Text style={[styles.cell, styles.headerText]}>Action</Text>
+        {/* TABLE CARD */}
+        <View style={styles.tableCard}>
+          <View style={styles.cardTop}>
+            <View style={styles.searchBox}>
+              <Feather name="search" size={18} color="#94a3b8" />
+              <TextInput
+                style={styles.searchInputWeb}
+                placeholder="Search by ID or Delivery Boy..."
+                value={search}
+                onChangeText={setSearch}
+              />
+            </View>
           </View>
 
-          {orders.map((item, index) => {
-            const items = item.order_summary || [];
-
-            return (
-              <View
-                style={[
-                  styles.row,
-                  index % 2 === 0 ? styles.evenRow : styles.oddRow,
-                ]}
-                key={item.id}
-              >
-                <Text style={styles.cell}>{item.id}</Text>
-                <Text style={styles.cell}>{item.patient_id}</Text>
-                <Text style={styles.cell}>{item.payment_method}</Text>
-
-                <Text style={styles.cell}>
-                  {items.map((i) => `${i.name} (x${i.quantity})`).join(", ")}
-                </Text>
-
-                <Text style={styles.cell}>₹{item.subtotal}</Text>
-                <Text style={styles.cell}>{item.deliveryboy_name || "-"}</Text>
-
-                <TouchableOpacity
-                  style={[styles.cell]}
-                  onPress={() => {
-                    setSelectedOrder(item);
-                    setShowDetails(true);
-                  }}
-                >
-                  <Ionicons name="eye-outline" size={26} color="#007aff" />
-                </TouchableOpacity>
+          {loading ? (
+            <View style={styles.loaderContainer}>
+              <ActivityIndicator size="large" color="#2563EB" />
+              <Text style={styles.loaderText}>Loading Records...</Text>
+            </View>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+              <View>
+                <View style={styles.tableHeaderRow}>
+                  <Text style={[styles.headerCell, { width: 80 }]}>Order ID</Text>
+                  <Text style={[styles.headerCell, { width: 120 }]}>Patient</Text>
+                  <Text style={[styles.headerCell, { width: 120 }]}>Payment</Text>
+                  <Text style={[styles.headerCell, { width: 180 }]}>Items</Text>
+                  <Text style={[styles.headerCell, { width: 100 }]}>Total</Text>
+                  <Text style={[styles.headerCell, { width: 140 }]}>Delivery Boy</Text>
+                  <Text style={[styles.headerCell, { width: 120, textAlign: 'center' }]}>Actions</Text>
+                </View>
+                <FlatList
+                  data={filteredOrders}
+                  renderItem={renderRow}
+                  keyExtractor={(item) => item.id.toString()}
+                  ListEmptyComponent={<Text style={{padding: 20, textAlign: 'center'}}>No Records Found</Text>}
+                />
               </View>
-            );
-          })}
+            </ScrollView>
+          )}
         </View>
-      </ScrollView>
+      </View>
+
+      {/* VIEW DETAILS MODAL */}
+      <Modal visible={showDetails} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Order Information</Text>
+              <TouchableOpacity onPress={() => setShowDetails(false)}>
+                <Ionicons name="close" size={24} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            {selectedOrder && (
+              <ScrollView style={styles.modalScroll}>
+                <View style={styles.detailRow}>
+                   <Feather name="hash" size={16} color="#2563eb" style={{marginRight: 12}} />
+                   <View><Text style={styles.detailLabel}>Order ID</Text><Text style={styles.detailValue}>{selectedOrder.id}</Text></View>
+                </View>
+                <View style={styles.detailRow}>
+                   <Feather name="credit-card" size={16} color="#2563eb" style={{marginRight: 12}} />
+                   <View><Text style={styles.detailLabel}>Payment Method</Text><Text style={styles.detailValue}>{selectedOrder.payment_method}</Text></View>
+                </View>
+                <View style={styles.detailRow}>
+                   <Feather name="dollar-sign" size={16} color="#2563eb" style={{marginRight: 12}} />
+                   <View><Text style={styles.detailLabel}>Amount Received</Text><Text style={styles.detailValue}>₹{selectedOrder.amount_received}</Text></View>
+                </View>
+                <View style={styles.detailRow}>
+                   <Feather name="truck" size={16} color="#2563eb" style={{marginRight: 12}} />
+                   <View><Text style={styles.detailLabel}>Delivery Boy</Text><Text style={styles.detailValue}>{selectedOrder.deliveryboy_name || "-"}</Text></View>
+                </View>
+              </ScrollView>
+            )}
+            <View style={styles.modalActions}>
+               <TouchableOpacity 
+                 style={styles.saveBtn} 
+                 onPress={() => {
+                   setEditData({ amount_received: selectedOrder.amount_received || "", payment_status: selectedOrder.payment_status || "" });
+                   setShowDetails(false);
+                   setShowEditModal(true);
+                 }}
+               >
+                 <Text style={styles.saveBtnText}>Edit Payment</Text>
+               </TouchableOpacity>
+               <TouchableOpacity style={styles.cancelBtnWeb} onPress={() => setShowDetails(false)}>
+                 <Text style={styles.cancelBtnText}>Close</Text>
+               </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* EDIT MODAL */}
+      <Modal visible={showEditModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Update Payment</Text>
+              <TouchableOpacity onPress={() => setShowEditModal(false)}>
+                <Ionicons name="close" size={24} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.inputGroup}>
+              <Feather name="dollar-sign" size={18} color="#2563eb" />
+              <TextInput 
+                style={styles.inputWeb} 
+                placeholder="Amount Received" 
+                value={editData.amount_received.toString()} 
+                onChangeText={(t) => setEditData({...editData, amount_received: t})} 
+              />
+            </View>
+            <View style={styles.inputGroup}>
+              <Feather name="info" size={18} color="#2563eb" />
+              <TextInput 
+                style={styles.inputWeb} 
+                placeholder="Payment Status" 
+                value={editData.payment_status} 
+                onChangeText={(t) => setEditData({...editData, payment_status: t})} 
+              />
+            </View>
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.saveBtn} onPress={handleUpdate}>
+                <Text style={styles.saveBtnText}>Save Changes</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.cancelBtnWeb} onPress={() => setShowEditModal(false)}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  topHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#007aff",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    elevation: 4,
-    marginTop: 30,
-  },
-  topHeaderText: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#fff",
-    marginLeft: 12,
-  },
+  webWrapper: { flex: 1, backgroundColor: "#F8FAFC" },
+  mainContent: { flex: 1, padding: 24 },
+  contentHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 32 },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 14 },
+  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#fff", justifyContent: "center", alignItems: "center", elevation: 2 },
+  mainTitle: { fontSize: 24, fontWeight: "800", color: "#1e293b" },
+  subTitle: { color: "#64748b", marginTop: 4 },
+  exportBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#10b981", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 },
+  exportBtnText: { color: "#fff", fontWeight: "600", marginLeft: 8 },
 
-  tableContainer: {
-    backgroundColor: "#fff",
-    margin: 14,
-    borderRadius: 10,
-    paddingBottom: 10,
-    overflow: "hidden",
-    elevation: 3,
-  },
-  headerRow: { backgroundColor: "#007aff" },
+  tableCard: { backgroundColor: "#fff", borderRadius: 16, borderWidth: 1, borderColor: "#e2e8f0", flex: 1, overflow: "hidden" },
+  cardTop: { padding: 20, borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
+  searchBox: { flexDirection: "row", alignItems: "center", backgroundColor: "#f8fafc", borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 10, paddingHorizontal: 16, width: 350 },
+  searchInputWeb: { paddingVertical: 10, marginLeft: 10, flex: 1 },
 
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderBottomWidth: 0.8,
-    borderColor: "#e2e2e2",
-  },
+  tableHeaderRow: { flexDirection: "row", backgroundColor: "#f8fafc", paddingVertical: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#e2e8f0" },
+  headerCell: { fontSize: 13, fontWeight: "700", color: "#64748b", textTransform: "uppercase" },
+  tableBodyRow: { flexDirection: "row", paddingVertical: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#f1f5f9", alignItems: "center" },
+  bodyCell: { fontSize: 14, color: "#334155" },
+  actionCellWeb: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  iconCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#f0f9ff", justifyContent: "center", alignItems: "center" },
 
-  evenRow: { backgroundColor: "#f8f9fb" },
-  oddRow: { backgroundColor: "#fff" },
+  loaderContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loaderText: { marginTop: 12, color: "#64748b" },
 
-  cell: {
-    width: 140,
-    padding: 12,
-    fontSize: 14,
-    color: "#333",
-  },
-
-  headerText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 15,
-  },
-
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  popupOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.2)",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 999,
-  },
-  detailsBox: {
-    width: "85%",
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 12,
-    elevation: 10,
-  },
-  detailsTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    marginBottom: 12,
-    color: "#007aff",
-  },
-  detailLine: {
-    fontSize: 16,
-    marginBottom: 6,
-    color: "#333",
-  },
-  itemLine: {
-    fontSize: 15,
-    marginLeft: 10,
-    marginBottom: 4,
-    color: "#444",
-  },
-  closeBtn: {
-    marginTop: 15,
-    backgroundColor: "#007aff",
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  closeText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 16,
-  },
-
-  actionRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 15,
-  },
-
-  actionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-  },
-
-  actionBtnText: {
-    color: "#fff",
-    fontSize: 16,
-    marginLeft: 6,
-    fontWeight: "600",
-  },
-
-  inputLabel: {
-    marginTop: 10,
-    marginBottom: 4,
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#333",
-  },
-  inputBox: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 15,
-    marginBottom: 10,
-  },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
+  modalBox: { backgroundColor: "#fff", width: "90%", maxWidth: 500, borderRadius: 16, padding: 24 },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1e293b" },
+  modalScroll: { marginBottom: 20 },
+  detailRow: { flexDirection: "row", alignItems: "center", marginBottom: 16, backgroundColor: "#f8fafc", padding: 12, borderRadius: 8 },
+  detailLabel: { fontSize: 12, color: "#64748b", fontWeight: "600" },
+  detailValue: { fontSize: 15, color: "#1e293b", fontWeight: "600" },
+  inputGroup: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 10, paddingHorizontal: 14, marginBottom: 12, backgroundColor: "#f8fafc" },
+  inputWeb: { flex: 1, height: 45, marginLeft: 10 },
+  modalActions: { flexDirection: "row", gap: 12 },
+  saveBtn: { flex: 2, backgroundColor: "#2563eb", padding: 14, borderRadius: 10, alignItems: "center" },
+  saveBtnText: { color: "#fff", fontWeight: "700" },
+  cancelBtnWeb: { flex: 1, backgroundColor: "#f1f5f9", padding: 14, borderRadius: 10, alignItems: "center" },
+  cancelBtnText: { color: "#475569", fontWeight: "700" },
 });

@@ -10,6 +10,8 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+   Platform,
+  useWindowDimensions,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -41,14 +43,21 @@ export default function PickerUpdateScreen({ navigation }) {
   const [showScheduleOutPicker, setShowScheduleOutPicker] = useState(false);
   const [showBreakInPicker, setShowBreakInPicker] = useState(false);
   const [showBreakOutPicker, setShowBreakOutPicker] = useState(false);
+const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const MAX_WIDTH = 1000;
+  const containerWidth = SCREEN_WIDTH > MAX_WIDTH ? MAX_WIDTH : SCREEN_WIDTH - 20;
 
+  const showAlert = (title, message) => {
+    if (Platform.OS === "web") window.alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
   // Fetch employee ID
   useEffect(() => {
     const fetchStoredEmployeeId = async () => {
       const storedId = await getEmployeeId();
       if (storedId) setEmployeeId(storedId);
       else {
-        Alert.alert("Error", "No employee ID found. Please log in again.");
+        showAlert("Error", "No employee ID found. Please log in again.");
         navigation.goBack();
       }
     };
@@ -101,8 +110,8 @@ export default function PickerUpdateScreen({ navigation }) {
             dateOfJoining: emp.date_of_joining ? new Date(emp.date_of_joining) : new Date(),
           });
           setImage(emp.image ? { uri: emp.image } : null);
-        } else { Alert.alert("Error", data.message || "Failed to fetch employee details"); }
-      } catch (error) { Alert.alert("Error", "Failed to fetch employee details"); }
+        } else { showAlert("Error", data.message || "Failed to fetch employee details"); }
+      } catch (error) { showAlert("Error", "Failed to fetch employee details"); }
       finally { setLoading(false); }
     };
     fetchEmployee();
@@ -112,7 +121,7 @@ export default function PickerUpdateScreen({ navigation }) {
   const pickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permissionResult.granted) {
-      Alert.alert("Permission Denied", "Camera roll access is required.");
+      showAlert("Permission Denied", "Camera roll access is required.");
       return;
     }
     const galleryResult = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.7 });
@@ -121,7 +130,7 @@ export default function PickerUpdateScreen({ navigation }) {
 
   // Handle update
   const handleUpdateEmployee = async () => {
-    if (!employeeId) { Alert.alert("Error", "Employee ID not found."); return; }
+    if (!employeeId) { showAlert("Error", "Employee ID not found."); return; }
     if (form.password && form.password !== form.confirmPassword) { Alert.alert("Validation Error", "Passwords do not match."); return; }
 
     const formData = new FormData();
@@ -139,13 +148,16 @@ export default function PickerUpdateScreen({ navigation }) {
 
     try {
       setLoading(true);
-      const response = await fetch(`${BASE_URL}/employee/update/${employeeId}`, { method: "PUT", headers: { "Content-Type": "multipart/form-data" }, body: formData });
+const response = await fetch(`${BASE_URL}/employee/update/${employeeId}`, {
+  method: "PUT",
+  body: formData,
+});
       const result = await response.json();
       if (response.ok && result.success) {
-        Alert.alert("Success", "Employee updated successfully");
+       showAlert("Success", "Employee updated successfully");
         navigation.navigate("ProfileScreen", { refresh: true });
-      } else { Alert.alert("Update Failed", result.message || "Something went wrong"); }
-    } catch (error) { Alert.alert("Error", "Failed to update employee"); }
+      } else { showAlert("Update Failed", result.message || "Something went wrong"); }
+    } catch (error) { showAlert("Error", "Failed to update employee"); }
     finally { setLoading(false); }
   };
 
@@ -155,6 +167,13 @@ export default function PickerUpdateScreen({ navigation }) {
 
   return (
     <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      {/* <View
+              style={{
+                width: containerWidth,
+                alignSelf: "center",
+                flex: 1,
+              }}
+            > */}
       {/* Back Button */}
       <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
         <Ionicons name="arrow-back" size={24} color="#007BFF" />
@@ -207,6 +226,7 @@ export default function PickerUpdateScreen({ navigation }) {
       <TouchableOpacity style={styles.updateButton} onPress={handleUpdateEmployee} disabled={loading}>
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.updateButtonText}>Update Picker Employee</Text>}
       </TouchableOpacity>
+      {/* </View> */}
     </ScrollView>
   );
 }

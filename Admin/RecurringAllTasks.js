@@ -23,6 +23,8 @@ const RecurringAdminTasksScreen = () => {
   const [tasks, setTasks] = useState([]);
   const [filteredTasks, setFilteredTasks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingCount, setLoadingCount] = useState(0);
+  
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -45,7 +47,30 @@ const RecurringAdminTasksScreen = () => {
   const [endDate, setEndDate] = useState(new Date());
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
+const showAlert = (title, message, buttons) => {
+      if (Platform.OS === "web") {
+        if (buttons && buttons.length > 1) {
+          const confirmed = window.confirm(`${title}\n\n${message}`);
+          if (confirmed) {
+            const okBtn = buttons.find(b => b.style !== "cancel");
+            okBtn?.onPress?.();
+          }
+        } else {
+          window.alert(`${title}\n\n${message}`);
+        }
+      } else {
+        Alert.alert(title, message, buttons);
+      }
+    };  
 
+  useEffect(() => {
+              let interval;
+              if (loading) {
+                setLoadingCount(0);
+                interval = setInterval(() => setLoadingCount((c) => c + 1), 1000);
+              } else clearInterval(interval);
+              return () => clearInterval(interval);
+            }, [loading]);
   // Fetch Tasks
   const fetchTasks = async () => {
     try {
@@ -78,10 +103,10 @@ const RecurringAdminTasksScreen = () => {
         setCompletedCount(updated.filter((t) => t.status === "Completed").length);
         setOverdueCount(updated.filter((t) => t.status === "Overdue").length);
       } else {
-        Alert.alert("Error", "Failed to load tasks");
+        showAlert("Error", "Failed to load tasks");
       }
     } catch (error) {
-      Alert.alert("Error", "Unable to fetch tasks");
+      showAlert("Error", "Unable to fetch tasks");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -98,27 +123,38 @@ const RecurringAdminTasksScreen = () => {
   };
 
   // Search Filter
-  const handleSearch = (text) => {
-    setSearchQuery(text);
+ const handleSearch = (text) => {
+  setSearchQuery(text);
 
-    if (text.trim() === "") {
-      setFilteredTasks(tasks);
-      return;
-    }
+  if (text.trim() === "") {
+    setFilteredTasks(tasks);
+    return;
+  }
 
-    const term = text.toLowerCase();
-    const filtered = tasks.filter(
-      (task) =>
-        task.assignedto.some((email) => email.toLowerCase().includes(term)) ||
-        task.priority.toLowerCase().includes(term)
+  const term = text.toLowerCase();
+
+  const filtered = tasks.filter((task) => {
+    const assignedEmails = Array.isArray(task.assignedto)
+      ? task.assignedto.join(",").toLowerCase()
+      : "";
+
+    const priority = task.priority
+      ? task.priority.toLowerCase()
+      : "";
+
+    return (
+      assignedEmails.includes(term) ||
+      priority.includes(term)
     );
+  });
 
-    setFilteredTasks(filtered);
-  };
+  setFilteredTasks(filtered);
+};
+
 
   // Delete Task
   const deleteTask = async (id) => {
-    Alert.alert("Confirm Delete", "Are you sure you want to delete this task?", [
+    showAlert("Confirm Delete", "Are you sure you want to delete this task?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -132,13 +168,13 @@ const RecurringAdminTasksScreen = () => {
             const data = await response.json();
 
             if (data.success) {
-              Alert.alert("Success", "Task deleted successfully");
+              showAlert("Success", "Task deleted successfully");
               fetchTasks();
             } else {
-              Alert.alert("Error", data.message || "Failed to delete task");
+              showAlert("Error", data.message || "Failed to delete task");
             }
           } catch (error) {
-            Alert.alert("Error", "Unable to delete task");
+            showAlert("Error", "Unable to delete task");
           }
         },
       },
@@ -147,18 +183,21 @@ const RecurringAdminTasksScreen = () => {
 
   // Open Edit Modal
   const openEditModal = (task) => {
-    setEditTask(task);
-    setTitle(task.title);
-    setDescription(task.description);
-    setAssignedTo(task.assignedto.join(","));
-    setCollaborators(task.collaborators.join(","));
-    setPriority(task.priority);
-    setStatus(task.status);
-    setRecurringType(task.recurringtype);
-    setStartDate(new Date(task.startdate));
-    setEndDate(new Date(task.duedate));
-    setModalVisible(true);
-  };
+  if (!task) return;
+
+  setEditTask(task);
+  setTitle(task.title || "");
+  setDescription(task.description || "");
+  setAssignedTo(Array.isArray(task.assignedto) ? task.assignedto.join(",") : "");
+  setCollaborators(Array.isArray(task.collaborators) ? task.collaborators.join(",") : "");
+  setPriority(task.priority || "Medium");
+  setStatus(task.status || "Not Started");
+  setRecurringType(task.recurringtype || "Daily");
+  setStartDate(task.startdate ? new Date(task.startdate) : new Date());
+  setEndDate(task.duedate ? new Date(task.duedate) : new Date());
+  setModalVisible(true);
+};
+
 
   // Update Task
   const updateTask = async () => {
@@ -190,21 +229,21 @@ const RecurringAdminTasksScreen = () => {
       const data = await response.json();
 
       if (data.success) {
-        Alert.alert("Success", "Task updated successfully");
+       showAlert("Success", "Task updated successfully");
         setModalVisible(false);
         fetchTasks();
       } else {
-        Alert.alert("Error", data.message || "Failed to update task");
+        showAlert("Error", data.message || "Failed to update task");
       }
     } catch (error) {
-      Alert.alert("Error", "Unable to update task");
+     showAlert("Error", "Unable to update task");
     }
   };
 if (loading)
     return (
       <View style={styles.loader}>
         <ActivityIndicator size="large" color="#007bff" />
-        <Text>Loading...</Text>
+        <Text style={styles.loadingText}>loading{loadingCount}s</Text>
       </View>
     );
   // Render Task Card
@@ -231,9 +270,10 @@ if (loading)
 
       <View style={styles.rowInfo}>
         <Ionicons name="person-outline" size={16} color="#555" />
-        <Text style={styles.infoText}>
-          Assigned: {item.assignedto.join(", ")}
-        </Text>
+      <Text style={styles.infoText}>
+  Assigned: {Array.isArray(item.assignedto) ? item.assignedto.join(", ") : item.assignedto || "N/A"}
+</Text>
+
       </View>
 
       <View style={styles.rowInfo}>
@@ -270,13 +310,7 @@ if (loading)
     </View>
   );
 
-  if (loading) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color="#007bff" />
-      </View>
-    );
-  }
+  
 
   return (
     <View style={styles.container}>
@@ -350,6 +384,137 @@ if (loading)
       />
 
       {/* MODAL … (unchanged) */}
+      {/* EDIT / CREATE TASK MODAL */}
+<Modal
+  animationType="slide"
+  transparent={true}
+  visible={modalVisible}
+  onRequestClose={() => setModalVisible(false)}
+>
+
+  <View style={styles.modalOverlay}>
+    <View style={styles.modalContainer}>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <Text style={styles.modalTitle}>Edit Task</Text>
+
+        {/* Title */}
+        <Text style={styles.label}>Title</Text>
+        <TextInput
+          style={styles.input}
+          value={title}
+          onChangeText={setTitle}
+        />
+
+        {/* Description */}
+        <Text style={styles.label}>Description</Text>
+        <TextInput
+          style={[styles.input, { height: 80 }]}
+          multiline
+          value={description}
+          onChangeText={setDescription}
+        />
+
+        {/* Assigned To */}
+        <Text style={styles.label}>Assigned To (comma separated emails)</Text>
+        <TextInput
+          style={styles.input}
+          value={assignedTo}
+          onChangeText={setAssignedTo}
+        />
+
+        {/* Collaborators */}
+        <Text style={styles.label}>Collaborators (comma separated emails)</Text>
+        <TextInput
+          style={styles.input}
+          value={collaborators}
+          onChangeText={setCollaborators}
+        />
+
+        {/* Priority */}
+        <Text style={styles.label}>Priority</Text>
+        <TextInput
+          style={styles.input}
+          value={priority}
+          onChangeText={setPriority}
+        />
+
+        {/* Status */}
+        <Text style={styles.label}>Status</Text>
+        <TextInput
+          style={styles.input}
+          value={status}
+          onChangeText={setStatus}
+        />
+
+        {/* Recurring Type */}
+        <Text style={styles.label}>Recurring Type</Text>
+        <TextInput
+          style={styles.input}
+          value={recurringType}
+          onChangeText={setRecurringType}
+        />
+
+        {/* Start Date */}
+        <Text style={styles.label}>Start Date</Text>
+        <TouchableOpacity
+          style={styles.datePicker}
+          onPress={() => setShowStartPicker(true)}
+        >
+          <Text>{startDate.toLocaleDateString()}</Text>
+        </TouchableOpacity>
+        {showStartPicker && (
+          <DateTimePicker
+            value={startDate}
+            mode="date"
+            display={Platform.OS === "ios" ? "spinner" : "default"}
+            onChange={(event, date) => {
+              setShowStartPicker(false);
+              if (date) setStartDate(date);
+            }}
+          />
+        )}
+
+        {/* End Date */}
+        <Text style={styles.label}>Due Date</Text>
+        <TouchableOpacity
+          style={styles.datePicker}
+          onPress={() => setShowEndPicker(true)}
+        >
+          <Text>{endDate.toLocaleDateString()}</Text>
+        </TouchableOpacity>
+        {showEndPicker && (
+          <DateTimePicker
+            value={endDate}
+            mode="date"
+            display={Platform.OS === "ios" ? "spinner" : "default"}
+            onChange={(event, date) => {
+              setShowEndPicker(false);
+              if (date) setEndDate(date);
+            }}
+          />
+        )}
+
+        {/* Buttons */}
+        <View style={styles.modalButtons}>
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: "#ccc" }]}
+            onPress={() => setModalVisible(false)}
+          >
+            <Text>Cancel</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: "#007bff" }]}
+            onPress={updateTask}
+          >
+            <Text style={{ color: "#fff" }}>Save</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </View>
+  </View>
+</Modal>
+
     </View>
   );
 };
@@ -357,59 +522,226 @@ if (loading)
 export default RecurringAdminTasksScreen;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, marginTop: 30, backgroundColor: "#f4f6f8" },
-  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
+  container: {
+    flex: 1,
+    backgroundColor: "#f8fafc", // Lighter, modern blue-grey background
+    paddingTop: Platform.OS === "ios" ? 50 : 10,
+  },
+  loader: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#fff",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 14,
+    color: "#64748b",
+    fontWeight: "500",
+  },
 
+  // HEADER
   header: {
+    height: 70,
     flexDirection: "row",
     alignItems: "center",
-    padding: 15,
+    paddingHorizontal: 20,
     backgroundColor: "#fff",
-    elevation: 3,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
   },
-  headerTitle: { fontSize: 20, fontWeight: "bold", marginLeft: 10 },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    marginLeft: 15,
+    color: "#1e293b",
+  },
 
   /* Summary Cards */
   summaryRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginHorizontal: 10,
-    marginTop: 10,
+    paddingHorizontal: 15,
+    marginTop: 20,
+    marginBottom: 10,
   },
   summaryCard: {
     flex: 1,
-    padding: 15,
-    marginHorizontal: 5,
-    borderRadius: 12,
+    paddingVertical: 18,
+    marginHorizontal: 6,
+    borderRadius: 16,
     alignItems: "center",
-    elevation: 2,
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  summaryValue: { fontSize: 20, fontWeight: "bold" },
-  summaryLabel: { fontSize: 14, marginTop: 4 },
+  summaryValue: { 
+    fontSize: 24, 
+    fontWeight: "800", 
+    color: "#1e293b" 
+  },
+  summaryLabel: { 
+    fontSize: 12, 
+    marginTop: 4, 
+    color: "#64748b", 
+    fontWeight: "700",
+    textTransform: "uppercase" 
+  },
 
+  // SEARCH
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fff",
-    marginHorizontal: 15,
-    marginTop: 10,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    elevation: 2,
+    marginHorizontal: 20,
+    marginVertical: 15,
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    height: 50,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
   },
-  searchInput: { flex: 1, height: 40, color: "#000" },
+  searchInput: { 
+    flex: 1, 
+    height: "100%", 
+    color: "#1e293b",
+    fontSize: 15,
+  },
 
+  // TASK CARD
   card: {
     backgroundColor: "#fff",
-    margin: 10,
-    padding: 15,
-    borderRadius: 12,
-    elevation: 3,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    padding: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#f1f5f9",
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  rowTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  title: { fontSize: 16, fontWeight: "bold" },
-  icons: { flexDirection: "row" },
-  description: { marginVertical: 5, color: "#555" },
-  rowInfo: { flexDirection: "row", alignItems: "center", marginTop: 3 },
-  infoText: { marginLeft: 5, color: "#555", fontSize: 13 },
+  rowTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  title: { 
+    fontSize: 18, 
+    fontWeight: "700", 
+    color: "#0f172a", 
+    flex: 1, 
+    marginRight: 10 
+  },
+  icons: { 
+    flexDirection: "row",
+    backgroundColor: "#f8fafc",
+    padding: 6,
+    borderRadius: 10,
+  },
+  description: { 
+    marginBottom: 15, 
+    color: "#475569", 
+    fontSize: 14, 
+    lineHeight: 20 
+  },
+  rowInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
+    backgroundColor: "#f1f5f9",
+    padding: 8,
+    borderRadius: 8,
+  },
+  infoText: { 
+    marginLeft: 8, 
+    color: "#334155", 
+    fontSize: 13,
+    fontWeight: "500" 
+  },
+
+  // MODAL
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.7)", // Blurry dark overlay
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContainer: {
+    width: "92%",
+    maxHeight: "85%",
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 25,
+  },
+  modalTitle: { 
+    fontSize: 22, 
+    fontWeight: "800", 
+    marginBottom: 20, 
+    color: "#1e293b",
+    textAlign: 'center' 
+  },
+  label: { 
+    fontSize: 13, 
+    fontWeight: "700", 
+    marginTop: 15, 
+    marginBottom: 6, 
+    color: "#64748b",
+    textTransform: "uppercase" 
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    height: 48,
+    backgroundColor: "#f8fafc",
+    fontSize: 15,
+    color: "#1e293b",
+  },
+  datePicker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    backgroundColor: "#f8fafc",
+    height: 48,
+    justifyContent: "space-between",
+  },
+  modalButtons: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 30,
+    marginBottom: 10
+  },
+  button: {
+    flex: 1,
+    height: 52,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  saveButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700"
+  },
+  cancelButtonText: {
+    color: "#64748b",
+    fontSize: 16,
+    fontWeight: "700"
+  }
 });
